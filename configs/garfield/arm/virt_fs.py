@@ -78,7 +78,11 @@ import devices
 from common import MemConfig
 
 DEFAULT_BOOTLOADER = str(
-    GEM5_ROOT / "system" / "arm" / "bootloader" / "arm64"
+    GEM5_ROOT
+    / "system"
+    / "arm"
+    / "bootloader"
+    / "arm64"
     / "boot_v2_qemu_virt.arm64"
 )
 
@@ -148,7 +152,10 @@ def create(args):
     system.addCaches(False, last_cache_level=2)
 
     if args.cpu == "kvm":
-        from m5.objects import ArmDefaultRelease, KvmVM
+        from m5.objects import (
+            ArmDefaultRelease,
+            KvmVM,
+        )
 
         system.kvm_vm = KvmVM()
         system.release = ArmDefaultRelease.for_kvm()
@@ -162,9 +169,7 @@ def create(args):
         # any console output. Keep the node.)
         system.realview.gic.simulate_gic = True
 
-    system.realview.setupBootLoader(
-        system, None, boot_loader=args.bootloader
-    )
+    system.realview.setupBootLoader(system, None, boot_loader=args.bootloader)
 
     if args.dtb:
         system.workload.dtb_filename = args.dtb
@@ -239,38 +244,79 @@ def run(args):
 
 def main():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kernel", type=str, required=True,
-                        help="Path to the (vmlinux) kernel binary")
-    parser.add_argument("--bootloader", type=str,
-                        default=DEFAULT_BOOTLOADER,
-                        help="Path to the gem5 bootloader binary")
-    parser.add_argument("--disk-image", type=str, required=True,
-                        help="Path to the root disk image")
-    parser.add_argument("--root-device", type=str, default="/dev/vda2",
-                        help="Kernel root= device (default: /dev/vda2)")
-    parser.add_argument("--dtb", type=str, default=None,
-                        help="DTB file (default: autogenerate)")
-    parser.add_argument("--script", type=str, default="",
-                        help="m5 readfile boot script")
-    parser.add_argument("--cpu", type=str, choices=cpu_choices,
-                        default="atomic")
+    parser.add_argument(
+        "--kernel",
+        type=str,
+        required=True,
+        help="Path to the (vmlinux) kernel binary",
+    )
+    parser.add_argument(
+        "--bootloader",
+        type=str,
+        default=DEFAULT_BOOTLOADER,
+        help="Path to the gem5 bootloader binary",
+    )
+    parser.add_argument(
+        "--disk-image",
+        type=str,
+        required=True,
+        help="Path to the root disk image",
+    )
+    parser.add_argument(
+        "--root-device",
+        type=str,
+        default="/dev/vda2",
+        help="Kernel root= device (default: /dev/vda2)",
+    )
+    parser.add_argument(
+        "--dtb",
+        type=str,
+        default=None,
+        help="DTB file (default: autogenerate)",
+    )
+    parser.add_argument(
+        "--script", type=str, default="", help="m5 readfile boot script"
+    )
+    parser.add_argument(
+        "--cpu", type=str, choices=cpu_choices, default="atomic"
+    )
     parser.add_argument("--cpu-freq", type=str, default="2GHz")
     parser.add_argument("--num-cores", type=int, default=1)
-    parser.add_argument("--mem-size", type=str, default="16GiB",
-                        help="RAM size (QPoints launches QEMU with 16GiB)")
-    parser.add_argument("--mem-type", default="DDR3_1600_8x8",
-                        help="Memory model type")
+    parser.add_argument(
+        "--mem-size",
+        type=str,
+        default="16GiB",
+        help="RAM size (QPoints launches QEMU with 16GiB)",
+    )
+    parser.add_argument(
+        "--mem-type", default="DDR3_1600_8x8", help="Memory model type"
+    )
     parser.add_argument("--mem-channels", type=int, default=1)
     parser.add_argument("--mem-ranks", type=int, default=None)
-    parser.add_argument("--kernel-cmd-extra", type=str, default="",
-                        help="Extra kernel command-line text")
-    parser.add_argument("--restore", type=str, default=None,
-                        help="Restore from this checkpoint directory")
-    parser.add_argument("--cpt-tick", type=int, default=None,
-                        help="Simulate this many ticks, checkpoint, exit")
-    parser.add_argument("--cpt-on-boot", action="store_true",
-                        help="Checkpoint at the image's 'kernel booted' "
-                             "marker (hypercall 1) and exit")
+    parser.add_argument(
+        "--kernel-cmd-extra",
+        type=str,
+        default="",
+        help="Extra kernel command-line text",
+    )
+    parser.add_argument(
+        "--restore",
+        type=str,
+        default=None,
+        help="Restore from this checkpoint directory",
+    )
+    parser.add_argument(
+        "--cpt-tick",
+        type=int,
+        default=None,
+        help="Simulate this many ticks, checkpoint, exit",
+    )
+    parser.add_argument(
+        "--cpt-on-boot",
+        action="store_true",
+        help="Checkpoint at the image's 'kernel booted' "
+        "marker (hypercall 1) and exit",
+    )
     args = parser.parse_args()
 
     root = Root(full_system=True)
@@ -280,7 +326,9 @@ def main():
         # KVM cores run decoupled from the event queue; use a coarse
         # simulation quantum.
         m5.ticks.fixGlobalFrequency()
-        root.sim_quantum = m5.ticks.fromSeconds(m5.util.convert.toLatency("1ms"))
+        root.sim_quantum = m5.ticks.fromSeconds(
+            m5.util.convert.toLatency("1ms")
+        )
 
     if args.restore is not None:
         m5.instantiate(args.restore)

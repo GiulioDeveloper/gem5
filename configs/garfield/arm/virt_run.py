@@ -90,11 +90,14 @@ from gem5.utils.requires import requires
 
 GEM5_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_BOOTLOADER = str(
-    GEM5_ROOT / "system" / "arm" / "bootloader" / "arm64"
+    GEM5_ROOT
+    / "system"
+    / "arm"
+    / "bootloader"
+    / "arm64"
     / "boot_v2_qemu_virt.arm64"
 )
 DEFAULT_KERNEL = "/tmp/gem5_res/arm64-linux-kernel-6.8.12-1.0.0"
-
 
 
 class QemuVirtBoard(ArmBoard):
@@ -126,9 +129,7 @@ class QemuVirtBoard(ArmBoard):
         # assignment: SimObject rejects assigning an EMPTY vector, and this
         # board attaches no PCI devices by design. Keep in sync with
         # gem5/components/boards/arm_board.py.
-        root = super(ArmBoard, self)._pre_instantiate(
-            full_system=full_system
-        )
+        root = super(ArmBoard, self)._pre_instantiate(full_system=full_system)
         self.workload.dtb_filename = self._get_dtb_filename()
         self.realview.setupBootLoader(
             self, self._get_dtb_filename(), self._bootloader
@@ -141,39 +142,60 @@ def parse_args():
     parser = argparse.ArgumentParser(
         description="Garfield QEMU-virt detailed restore (Track B)."
     )
-    parser.add_argument("--restore-dir", type=str, default=None,
-                        help="QPoints snapshot directory (contains m5.cpt). "
-                        "Omit with --gen-ref to BOOT instead of restore.")
-    parser.add_argument("--gen-ref", action="store_true",
-                        help="Native-reference generation mode: boot the "
-                        "guest on the ATOMIC core (no restore, no switch) "
-                        "and checkpoint at the image's kernel-booted "
-                        "marker. The resulting m5.cpt carries THIS "
-                        "board's section names -- the tree gen_template "
-                        "and all restores must share.")
-    parser.add_argument("--disk-img", type=str, required=True,
-                        help="The prepped guest image the snapshot was "
-                        "taken against (referenced read-only).")
-    parser.add_argument("--kernel", type=str, default=DEFAULT_KERNEL,
-                        help="vmlinux (same bits the guest booted).")
-    parser.add_argument("--bootloader", type=str,
-                        default=DEFAULT_BOOTLOADER)
-    parser.add_argument("--release", type=str, default="armv8",
-                        choices=["armv8", "kvm-host"],
-                        help="Restore CPU feature envelope. armv8: TCG "
-                             "cortex-a57 snapshots (Gates 0-C). kvm-host: "
-                             "KVM -cpu host,sve=off,pauth=off snapshots on "
-                             "Neoverse-V1 -- ArmDefaultRelease minus the "
-                             "masked features (PAuth, SVE/SME families); "
-                             "DIT/SSBS are unconditional in this fork.")
+    parser.add_argument(
+        "--restore-dir",
+        type=str,
+        default=None,
+        help="QPoints snapshot directory (contains m5.cpt). "
+        "Omit with --gen-ref to BOOT instead of restore.",
+    )
+    parser.add_argument(
+        "--gen-ref",
+        action="store_true",
+        help="Native-reference generation mode: boot the "
+        "guest on the ATOMIC core (no restore, no switch) "
+        "and checkpoint at the image's kernel-booted "
+        "marker. The resulting m5.cpt carries THIS "
+        "board's section names -- the tree gen_template "
+        "and all restores must share.",
+    )
+    parser.add_argument(
+        "--disk-img",
+        type=str,
+        required=True,
+        help="The prepped guest image the snapshot was "
+        "taken against (referenced read-only).",
+    )
+    parser.add_argument(
+        "--kernel",
+        type=str,
+        default=DEFAULT_KERNEL,
+        help="vmlinux (same bits the guest booted).",
+    )
+    parser.add_argument("--bootloader", type=str, default=DEFAULT_BOOTLOADER)
+    parser.add_argument(
+        "--release",
+        type=str,
+        default="armv8",
+        choices=["armv8", "kvm-host"],
+        help="Restore CPU feature envelope. armv8: TCG "
+        "cortex-a57 snapshots (Gates 0-C). kvm-host: "
+        "KVM -cpu host,sve=off,pauth=off snapshots on "
+        "Neoverse-V1 -- ArmDefaultRelease minus the "
+        "masked features (PAuth, SVE/SME families); "
+        "DIT/SSBS are unconditional in this fork.",
+    )
     parser.add_argument("--settle-insts", type=int, default=0)
     parser.add_argument("--warmup-insts", type=int, default=int(1e6))
     parser.add_argument("--detailed-insts", type=int, default=int(5e6))
-    parser.add_argument("--atomic-only", action="store_true",
-                        help="Restore-verify mode: run the ATOMIC core only "
-                             "(no switch, no detailed region) so long guest "
-                             "windows are affordable; exit at "
-                             "--atomic-max-insts committed instructions.")
+    parser.add_argument(
+        "--atomic-only",
+        action="store_true",
+        help="Restore-verify mode: run the ATOMIC core only "
+        "(no switch, no detailed region) so long guest "
+        "windows are affordable; exit at "
+        "--atomic-max-insts committed instructions.",
+    )
     parser.add_argument("--atomic-max-insts", type=int, default=int(30e9))
     # --- shared knobs (machine / prefetcher / garfield), same as
     # fs_run.py and se_run.py -------------------------------------------
@@ -202,13 +224,24 @@ def _pick_release(args):
         # autiasp poisoned x30 (O3 commit-froze at 9830 insts on a wild
         # ret; the atomic settle survived only because its simpler fetch
         # path kept faulting-and-retrying visibly).
-        drop = {"FEAT_PAuth", "FEAT_SVE", "FEAT_SVE2", "FEAT_SVE2p1",
-                "FEAT_F32MM", "FEAT_F64MM", "FEAT_SME"}
+        drop = {
+            "FEAT_PAuth",
+            "FEAT_SVE",
+            "FEAT_SVE2",
+            "FEAT_SVE2p1",
+            "FEAT_F32MM",
+            "FEAT_F64MM",
+            "FEAT_SME",
+        }
         # NB: the class list holds ArmExtension OBJECTS -- compare by
         # str(), a raw `e not in drop` string-set filters nothing.
-        return ArmRelease(extensions=[
-            e for e in ArmDefaultRelease.extensions if str(e) not in drop])
+        return ArmRelease(
+            extensions=[
+                e for e in ArmDefaultRelease.extensions if str(e) not in drop
+            ]
+        )
     return Armv8()
+
 
 requires(isa_required=ISA.ARM)
 
@@ -373,20 +406,23 @@ if args.gen_ref:
     class _StopAtKernelBooted(ExitHandler, hypercall_num=1):
         """Replace the stdlib id-1 handler (which continues) so run()
         returns at the image's kernel-booted marker."""
+
         def _process(self, simulator):
             pass
+
         def _exit_simulation(self):
             return True
 
     processor.prime_switch_core_active()
     simulator = Simulator(board=board)
     print(">>> gen-ref: booting to the kernel-booted marker (atomic) ...")
-    simulator.run()   # stdlib exit handler for hypercall 1 returns control
+    simulator.run()  # stdlib exit handler for hypercall 1 returns control
     cpt = Path(m5.options.outdir) / f"cpt.{m5.curTick()}"
     m5.checkpoint(str(cpt))
     with open(cpt / "m5.cpt") as f:
-        assert f.read().splitlines()[-1].startswith("version_tags="), \
-            "reference m5.cpt truncated"
+        assert (
+            f.read().splitlines()[-1].startswith("version_tags=")
+        ), "reference m5.cpt truncated"
     print(f">>> gen-ref: reference checkpoint at {cpt}")
     raise SystemExit(0)
 
@@ -398,8 +434,10 @@ for line in sim_opts.describe(args):
     print(line)
 print(f"  restore  : {args.restore_dir}")
 if args.atomic_only:
-    print(f"  region   : ATOMIC-only max-insts={args.atomic_max_insts:,} "
-          "(no switch, no detailed)")
+    print(
+        f"  region   : ATOMIC-only max-insts={args.atomic_max_insts:,} "
+        "(no switch, no detailed)"
+    )
 else:
     print(
         f"  region   : settle={max(1, args.settle_insts):,} "
@@ -427,8 +465,10 @@ if args.atomic_only:
     # but atomic is fast enough to let the guest print its own pass/fail
     # verdict, which is the end-to-end correctness sign-off for a restored
     # checkpoint.
-    print(f">>> instantiate + restore {args.restore_dir}; ATOMIC-only run "
-          f"{args.atomic_max_insts:,} insts (max) ...")
+    print(
+        f">>> instantiate + restore {args.restore_dir}; ATOMIC-only run "
+        f"{args.atomic_max_insts:,} insts (max) ..."
+    )
     simulator.schedule_max_insts(args.atomic_max_insts)
     simulator.run()
     print(
@@ -439,8 +479,10 @@ if args.atomic_only:
     raise SystemExit(0)
 
 settle = max(1, args.settle_insts)
-print(f">>> instantiate + restore {args.restore_dir}; ATOMIC settle "
-      f"{settle:,} ...")
+print(
+    f">>> instantiate + restore {args.restore_dir}; ATOMIC settle "
+    f"{settle:,} ..."
+)
 simulator.schedule_max_insts(settle)
 simulator.run()
 print(f">>> restored; insts={simulator.get_instruction_count()}")
@@ -449,8 +491,10 @@ print(">>> switch ATOMIC -> Neoverse V2 (detailed) ...")
 simulator.switch_processor()
 
 if args.warmup_insts > 0:
-    print(f">>> Neoverse V2 warmup {args.warmup_insts:,} insts "
-          "(unmeasured) ...")
+    print(
+        f">>> Neoverse V2 warmup {args.warmup_insts:,} insts "
+        "(unmeasured) ..."
+    )
     simulator.schedule_max_insts(args.warmup_insts)
     simulator.run()
 

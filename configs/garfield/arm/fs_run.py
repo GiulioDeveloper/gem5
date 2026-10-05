@@ -215,13 +215,7 @@ binary, workload_args, stdin = load_invocation(args.benchmark, args.inv)
 workdir = f"/home/gem5/{args.benchmark}/{args.inv}"
 
 _cmd = (
-    "./"
-    + binary
-    + (
-        " " + " ".join(shlex.quote(a) for a in workload_args)
-        if workload_args
-        else ""
-    )
+    "./" + binary + (" " + shlex.join(workload_args) if workload_args else "")
 )
 if stdin:
     _cmd += " < " + shlex.quote(stdin)
