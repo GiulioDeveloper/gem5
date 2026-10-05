@@ -118,7 +118,7 @@ class SetAssociative : public BaseIndexingPolicy
     std::vector<ReplaceableEntry*> getPossibleEntries(const Addr &addr) const
                                                                      override;
 
-    const std::vector<ReplaceableEntry*> *
+    const std::vector<ReplaceableEntry *> *
     possibleEntriesInPlace(const Addr &addr) const override;
 
     /**

@@ -1,4 +1,5 @@
 """Tests for stats_gate.py (run: python3 -m unittest -v in util/perf-opt)."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -75,7 +76,10 @@ class DiffTest(unittest.TestCase):
             "\nboard.newStat                 0                       # new (Count)\n\n---------- End",
         )
         self.assertEqual(stats_gate.diff(self.base, self.cand(zero)), [])
-        nonzero = zero.replace("board.newStat                 0", "board.newStat                 7")
+        nonzero = zero.replace(
+            "board.newStat                 0",
+            "board.newStat                 7",
+        )
         bad = stats_gate.diff(self.base, self.cand(nonzero))
         self.assertEqual(len(bad), 1)
         self.assertTrue(bad[0].startswith("NEW NONZERO board.newStat"))
@@ -83,7 +87,9 @@ class DiffTest(unittest.TestCase):
     def test_excluded_stat_is_skipped(self):
         text = BASE.replace("   123", "   124")
         exclude = frozenset({"board.processor.start.core.branchPred.lookups"})
-        self.assertEqual(stats_gate.diff(self.base, self.cand(text), exclude), [])
+        self.assertEqual(
+            stats_gate.diff(self.base, self.cand(text), exclude), []
+        )
 
 
 class DifferingNamesTest(unittest.TestCase):
@@ -98,7 +104,8 @@ class ExclusionFileTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = write(tmp, "ex.txt", "# header\n\nstat.a  why\nstat.b\n")
             self.assertEqual(
-                stats_gate.load_exclusions(path), frozenset({"stat.a", "stat.b"})
+                stats_gate.load_exclusions(path),
+                frozenset({"stat.a", "stat.b"}),
             )
 
     def test_missing_file_means_no_exclusions(self):
@@ -131,11 +138,13 @@ class GateTest(unittest.TestCase):
     def test_missing_or_empty_base_fails(self):
         with tempfile.TemporaryDirectory() as tmp:
             cand = self.make(tmp, "cand", ["a.0.1"])
-            self.assertFalse(stats_gate.gate(Path(tmp) / "typo", cand,
-                                             frozenset()))
+            self.assertFalse(
+                stats_gate.gate(Path(tmp) / "typo", cand, frozenset())
+            )
             (Path(tmp) / "empty").mkdir()
-            self.assertFalse(stats_gate.gate(Path(tmp) / "empty", cand,
-                                             frozenset()))
+            self.assertFalse(
+                stats_gate.gate(Path(tmp) / "empty", cand, frozenset())
+            )
 
     def test_checkpoint_only_in_candidate_fails(self):
         with tempfile.TemporaryDirectory() as tmp:

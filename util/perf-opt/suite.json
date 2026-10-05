@@ -1,86 +1,103 @@
 {
- "seed": 20260926,
- "manifest": "/home/rbera/work/agentic-cpu/gem5-infra/ckpt-tools/simpoint/manifests/checkpoints.json",
- "checkpoints": [
-  {
-   "id": "708.sqlite_r.0.3",
-   "role": "test",
-   "benchmark": "708.sqlite_r",
-   "inv": 0,
-   "simpoint": 3,
-   "weight": 0.25304,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/708.sqlite_r/0/cpt.708.sqlite_r.0.3",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/708.sqlite_r/0/cpt.708.sqlite_r.0.3"
-  },
-  {
-   "id": "706.stockfish_r.2.4",
-   "role": "test",
-   "benchmark": "706.stockfish_r",
-   "inv": 2,
-   "simpoint": 4,
-   "weight": 0.296386,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/706.stockfish_r/2/cpt.706.stockfish_r.2.4",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/706.stockfish_r/2/cpt.706.stockfish_r.2.4"
-  },
-  {
-   "id": "706.stockfish_r.1.1",
-   "role": "test",
-   "benchmark": "706.stockfish_r",
-   "inv": 1,
-   "simpoint": 1,
-   "weight": 0.284075,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/706.stockfish_r/1/cpt.706.stockfish_r.1.1",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/706.stockfish_r/1/cpt.706.stockfish_r.1.1"
-  },
-  {
-   "id": "753.ns3_r.2.0",
-   "role": "test",
-   "benchmark": "753.ns3_r",
-   "inv": 2,
-   "simpoint": 0,
-   "weight": 0.405405,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/753.ns3_r/2/cpt.753.ns3_r.2.0",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/753.ns3_r/2/cpt.753.ns3_r.2.0"
-  },
-  {
-   "id": "723.llvm_r.1.0",
-   "role": "test",
-   "benchmark": "723.llvm_r",
-   "inv": 1,
-   "simpoint": 0,
-   "weight": 0.829571,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/723.llvm_r/1/cpt.723.llvm_r.1.0",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/723.llvm_r/1/cpt.723.llvm_r.1.0"
-  },
-  {
-   "id": "748.flightdm_r.2.2",
-   "role": "train",
-   "benchmark": "748.flightdm_r",
-   "inv": 2,
-   "simpoint": 2,
-   "weight": 0.149877,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/748.flightdm_r/2/cpt.748.flightdm_r.2.2",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/748.flightdm_r/2/cpt.748.flightdm_r.2.2"
-  },
-  {
-   "id": "721.gcc_r.2.0",
-   "role": "train",
-   "benchmark": "721.gcc_r",
-   "inv": 2,
-   "simpoint": 0,
-   "weight": 0.178922,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/721.gcc_r/2/cpt.721.gcc_r.2.0",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/721.gcc_r/2/cpt.721.gcc_r.2.0"
-  },
-  {
-   "id": "767.nest_r.1.0",
-   "role": "train",
-   "benchmark": "767.nest_r",
-   "inv": 1,
-   "simpoint": 0,
-   "weight": 0.166421,
-   "remote": "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/767.nest_r/1/cpt.767.nest_r.1.0",
-   "local": "/home/rbera/work/tracezoo/gem5/fs_ckpts/767.nest_r/1/cpt.767.nest_r.1.0"
-  }
- ]
+    "seed": 20260926,
+    "manifest":
+        "/home/rbera/work/agentic-cpu/gem5-infra/ckpt-tools/simpoint/manifests/checkpoints.json",
+    "checkpoints": [
+        {
+            "id": "708.sqlite_r.0.3",
+            "role": "test",
+            "benchmark": "708.sqlite_r",
+            "inv": 0,
+            "simpoint": 3,
+            "weight": 0.25304,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/708.sqlite_r/0/cpt.708.sqlite_r.0.3",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/708.sqlite_r/0/cpt.708.sqlite_r.0.3"
+        },
+        {
+            "id": "706.stockfish_r.2.4",
+            "role": "test",
+            "benchmark": "706.stockfish_r",
+            "inv": 2,
+            "simpoint": 4,
+            "weight": 0.296386,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/706.stockfish_r/2/cpt.706.stockfish_r.2.4",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/706.stockfish_r/2/cpt.706.stockfish_r.2.4"
+        },
+        {
+            "id": "706.stockfish_r.1.1",
+            "role": "test",
+            "benchmark": "706.stockfish_r",
+            "inv": 1,
+            "simpoint": 1,
+            "weight": 0.284075,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/706.stockfish_r/1/cpt.706.stockfish_r.1.1",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/706.stockfish_r/1/cpt.706.stockfish_r.1.1"
+        },
+        {
+            "id": "753.ns3_r.2.0",
+            "role": "test",
+            "benchmark": "753.ns3_r",
+            "inv": 2,
+            "simpoint": 0,
+            "weight": 0.405405,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/753.ns3_r/2/cpt.753.ns3_r.2.0",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/753.ns3_r/2/cpt.753.ns3_r.2.0"
+        },
+        {
+            "id": "723.llvm_r.1.0",
+            "role": "test",
+            "benchmark": "723.llvm_r",
+            "inv": 1,
+            "simpoint": 0,
+            "weight": 0.829571,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/723.llvm_r/1/cpt.723.llvm_r.1.0",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/723.llvm_r/1/cpt.723.llvm_r.1.0"
+        },
+        {
+            "id": "748.flightdm_r.2.2",
+            "role": "train",
+            "benchmark": "748.flightdm_r",
+            "inv": 2,
+            "simpoint": 2,
+            "weight": 0.149877,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/748.flightdm_r/2/cpt.748.flightdm_r.2.2",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/748.flightdm_r/2/cpt.748.flightdm_r.2.2"
+        },
+        {
+            "id": "721.gcc_r.2.0",
+            "role": "train",
+            "benchmark": "721.gcc_r",
+            "inv": 2,
+            "simpoint": 0,
+            "weight": 0.178922,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/721.gcc_r/2/cpt.721.gcc_r.2.0",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/721.gcc_r/2/cpt.721.gcc_r.2.0"
+        },
+        {
+            "id": "767.nest_r.1.0",
+            "role": "train",
+            "benchmark": "767.nest_r",
+            "inv": 1,
+            "simpoint": 0,
+            "weight": 0.166421,
+            "remote":
+                "kratos2:/home/rahbera/tracezoo/gem5/fs_ckpts/spec26/ckpts/767.nest_r/1/cpt.767.nest_r.1.0",
+            "local":
+                "/home/rbera/work/tracezoo/gem5/fs_ckpts/767.nest_r/1/cpt.767.nest_r.1.0"
+        }
+    ]
 }

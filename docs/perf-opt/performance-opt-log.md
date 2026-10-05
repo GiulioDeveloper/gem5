@@ -173,7 +173,7 @@ build dir `ARM_tcm` without `--without-tcmalloc`. No source change. `ldd` confir
 `libtcmalloc_minimal.so.4`.
 
 ```
-CC=gcc-12 CXX=g++-12 CCFLAGS_EXTRA='' LINKFLAGS_EXTRA='' scons build/ARM_tcm/gem5.fast -j32 --ignore-style 
+CC=gcc-12 CXX=g++-12 CCFLAGS_EXTRA='' LINKFLAGS_EXTRA='' scons build/ARM_tcm/gem5.fast -j32 --ignore-style
 ```
 
 Built in 407 s.
@@ -213,7 +213,7 @@ later.
 change. `compile_commands.json` confirms that all 13 `ext/drampower` sources now get `-O3`.
 
 ```
-CC=gcc-12 CXX=g++-12 CCFLAGS_EXTRA='-O3' LINKFLAGS_EXTRA='' scons build/ARM_ext/gem5.fast -j32 --ignore-style 
+CC=gcc-12 CXX=g++-12 CCFLAGS_EXTRA='-O3' LINKFLAGS_EXTRA='' scons build/ARM_ext/gem5.fast -j32 --ignore-style
 ```
 
 Built in 412 s, with 42247820 bytes of `.text`.
@@ -505,7 +505,7 @@ top of the accepted Trial 4 configuration (`.fast`, tcmalloc, `ext/` at `-O3`,
 
 2. **Training:** `run_suite.sh build/ARM_pgo/gem5.fast pgo-train train` on the three
    training checkpoints (10M+30M each, concurrent). It wrote 2034 `.gcda` files
-   (74.3 MB). Instrumented speed: 721.gcc_r.2.0 177.7 KIPS, wall 294.4s; 748.flightdm_r.2.2 229.0 KIPS, wall 212.7s; 767.nest_r.1.0 403.5 KIPS, wall 134.9s; 
+   (74.3 MB). Instrumented speed: 721.gcc_r.2.0 177.7 KIPS, wall 294.4s; 748.flightdm_r.2.2 229.0 KIPS, wall 212.7s; 767.nest_r.1.0 403.5 KIPS, wall 134.9s;
 3. **Optimized build** in the same dir (266 s). No profile mismatch warnings; the
    binary has no gcov instrumentation; 73.2 MB binary, 34.84 MB `.text`. The code
    grows 17% over Trial 4's 29.85 MB because of profile-driven inlining and unrolling

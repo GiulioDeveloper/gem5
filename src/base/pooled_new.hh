@@ -18,8 +18,7 @@ namespace gem5
  * derived class with a different size use the global heap as before.
  * Freed memory stays in the pool for reuse and is never returned.
  */
-template <class T>
-class PooledNew
+template <class T> class PooledNew
 {
   public:
     static void *
@@ -63,17 +62,14 @@ class PooledNew
  * instances are interchangeable, so containers using it swap and splice
  * as with std::allocator.
  */
-template <class T>
-class PooledAllocator
+template <class T> class PooledAllocator
 {
   public:
     using value_type = T;
 
     PooledAllocator() noexcept = default;
 
-    template <class U>
-    PooledAllocator(const PooledAllocator<U> &) noexcept
-    {}
+    template <class U> PooledAllocator(const PooledAllocator<U> &) noexcept {}
 
     T *
     allocate(std::size_t n)
@@ -101,10 +97,18 @@ class PooledAllocator
     }
 
     template <class U>
-    bool operator==(const PooledAllocator<U> &) const noexcept { return true; }
+    bool
+    operator==(const PooledAllocator<U> &) const noexcept
+    {
+        return true;
+    }
 
     template <class U>
-    bool operator!=(const PooledAllocator<U> &) const noexcept { return false; }
+    bool
+    operator!=(const PooledAllocator<U> &) const noexcept
+    {
+        return false;
+    }
 
   private:
     struct FreeNode

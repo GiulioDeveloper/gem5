@@ -1155,11 +1155,11 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
     // but the ROB may still be squashing instructions.
     // Go through the most recent instructions, undoing the mappings
     // they did and freeing up the registers.
-    while (!history.empty() &&
-           history.front().instSeqNum > squashed_seq_num) {
+    while (!history.empty() && history.front().instSeqNum > squashed_seq_num) {
         const RenameHistory &entry = history.front();
 
-        DPRINTF(Rename, "[tid:%i] Removing history entry with sequence "
+        DPRINTF(Rename,
+                "[tid:%i] Removing history entry with sequence "
                 "number %i (archReg: %d, newPhysReg: %d, prevPhysReg: %d).\n",
                 tid, entry.instSeqNum, entry.archReg.index(),
                 entry.newPhysReg->index(), entry.prevPhysReg->index());
@@ -1214,8 +1214,8 @@ Rename::doSquash(const InstSeqNum &squashed_seq_num, ThreadID tid)
         // Notify potential listeners that the register mapping needs to be
         // removed because the instruction it was mapped to got squashed. Note
         // that this is done before the entry is removed.
-        ppSquashInRename->notify(std::make_pair(entry.instSeqNum,
-                                                entry.newPhysReg));
+        ppSquashInRename->notify(
+            std::make_pair(entry.instSeqNum, entry.newPhysReg));
 
         history.pop_front();
 
@@ -1250,11 +1250,11 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
     while (!history.empty() && history.back().instSeqNum <= inst_seq_num) {
         const RenameHistory &entry = history.back();
 
-        DPRINTF(Rename, "[tid:%i] Freeing up older rename of reg %i (%s), "
+        DPRINTF(Rename,
+                "[tid:%i] Freeing up older rename of reg %i (%s), "
                 "[sn:%llu].\n",
                 tid, entry.prevPhysReg->index(),
-                entry.prevPhysReg->className(),
-                entry.instSeqNum);
+                entry.prevPhysReg->className(), entry.instSeqNum);
 
         // Don't free special phys regs like misc and zero regs, which
         // can be recognized because the new mapping is the same as
@@ -1279,13 +1279,12 @@ Rename::removeFromHistory(InstSeqNum inst_seq_num, ThreadID tid)
             }
         }
 
-        if (entry.prevPhysReg->classValue()== FloatRegClass) {
-           ++stats.fpReturned;
+        if (entry.prevPhysReg->classValue() == FloatRegClass) {
+            ++stats.fpReturned;
         }
-        if (entry.prevPhysReg->classValue()== IntRegClass) {
-           ++stats.intReturned;
+        if (entry.prevPhysReg->classValue() == IntRegClass) {
+            ++stats.intReturned;
         }
-
 
         ++stats.committedMaps;
 

@@ -87,7 +87,7 @@ TLB::Table::findEntry(const KeyType &key) const
 
     if (const auto *in_place = indexingPolicy->possibleEntriesInPlace(key)) {
         for (auto candidate : *in_place) {
-            auto entry = static_cast<TlbEntry*>(candidate);
+            auto entry = static_cast<TlbEntry *>(candidate);
             if (matches(entry)) {
                 return prev = entry;
             }
@@ -96,7 +96,7 @@ TLB::Table::findEntry(const KeyType &key) const
     }
 
     for (auto candidate : indexingPolicy->getPossibleEntries(key)) {
-        auto entry = static_cast<TlbEntry*>(candidate);
+        auto entry = static_cast<TlbEntry *>(candidate);
         if (matches(entry)) {
             return prev = entry;
         }

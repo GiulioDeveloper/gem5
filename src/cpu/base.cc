@@ -1098,10 +1098,8 @@ BaseCPU::CommitCPUStats::CommitCPUStats(statistics::Group *parent,
     }
 }
 
-
 void
-BaseCPU::
-CommitCPUStats::updateComCtrlStats(const StaticInstPtr &staticInst)
+BaseCPU::CommitCPUStats::updateComCtrlStats(const StaticInstPtr &staticInst)
 {
     /* Add a count for every control instruction type */
     if (staticInst->isControl()) {

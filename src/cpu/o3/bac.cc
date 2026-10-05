@@ -642,8 +642,9 @@ BAC::generateFetchTargets(ThreadID tid, bool &status_change)
         // advance the PC to start the search at the following address.
         // As the current BPU implementation requires the static
         // instruction, the search also returns it from the BTB.
-        bool branch_found = bpu->BTBFindFirstBranch(tid, start_addr,
-                fetchTargetWidth, minInstSize, search_addr, staticInst);
+        bool branch_found =
+            bpu->BTBFindFirstBranch(tid, start_addr, fetchTargetWidth,
+                                    minInstSize, search_addr, staticInst);
 
         // Update the current PC to point to the last instruction
         // in the fetch target

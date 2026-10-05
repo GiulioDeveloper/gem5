@@ -393,7 +393,11 @@ class LSQ
         // References rather than copies: a RequestPtr copy is an atomic
         // reference-count increment and decrement, and these are called
         // several times per memory access.
-        const RequestPtr &req(int idx = 0) const { return _reqs.at(idx); }
+        const RequestPtr &
+        req(int idx = 0) const
+        {
+            return _reqs.at(idx);
+        }
 
         Addr getVaddr(int idx = 0) const { return req(idx)->getVaddr(); }
         virtual void initiateTranslation() = 0;

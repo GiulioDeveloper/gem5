@@ -219,7 +219,7 @@ class AssociativeCache : public Named
         if (const auto *in_place =
                 indexingPolicy->possibleEntriesInPlace(key)) {
             for (auto candidate : *in_place) {
-                Entry *entry = static_cast<Entry*>(candidate);
+                Entry *entry = static_cast<Entry *>(candidate);
                 if (entry->match(key)) {
                     return entry;
                 }
@@ -248,13 +248,13 @@ class AssociativeCache : public Named
     findVictim(const KeyType &key)
     {
         const auto *candidates = indexingPolicy->possibleEntriesInPlace(key);
-        std::vector<ReplaceableEntry*> copy;
+        std::vector<ReplaceableEntry *> copy;
         if (!candidates) {
             copy = indexingPolicy->getPossibleEntries(key);
             candidates = &copy;
         }
 
-        auto victim = static_cast<Entry*>(replPolicy->getVictim(*candidates));
+        auto victim = static_cast<Entry *>(replPolicy->getVictim(*candidates));
 
         if (debugFlag && debugFlag->tracing() && victim->isValid()) {
             ::gem5::trace::getDebugLogger()->dprintf_flag(

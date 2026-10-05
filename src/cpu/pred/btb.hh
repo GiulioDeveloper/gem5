@@ -106,7 +106,7 @@ class BranchTargetBuffer : public ClockedObject
     findFirstBranch(ThreadID tid, Addr start, Addr width, Addr step,
                     Addr &addr, StaticInstPtr &inst)
     {
-        for (addr = start; ; addr += step) {
+        for (addr = start;; addr += step) {
             if (valid(tid, addr)) {
                 inst = getInst(tid, addr);
                 return true;
@@ -116,7 +116,6 @@ class BranchTargetBuffer : public ClockedObject
             }
         }
     }
-
 
     /** Updates the BTB with the target of a branch.
      *  @param inst_pc The address of the branch being updated.

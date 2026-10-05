@@ -1091,9 +1091,9 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
         // make_shared allocates the Request and its reference count
         // together, instead of in two allocations.
         auto req = std::make_shared<Request>(
-                addr, size-inactive_tail_size, _flags, _inst->requestorId(),
-                _inst->pcState().instAddr(), _inst->contextId(),
-                std::move(_amo_op));
+            addr, size - inactive_tail_size, _flags, _inst->requestorId(),
+            _inst->pcState().instAddr(), _inst->contextId(),
+            std::move(_amo_op));
 
         req->setByteEnable(
                 std::vector<bool>(byte_enable.begin(),
@@ -1103,8 +1103,7 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
         if (_flags.isSet(Request::NO_ACCESS)) {
             req->setLocalAccessor(
                 [this, req = req.get()](gem5::ThreadContext *tc,
-                                        PacketPtr pkt) -> Cycles
-                {
+                                        PacketPtr pkt) -> Cycles {
                     if ((req->isHTMStart() || req->isHTMCommit())) {
                         auto& inst = this->instruction();
                         assert(inst->inHtmTransactionalState());
@@ -1112,8 +1111,7 @@ LSQ::LSQRequest::addReq(Addr addr, unsigned size,
                             inst->getHtmTransactionUid());
                     }
                     return Cycles(1);
-                }
-            );
+                });
         }
 
         _reqs.push_back(std::move(req));

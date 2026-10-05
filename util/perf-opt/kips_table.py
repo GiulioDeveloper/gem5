@@ -40,17 +40,26 @@ def rows(trial, prev_dirs, base_dirs, exclude=frozenset(), ident_dir=None):
     out = []
     # Walk the reference's checkpoints, not the trial's: a checkpoint that
     # produced no stats must show up (and fail) rather than silently vanish.
-    cids = sorted(set(stats_gate.trial_checkpoints(ident)) |
-                  set(stats_gate.trial_checkpoints(trial)))
+    cids = sorted(
+        set(stats_gate.trial_checkpoints(ident))
+        | set(stats_gate.trial_checkpoints(trial))
+    )
     for cid in cids:
         prev = _mean_kips(prev_dirs, cid)
         base = _mean_kips(base_dirs, cid)
         if not (Path(trial) / cid / "stats.txt").exists():
-            out.append({
-                "cid": cid, "prev": prev, "new": None, "change_pct": None,
-                "direction": "MISSING", "vs_base_pct": None,
-                "noise_pct": None, "identical": False,
-            })
+            out.append(
+                {
+                    "cid": cid,
+                    "prev": prev,
+                    "new": None,
+                    "change_pct": None,
+                    "direction": "MISSING",
+                    "vs_base_pct": None,
+                    "noise_pct": None,
+                    "identical": False,
+                }
+            )
             continue
         new = kips(Path(trial) / cid / "stats.txt")
         noise = None
@@ -71,11 +80,18 @@ def rows(trial, prev_dirs, base_dirs, exclude=frozenset(), ident_dir=None):
             stats_gate.load(Path(trial) / cid / "stats.txt"),
             exclude,
         )
-        out.append({
-            "cid": cid, "prev": prev, "new": new, "change_pct": change,
-            "direction": direction, "vs_base_pct": 100.0 * (new / base - 1.0),
-            "noise_pct": noise, "identical": identical,
-        })
+        out.append(
+            {
+                "cid": cid,
+                "prev": prev,
+                "new": new,
+                "change_pct": change,
+                "direction": direction,
+                "vs_base_pct": 100.0 * (new / base - 1.0),
+                "noise_pct": noise,
+                "identical": identical,
+            }
+        )
     return out
 
 
@@ -84,14 +100,18 @@ def verdict(table_rows):
     need = n // 2 + 1
     missing = sum(1 for r in table_rows if r["new"] is None)
     identical = sum(1 for r in table_rows if r["identical"])
-    faster = sum(1 for r in table_rows
-                 if r["new"] is not None and r["new"] > r["prev"])
+    faster = sum(
+        1 for r in table_rows if r["new"] is not None and r["new"] > r["prev"]
+    )
     if missing:
         return False, f"stats missing on {missing}/{n}"
     if identical < n:
         return False, f"stats identical on only {identical}/{n}"
     if faster < need:
-        return False, f"stats identical on {n}/{n}, but faster on only {faster}/{n}"
+        return (
+            False,
+            f"stats identical on {n}/{n}, but faster on only {faster}/{n}",
+        )
     return True, f"stats identical on {n}/{n}; faster on {faster}/{n}"
 
 
@@ -103,8 +123,10 @@ def markdown(table_rows):
     ]
     for r in table_rows:
         if r["new"] is None:
-            lines.append(f"| {r['cid']} | {r['prev']:.1f} | — | — | MISSING "
-                         f"| — | — | NO |")
+            lines.append(
+                f"| {r['cid']} | {r['prev']:.1f} | — | — | MISSING "
+                f"| — | — | NO |"
+            )
             continue
         noise = "n/a" if r["noise_pct"] is None else f"{r['noise_pct']:.2f}%"
         lines.append(
@@ -117,16 +139,22 @@ def markdown(table_rows):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawTextHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     ap.add_argument("--trial", required=True)
     ap.add_argument("--prev", action="append", required=True)
     ap.add_argument("--base", action="append", required=True)
     ap.add_argument("--ident", default=None)
     ap.add_argument("--exclude", default=None)
     args = ap.parse_args()
-    table = rows(args.trial, args.prev, args.base,
-                 stats_gate.load_exclusions(args.exclude), args.ident)
+    table = rows(
+        args.trial,
+        args.prev,
+        args.base,
+        stats_gate.load_exclusions(args.exclude),
+        args.ident,
+    )
     print(markdown(table))
     ok, reason = verdict(table)
     print(f"\nSuggested verdict: {'ACCEPT' if ok else 'REJECT'} ({reason})")

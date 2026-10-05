@@ -113,8 +113,9 @@ def gate(base_dir, cand_dir, exclude):
 
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__,
-                                 formatter_class=argparse.RawTextHelpFormatter)
+    ap = argparse.ArgumentParser(
+        description=__doc__, formatter_class=argparse.RawTextHelpFormatter
+    )
     sub = ap.add_subparsers(dest="cmd", required=True)
     g = sub.add_parser("gate")
     g.add_argument("base")
@@ -126,13 +127,18 @@ def main():
     args = ap.parse_args()
 
     if args.cmd == "gate":
-        sys.exit(0 if gate(args.base, args.cand,
-                           load_exclusions(args.exclude)) else 1)
+        sys.exit(
+            0
+            if gate(args.base, args.cand, load_exclusions(args.exclude))
+            else 1
+        )
 
     union = set()
     for cid in trial_checkpoints(args.a):
-        names = differing_names(load(Path(args.a) / cid / "stats.txt"),
-                                load(Path(args.b) / cid / "stats.txt"))
+        names = differing_names(
+            load(Path(args.a) / cid / "stats.txt"),
+            load(Path(args.b) / cid / "stats.txt"),
+        )
         print(f"{cid}: {len(names)} differing stat(s)")
         for name in sorted(names):
             print(f"    {name}")

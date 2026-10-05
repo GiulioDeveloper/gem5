@@ -94,7 +94,7 @@ class TaggedSetAssociative : public TaggedIndexingPolicy
         return sets[extractSet(key)];
     }
 
-    const std::vector<ReplaceableEntry*> *
+    const std::vector<ReplaceableEntry *> *
     possibleEntriesInPlace(const KeyType &key) const override
     {
         return &sets[extractSet(key)];

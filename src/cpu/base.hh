@@ -891,7 +891,6 @@ class BaseCPU : public ClockedObject
         statistics::Scalar numCallsReturns;
 
         void updateComCtrlStats(const StaticInstPtr &staticInst);
-
     };
 
     std::vector<std::unique_ptr<FetchCPUStats>> fetchStats;

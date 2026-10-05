@@ -168,8 +168,9 @@ class RefCountingPtr
     void
     del()
     {
-        if (data && data->decref())
+        if (data && data->decref()) {
             destroy(data);
+        }
     }
 
     /**

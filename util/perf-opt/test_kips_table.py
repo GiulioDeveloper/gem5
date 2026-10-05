@@ -1,4 +1,5 @@
 """Tests for kips_table.py (run: python3 -m unittest -v in util/perf-opt)."""
+
 import tempfile
 import unittest
 from pathlib import Path
@@ -29,7 +30,9 @@ class KipsTest(unittest.TestCase):
     def test_reads_host_inst_rate_as_kips(self):
         with tempfile.TemporaryDirectory() as tmp:
             t = make_trial(tmp, "t", {"c": (289332, 1)})
-            self.assertAlmostEqual(kips_table.kips(t / "c" / "stats.txt"), 289.332)
+            self.assertAlmostEqual(
+                kips_table.kips(t / "c" / "stats.txt"), 289.332
+            )
 
     def test_missing_rate_raises(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -50,7 +53,9 @@ class RowsTest(unittest.TestCase):
         self.tmp.cleanup()
 
     def rows(self, rate, cycles=500):
-        t = make_trial(self.tmp.name, f"t{rate}-{cycles}", {"c": (rate, cycles)})
+        t = make_trial(
+            self.tmp.name, f"t{rate}-{cycles}", {"c": (rate, cycles)}
+        )
         return kips_table.rows(t, [self.a, self.b], [self.a, self.b])
 
     def test_faster_row(self):
@@ -78,8 +83,9 @@ class RowsTest(unittest.TestCase):
     def test_identity_reference_can_differ_from_kips_baseline(self):
         ref = make_trial(self.tmp.name, "ident-ref", {"c": (100000, 501)})
         t = make_trial(self.tmp.name, "t-ident", {"c": (110000, 501)})
-        (r,) = kips_table.rows(t, [self.a, self.b], [self.a, self.b],
-                               ident_dir=ref)
+        (r,) = kips_table.rows(
+            t, [self.a, self.b], [self.a, self.b], ident_dir=ref
+        )
         self.assertTrue(r["identical"])
         self.assertAlmostEqual(r["vs_base_pct"], 100 * (110 / 101 - 1))
 
@@ -92,15 +98,21 @@ class PartialTrialTest(unittest.TestCase):
             b = make_trial(tmp, "base-b", ids)
             # A trial where only 3 of the 5 checkpoints produced stats, all
             # faster and identical: it must not pass as "3/3".
-            t = make_trial(tmp, "partial",
-                           {f"c{i}": (120000, 500) for i in range(3)})
+            t = make_trial(
+                tmp, "partial", {f"c{i}": (120000, 500) for i in range(3)}
+            )
             table = kips_table.rows(t, [a, b], [a, b])
-            self.assertEqual([r["cid"] for r in table],
-                             ["c0", "c1", "c2", "c3", "c4"])
+            self.assertEqual(
+                [r["cid"] for r in table], ["c0", "c1", "c2", "c3", "c4"]
+            )
             missing = [r for r in table if r["new"] is None]
             self.assertEqual(len(missing), 2)
-            self.assertTrue(all(r["direction"] == "MISSING" and
-                                not r["identical"] for r in missing))
+            self.assertTrue(
+                all(
+                    r["direction"] == "MISSING" and not r["identical"]
+                    for r in missing
+                )
+            )
             ok, reason = kips_table.verdict(table)
             self.assertFalse(ok)
             self.assertIn("missing on 2/5", reason)
@@ -108,18 +120,26 @@ class PartialTrialTest(unittest.TestCase):
 
 
 def row(faster, identical=True):
-    return {"cid": "x", "new": 2.0 if faster else 0.5, "prev": 1.0,
-            "identical": identical}
+    return {
+        "cid": "x",
+        "new": 2.0 if faster else 0.5,
+        "prev": 1.0,
+        "identical": identical,
+    }
 
 
 class VerdictTest(unittest.TestCase):
     def test_majority_faster_and_identical_is_accepted(self):
-        ok, reason = kips_table.verdict([row(1), row(1), row(1), row(0), row(0)])
+        ok, reason = kips_table.verdict(
+            [row(1), row(1), row(1), row(0), row(0)]
+        )
         self.assertTrue(ok)
         self.assertIn("faster on 3/5", reason)
 
     def test_minority_faster_is_rejected(self):
-        ok, reason = kips_table.verdict([row(1), row(1), row(0), row(0), row(0)])
+        ok, reason = kips_table.verdict(
+            [row(1), row(1), row(0), row(0), row(0)]
+        )
         self.assertFalse(ok)
         self.assertIn("faster on only 2/5", reason)
 
@@ -132,13 +152,27 @@ class VerdictTest(unittest.TestCase):
 
 class MarkdownTest(unittest.TestCase):
     def test_has_header_and_one_line_per_checkpoint(self):
-        rows = [{"cid": "a.0.1", "prev": 100.0, "new": 110.0, "change_pct": 10.0,
-                 "direction": "faster", "vs_base_pct": 10.0, "noise_pct": 1.0,
-                 "identical": True}]
+        rows = [
+            {
+                "cid": "a.0.1",
+                "prev": 100.0,
+                "new": 110.0,
+                "change_pct": 10.0,
+                "direction": "faster",
+                "vs_base_pct": 10.0,
+                "noise_pct": 1.0,
+                "identical": True,
+            }
+        ]
         md = kips_table.markdown(rows).splitlines()
-        self.assertTrue(md[0].startswith("| Checkpoint | Previous KIPS | New KIPS"))
+        self.assertTrue(
+            md[0].startswith("| Checkpoint | Previous KIPS | New KIPS")
+        )
         self.assertEqual(len(md), 3)
-        self.assertIn("| a.0.1 | 100.0 | 110.0 | +10.00% | faster | +10.00% | 1.00% | yes |", md[2])
+        self.assertIn(
+            "| a.0.1 | 100.0 | 110.0 | +10.00% | faster | +10.00% | 1.00% | yes |",
+            md[2],
+        )
 
 
 if __name__ == "__main__":

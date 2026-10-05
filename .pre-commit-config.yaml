@@ -46,7 +46,8 @@ exclude: |
       src/systemc/ext/.*|
       src/systemc/tests/.*/.*|
       src/python/m5/ext/pyfdt/.*|
-      tests/.*/ref/.*
+      tests/.*/ref/.*|
+      docs/perf-opt/patches/.*
     )$
 
 default_stages: [pre-commit]

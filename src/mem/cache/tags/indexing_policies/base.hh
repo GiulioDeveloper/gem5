@@ -204,7 +204,7 @@ class IndexingPolicyTemplate : public SimObject
      * @param key The key to find possible entries for.
      * @return The possible entries, or nullptr.
      */
-    virtual const std::vector<ReplaceableEntry*> *
+    virtual const std::vector<ReplaceableEntry *> *
     possibleEntriesInPlace(const KeyType &key) const
     {
         return nullptr;

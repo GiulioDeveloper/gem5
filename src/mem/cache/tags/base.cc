@@ -87,7 +87,7 @@ BaseTags::findBlock(const CacheBlk::KeyType &key) const
     if (const auto *entries = indexingPolicy->possibleEntriesInPlace(key)) {
         const Addr tag = indexingPolicy->extractTag(key.address);
         for (const auto &location : *entries) {
-            CacheBlk* blk = static_cast<CacheBlk*>(location);
+            CacheBlk *blk = static_cast<CacheBlk *>(location);
             if (blk->matchTag(tag, key.secure)) {
                 return blk;
             }

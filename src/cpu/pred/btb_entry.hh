@@ -105,7 +105,7 @@ class BTBSetAssociative : public BTBIndexingPolicy
         return possibleEntries(key);
     }
 
-    const std::vector<ReplaceableEntry*> *
+    const std::vector<ReplaceableEntry *> *
     possibleEntriesInPlace(const KeyType &key) const override
     {
         return &possibleEntries(key);
@@ -115,7 +115,7 @@ class BTBSetAssociative : public BTBIndexingPolicy
      * The same entries as getPossibleEntries(), in the same order, without
      * copying them.
      */
-    const std::vector<ReplaceableEntry*> &
+    const std::vector<ReplaceableEntry *> &
     possibleEntries(const KeyType &key) const
     {
         auto set_idx = extractSet(key);
@@ -126,13 +126,25 @@ class BTBSetAssociative : public BTBIndexingPolicy
     }
 
     /** The set an address maps to (the index of possibleEntries()). */
-    uint32_t setIndex(const KeyType &key) const { return extractSet(key); }
+    uint32_t
+    setIndex(const KeyType &key) const
+    {
+        return extractSet(key);
+    }
 
     /** The number of ways per set. */
-    unsigned getAssoc() const { return assoc; }
+    unsigned
+    getAssoc() const
+    {
+        return assoc;
+    }
 
     /** The mask applied to tags; its width is the tag_bits parameter. */
-    uint64_t getTagMask() const { return tagMask; }
+    uint64_t
+    getTagMask() const
+    {
+        return tagMask;
+    }
 
     /**
      * Set number of threads sharing the BTB
