@@ -22,9 +22,10 @@ Garfield-related code.
 gem5 uses **SCons**. Builds are parameterized by a config name that selects ISA(s) and the Ruby
 coherence protocol at *compile time* — there is no runtime ISA/protocol switching.
 
-> **On this host, build via `./build-gem5.sh`** — a bare `scons` fails on the Anaconda/system
-> library clash. See **Host build environment (Anaconda)** at the end of this section for the why,
-> the knobs, and the cluster override. The `scons` commands below are the upstream reference.
+> **On hosts without Anaconda (e.g. gferraro's workstation), a bare `scons` works** with the system
+> Python and protobuf. Only hosts that run with the Anaconda base env active (the original dev host
+> and the cluster) need `./build-gem5.sh`. See **Host build environment (Anaconda)** at the end of
+> this section.
 
 ```sh
 scons build/ALL/gem5.opt -j$(nproc)     # all ISAs, optimized binary (most common dev build)
@@ -49,9 +50,11 @@ scons build/RISCV/gem5.debug            # RISC-V, debug build
 
 ### Host build environment (Anaconda)
 
-This machine builds with the **Anaconda base env active**, which collides with the system dev
-libraries. `build-gem5.sh` pins the toolchain to Anaconda consistently. The underlying issues and
-their committed fixes (useful if the toolchain ever changes or a build breaks):
+**Only relevant on hosts that build with the Anaconda base env active** (the original dev host and
+the cluster). Anaconda collides with the system dev libraries there, and `build-gem5.sh` pins the
+toolchain to Anaconda consistently. Hosts without Anaconda (no `~/anaconda3`) just run `scons`
+directly; `build-gem5.sh` detects this and falls back to the system toolchain. The underlying
+issues and their committed fixes (useful if the toolchain ever changes or a build breaks):
 
 - **Embedded Python** — gem5 links Anaconda's `libpython3.13.so.1.0`, which lives only in
   `~/anaconda3/lib` and is built without an rpath. It must be on the loader path at *build* time

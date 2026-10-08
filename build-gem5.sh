@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Build gem5 with this host's Anaconda toolchain.
+# Build gem5, pinning the toolchain to Anaconda when it is present.
 #
-# This host runs with the Anaconda base env active, which collides with the
+# Hosts without Anaconda fall back to a plain scons build with the system
+# toolchain (no wrapper needed). Hosts that run with the Anaconda base env active, which collides with the
 # system development libraries. This wrapper pins gem5's toolchain to Anaconda
 # consistently: the embedded Python, and protobuf (5.29.3) + abseil. See
 # CLAUDE.md for the full rationale.
@@ -24,20 +25,19 @@
 set -euo pipefail
 
 ANACONDA="${ANACONDA:-/home/rahbera/anaconda3}"
-if [ ! -x "${ANACONDA}/bin/protoc" ]; then
-    echo "error: no protoc under ANACONDA=${ANACONDA}" >&2
-    echo "       set ANACONDA=/path/to/anaconda3 for this host" >&2
-    exit 1
-fi
-
+if [ -x "${ANACONDA}/bin/protoc" ]; then
 # libpython/libprotobuf/abseil live here. Needed at build time (configure links
 # a small test binary, and protoc/headers must come from here). The built
 # binary embeds an rpath to this dir, so it is not needed to *run* gem5.
-export LD_LIBRARY_PATH="${ANACONDA}/lib:${LD_LIBRARY_PATH:-}"
-# Resolve protobuf (and other pkg-config deps) from Anaconda so the headers
-# match Anaconda's protoc; this avoids the stale /usr/local protobuf 3.3.0.
-export PKG_CONFIG_PATH="${ANACONDA}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
-export PROTOC="${ANACONDA}/bin/protoc"
+    export LD_LIBRARY_PATH="${ANACONDA}/lib:${LD_LIBRARY_PATH:-}"
+    # Resolve protobuf (and other pkg-config deps) from Anaconda so the
+    # headers match Anaconda's protoc; this avoids the stale /usr/local
+    # protobuf 3.3.0.
+    export PKG_CONFIG_PATH="${ANACONDA}/lib/pkgconfig:${PKG_CONFIG_PATH:-}"
+    export PROTOC="${ANACONDA}/bin/protoc"
+else
+    echo ">> No Anaconda at ANACONDA=${ANACONDA}; using the system toolchain."
+fi
 
 TARGET="${1:-build/X86/gem5.opt}"
 [ $# -gt 0 ] && shift

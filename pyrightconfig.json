@@ -1,0 +1,9 @@
+{
+    "include": ["src/python", "configs", "tests", "util"],
+    "extraPaths": ["src/python", "ext", "tests"],
+    "typeCheckingMode": "basic",
+    "reportMissingImports": "warning",
+    "reportAttributeAccessIssue": "none",
+    "reportWildcardImportFromLibrary": "none",
+    "reportUndefinedVariable": "warning"
+}

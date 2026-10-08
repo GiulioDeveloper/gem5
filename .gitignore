@@ -2,6 +2,7 @@ MODULE.bazel.lock
 bazel-*
 build
 gem5_build
+gem5-ckpts
 parser.out
 parsetab.py
 cscope.files

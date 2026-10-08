@@ -1,0 +1,20 @@
+{
+    "lsp": {
+        "basedpyright": {
+            "settings": {
+                "basedpyright.analysis": {
+                    "typeCheckingMode": "basic",
+                    "diagnosticMode": "openFilesOnly"
+                }
+            }
+        },
+        "clangd": {
+            "binary": {
+                "arguments": [
+                    "--compile-commands-dir=build/ARM",
+                    "--background-index"
+                ]
+            }
+        }
+    }
+}
