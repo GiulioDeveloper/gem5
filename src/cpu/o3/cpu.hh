@@ -640,10 +640,11 @@ class CPU : public BaseCPU
         statistics::Scalar timesIdled;
         /** Stat for total number of cycles the CPU spends descheduled. */
         statistics::Scalar idleCycles;
-        statistics::Scalar tdaCycles;
         /** Stat for total number of cycles the CPU spends descheduled due to a
          * quiesce operation or waiting for an interrupt. */
         statistics::Scalar quiesceCycles;
+        /** Cycles counted by the top-down analysis. */
+        statistics::Scalar tdaCycles;
 
         statistics::Scalar fetched;
         statistics::Scalar decoded;

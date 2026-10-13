@@ -41,6 +41,8 @@
 
 #include "cpu/o3/rename.hh"
 
+#include <algorithm>
+
 #include <list>
 #include <optional>
 
@@ -705,7 +707,9 @@ Rename::renameInsts(ThreadID tid)
                         tid);
                 source = SQ;
                 incrFullStat(source);
-                if (iew_ptr->fuPool->isDrained()) {
+                if (std::all_of(iew_ptr->fuPools.begin(),
+                                iew_ptr->fuPools.end(),
+                                [](FUPool *p) { return p->isDrained(); })) {
                     stats.storeStalls++;
                 }
                 break;

@@ -1100,7 +1100,13 @@ InstructionQueue::scheduleReadyInsts()
         DPRINTF(IQ, "Not able to schedule any instructions.\n");
     }
 
-    int numBusyFUs = fuPool->numBusyFUs();
+    // Top-down counts span every IQ unit's FU pool.
+    int numBusyFUs = 0;
+    bool fus_drained = true;
+    for (FUPool *pool : allFUPools()) {
+        numBusyFUs += pool->numBusyFUs();
+        fus_drained = fus_drained && pool->isDrained();
+    }
 
     if (numBusyFUs == 0) {
         iqStats.numInstsExec0++;
@@ -1110,7 +1116,7 @@ InstructionQueue::scheduleReadyInsts()
         iqStats.numInstsExec2++;
     }
 
-    if (fuPool->isDrained() && iewStage->ldstQueue.numLoads()) {
+    if (fus_drained && iewStage->ldstQueue.numLoads()) {
         iqStats.loadStallCycles++;
         if (iewStage->ldstQueue.anyCacheLevelMisses(3)) {
             iqStats.L1miss++;

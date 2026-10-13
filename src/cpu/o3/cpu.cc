@@ -356,6 +356,8 @@ CPU::CPUStats::CPUStats(CPU *cpu)
       ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
                "Total number of cycles that CPU has spent quiesced or waiting "
                "for an interrupt"),
+      ADD_STAT(tdaCycles, statistics::units::Cycle::get(),
+               "Cycles counted by the top-down analysis"),
       topDownStats(cpu, &cpu->fetch, &cpu->rename, &cpu->decode, &cpu->iew,
                    &cpu->commit)
 {
@@ -378,6 +380,7 @@ CPU::tick()
     assert(drainState() != DrainState::Drained);
 
     ++baseStats.numCycles;
+    ++cpuStats.tdaCycles;
     updateCycleCounters(BaseCPU::CPU_STATE_ON);
 
 //    activity = false;
