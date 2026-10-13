@@ -49,6 +49,7 @@
 #include "cpu/o3/dyn_inst.hh"
 #include "cpu/o3/limits.hh"
 #include "cpu/o3/mem_rename_predictor.hh"
+#include "cpu/o3/tdm.hh"
 #include "cpu/o3/thread_context.hh"
 #include "cpu/o3/vp/base.hh"
 #include "cpu/simple_thread.hh"
@@ -115,6 +116,7 @@ CPU::CPU(const BaseO3CPUParams &params)
       globalFTSeqNum(1),
       system(params.system),
       lastRunningCycle(curCycle()),
+      subtractIdleCycles(params.subtractIdleCycles),
       cpuStats(this)
 {
     fatal_if(FullSystem && params.numThreads > 1,
@@ -353,7 +355,9 @@ CPU::CPUStats::CPUStats(CPU *cpu)
                "to idling"),
       ADD_STAT(quiesceCycles, statistics::units::Cycle::get(),
                "Total number of cycles that CPU has spent quiesced or waiting "
-               "for an interrupt")
+               "for an interrupt"),
+      topDownStats(cpu, &cpu->fetch, &cpu->rename, &cpu->decode, &cpu->iew,
+                   &cpu->commit)
 {
     // Register any of the O3CPU's stats here.
     timesIdled
@@ -1401,6 +1405,10 @@ CPU::wakeCPU()
         --cycles;
         cpuStats.idleCycles += cycles;
         baseStats.numCycles += cycles;
+        if (!subtractIdleCycles) {
+            cpuStats.tdaCycles += cycles;
+        }
+        rename.addIdleCycles(cycles);
     }
 
     schedule(tickEvent, clockEdge());

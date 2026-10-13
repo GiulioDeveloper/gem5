@@ -555,7 +555,16 @@ class Commit
          *  optimized by either technique. */
         statistics::Scalar committedVpPredicted;
         statistics::Scalar committedMrned;
+        /** Top Down Methodology, Number of commited instructions*/
+        statistics::Scalar committedInst;
     } stats;
+
+  public:
+    const CommitStats &
+    getStats() const
+    {
+        return stats;
+    }
 };
 
 } // namespace o3
