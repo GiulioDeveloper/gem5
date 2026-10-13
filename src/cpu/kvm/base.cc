@@ -815,6 +815,7 @@ BaseKvmCPU::kvmRun(Tick ticks)
         commitStats[tid]->numInsts += instsExecuted;
         if (in_user_mode) {
             commitStats[tid]->numUserInsts += instsExecuted;
+            countUserInsts(instsExecuted);
         }
 
         DPRINTF(KvmRun,

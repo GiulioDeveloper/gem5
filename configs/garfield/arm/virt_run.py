@@ -67,6 +67,7 @@ from garfield.arm import (
     cache_hierarchy,
     neoverse_v2,
     sim_opts,
+    task_trace,
 )
 
 from gem5.components.boards.arm_board import ArmBoard
@@ -175,6 +176,17 @@ def parse_args():
                              "windows are affordable; exit at "
                              "--atomic-max-insts committed instructions.")
     parser.add_argument("--atomic-max-insts", type=int, default=int(30e9))
+    parser.add_argument("--stats-interval-insts", type=int, default=0,
+                        help="Dump and reset stats every N committed "
+                             "instructions of the detailed region, so "
+                             "stats.txt holds one block per interval "
+                             "(0: one dump for the whole region).")
+    parser.add_argument("--tail-insts", type=int, default=0,
+                        help="After the detailed region, switch back to the "
+                             "ATOMIC core and run this many more "
+                             "instructions (no stats). With --task-trace, "
+                             "collects events that complete after the "
+                             "region, e.g. a tool call it cut in half.")
     # --- shared knobs (machine / prefetcher / garfield), same as
     # fs_run.py and se_run.py -------------------------------------------
     sim_opts.add_common_args(
@@ -182,6 +194,7 @@ def parse_args():
         mem_size_default="16GiB",
         mem_size_help="Guest DRAM size (must cover the snapshot's RAM).",
     )
+    task_trace.add_args(parser)
     return parser.parse_args()
 
 
@@ -392,11 +405,15 @@ if args.gen_ref:
 
 processor.prime_switch_core_active()
 
+trace_banner = task_trace.attach(board, args) if args.task_trace else []
+
 print("=== garfield QEMU-virt detailed restore (Track B) ===")
 print(f"  core     : NeoverseV2 (ArmO3CPU) restore @ {args.clk_freq}")
 for line in sim_opts.describe(args):
     print(line)
 print(f"  restore  : {args.restore_dir}")
+for line in trace_banner:
+    print(line)
 if args.atomic_only:
     print(f"  region   : ATOMIC-only max-insts={args.atomic_max_insts:,} "
           "(no switch, no detailed)")
@@ -404,6 +421,9 @@ else:
     print(
         f"  region   : settle={max(1, args.settle_insts):,} "
         f"warmup={args.warmup_insts:,} detailed={args.detailed_insts:,}"
+        + (f" stats-every={args.stats_interval_insts:,}"
+           if args.stats_interval_insts > 0 else "")
+        + (f" tail={args.tail_insts:,}" if args.tail_insts > 0 else "")
     )
 
 
@@ -458,11 +478,39 @@ print(f">>> Neoverse V2 detailed {args.detailed_insts:,} insts (measured) ...")
 m5.stats.reset()
 insts0 = detailed_core.get_total_instructions()
 tick0 = m5.curTick()
-simulator.schedule_max_insts(args.detailed_insts)
-simulator.run()
+if args.stats_interval_insts > 0:
+    # One stats block per interval: run N instructions, dump, reset.
+    # intervals.csv gives each block's absolute tick range and its range of
+    # the global committed-instruction count (all cores since the restore,
+    # the same count --task-trace stamps on its events), so stats blocks
+    # and trace events can be joined.
+    def _global_insts():
+        return sum(core.get_total_instructions()
+                   for cores in processor._switchable_cores.values()
+                   for core in cores)
+
+    with open(Path(m5.options.outdir) / "intervals.csv", "w") as f:
+        f.write("block,tick_start,tick_end,insts_start,insts_end\n")
+        done = 0
+        block = 0
+        while done < args.detailed_insts:
+            n = min(args.stats_interval_insts, args.detailed_insts - done)
+            t0, g0 = m5.curTick(), _global_insts()
+            simulator.schedule_max_insts(n)
+            simulator.run()
+            m5.stats.dump()
+            m5.stats.reset()
+            f.write(f"{block},{t0},{m5.curTick()},{g0},{_global_insts()}\n")
+            f.flush()   # readable while the run is still going
+            done += n
+            block += 1
+else:
+    simulator.schedule_max_insts(args.detailed_insts)
+    simulator.run()
 tick1 = m5.curTick()
 insts1 = detailed_core.get_total_instructions()
-m5.stats.dump()
+if args.stats_interval_insts <= 0:
+    m5.stats.dump()
 
 
 # ---- best-effort summary from the just-dumped stats.txt --------------------
@@ -487,7 +535,8 @@ def _summarize():
                 break
 
 
-_summarize()
+if args.stats_interval_insts <= 0:
+    _summarize()
 
 region_insts = insts1 - insts0
 region_ticks = tick1 - tick0
@@ -502,3 +551,11 @@ print(f"Region insts       : {region_insts}")
 print(f"Region cycles      : {region_cycles:.0f}")
 print(f"IPC (measured)     : {ipc:.3f}")
 print("Full stats in m5out/stats.txt")
+
+if args.tail_insts > 0:
+    print(f">>> switch Neoverse V2 -> ATOMIC tail {args.tail_insts:,} insts "
+          "(unmeasured) ...")
+    simulator.switch_processor()
+    simulator.schedule_max_insts(args.tail_insts)
+    simulator.run()
+    print(f"Tail insts         : {args.tail_insts}")

@@ -84,6 +84,7 @@ from garfield.arm import (
     cache_hierarchy,
     neoverse_v2,
     sim_opts,
+    task_trace,
 )
 
 from gem5.components.boards.arm_board import ArmBoard
@@ -170,6 +171,14 @@ def parse_args():
         default=int(5e6),
         help="Neoverse V2 MEASURED insts (stats.reset .. stats.dump).",
     )
+    parser.add_argument(
+        "--stats-interval-insts",
+        type=int,
+        default=0,
+        help="Dump and reset stats every N committed instructions of the "
+        "detailed region, so stats.txt holds one block per interval "
+        "(0: one dump for the whole region).",
+    )
     # The machine / prefetcher / garfield knobs are shared with se_run.py.
     # The DRAM model is free on restore; only the SIZE must match.
     sim_opts.add_common_args(
@@ -178,6 +187,7 @@ def parse_args():
         mem_size_help="Guest RAM capacity. MUST match the checkpoint "
         "(mass-gen checkpoints are 16GiB).",
     )
+    task_trace.add_args(parser)
     return parser.parse_args()
 
 
@@ -374,6 +384,12 @@ board.set_kernel_disk_workload(
 # Prime the ATOMIC switch core active BEFORE instantiate (restore contract).
 processor.prime_switch_core_active()
 
+trace_banner = []
+if args.task_trace:
+    # task_trace reads the vmlinux for symbols and struct offsets.
+    args.kernel = kernel.get_local_path()
+    trace_banner = task_trace.attach(board, args)
+
 
 print("=== garfield ARM FS restore machine ===")
 print(
@@ -384,6 +400,8 @@ for line in sim_opts.describe(args):
     print(line)
 print(f"  workload : {args.benchmark} inv={args.inv}  ({binary})")
 print(f"  restore  : {args.restore_dir}")
+for line in trace_banner:
+    print(line)
 print(
     f"  region   : settle={max(1, args.settle_insts):,} "
     f"warmup={args.warmup_insts:,} detailed={args.detailed_insts:,}"
@@ -429,11 +447,39 @@ print(f">>> Neoverse V2 detailed {args.detailed_insts:,} insts (measured) ...")
 m5.stats.reset()
 insts0 = detailed_core.get_total_instructions()
 tick0 = m5.curTick()
-simulator.schedule_max_insts(args.detailed_insts)
-simulator.run()
+if args.stats_interval_insts > 0:
+    # One stats block per interval; intervals.csv gives each block's tick
+    # range and its range of the global committed-instruction count (all
+    # cores since the restore, the count --task-trace stamps on events).
+    def _global_insts():
+        return sum(
+            core.get_total_instructions()
+            for cores in processor._switchable_cores.values()
+            for core in cores
+        )
+
+    with open(Path(m5.options.outdir) / "intervals.csv", "w") as f:
+        f.write("block,tick_start,tick_end,insts_start,insts_end\n")
+        done = 0
+        block = 0
+        while done < args.detailed_insts:
+            n = min(args.stats_interval_insts, args.detailed_insts - done)
+            t0, g0 = m5.curTick(), _global_insts()
+            simulator.schedule_max_insts(n)
+            simulator.run()
+            m5.stats.dump()
+            m5.stats.reset()
+            f.write(f"{block},{t0},{m5.curTick()},{g0},{_global_insts()}\n")
+            f.flush()
+            done += n
+            block += 1
+else:
+    simulator.schedule_max_insts(args.detailed_insts)
+    simulator.run()
 tick1 = m5.curTick()
 insts1 = detailed_core.get_total_instructions()
-m5.stats.dump()
+if args.stats_interval_insts <= 0:
+    m5.stats.dump()
 
 
 # ---- best-effort summary from the just-dumped stats.txt --------------------
@@ -458,7 +504,8 @@ def _summarize():
                 break
 
 
-_summarize()
+if args.stats_interval_insts <= 0:
+    _summarize()
 
 region_insts = insts1 - insts0
 region_ticks = tick1 - tick0

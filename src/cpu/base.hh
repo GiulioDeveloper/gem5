@@ -624,6 +624,9 @@ class BaseCPU : public ClockedObject
   private:
     static std::vector<BaseCPU *> cpuList;   //!< Static global cpu list
 
+    /** Committed user-mode instructions, never reset (see userInsts()). */
+    Counter _userInsts = 0;
+
   public:
     void
     traceFunctions(Addr pc)
@@ -666,6 +669,29 @@ class BaseCPU : public ClockedObject
             return threadContexts[tid];
         }
         return nullptr;
+    }
+
+    /**
+     * Committed user-mode instructions of this CPU, counted on the same
+     * basis as totalInsts() (the O3 CPU leaves NOPs and instruction
+     * prefetches out of both; the commitStats numInsts and numUserInsts
+     * stats include them). Unlike those stats it is never reset, so
+     * differences between two points of a run are valid across stats
+     * resets, and totalInsts() - userInsts() is the kernel-mode count.
+     */
+    Counter userInsts() const { return _userInsts; }
+    void countUserInsts(Counter n = 1) { _userInsts += n; }
+
+    static Counter
+    totalNumSimulatedUserInsts()
+    {
+        Counter total = 0;
+
+        int size = cpuList.size();
+        for (int i = 0; i < size; ++i)
+            total += cpuList[i]->userInsts();
+
+        return total;
     }
 
     static Counter

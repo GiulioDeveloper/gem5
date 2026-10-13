@@ -297,11 +297,13 @@ class NeoverseMMU(ArmMMU):
         entry_type="instruction",
         size=48,
         assoc=12,
+        next_level=Parent.l2_shared
     )
     dtb = ArmTLB(
         entry_type="data",
         size=48,
         assoc=48,
+        next_level=Parent.l2_shared
     )
     l2_shared = ArmTLB(
         entry_type="unified", size=2048, assoc=8, partial_levels=["L2"]

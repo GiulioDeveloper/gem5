@@ -190,6 +190,7 @@ BaseSimpleCPU::countCommitInst()
         }
         if (in_user_mode) {
             commitStats[tid]->numUserInsts++;
+            countUserInsts();
         }
     }
 

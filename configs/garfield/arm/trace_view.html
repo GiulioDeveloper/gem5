@@ -1,0 +1,708 @@
+<title>Guest Task Schedule</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: a logic-analyser view. Summary strip, one control row, then a
+   full-width timeline (overview brush + tracks + one lane per process),
+   and the same data as tables underneath. */
+:root {
+  --bg: #f4f6f7;
+  --panel: #fdfdfd;
+  --ink: #13171b;
+  --ink-2: #4a535c;
+  --ink-3: #85909a;
+  --rule: #dfe3e7;
+  --grid: #e9ecef;
+  --focus: #2a78d6;
+  --tool: #4a3aa7;
+  --role-harness: #2a78d6;
+  --role-tool: #eb6834;
+  --role-daemon: #1baf7a;
+  --role-harness-child: #eda100;
+  --role-replay: #e87ba4;
+  --role-framework: #008300;
+  --role-other: #a7aeb5;
+  --role-kernel: #8a939c;
+  --role-idle: #d5dadf;
+  --role-unknown: #b9c0c7;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+    --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+    --tool: #9085e9;
+    --role-harness: #3987e5; --role-tool: #d95926; --role-daemon: #199e70;
+    --role-harness-child: #c98500; --role-replay: #d55181;
+    --role-framework: #008300; --role-other: #59626a;
+    --role-kernel: #6b747c; --role-idle: #30363b; --role-unknown: #4b535a;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+  --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+  --tool: #9085e9;
+  --role-harness: #3987e5; --role-tool: #d95926; --role-daemon: #199e70;
+  --role-harness-child: #c98500; --role-replay: #d55181;
+  --role-framework: #008300; --role-other: #59626a;
+  --role-kernel: #6b747c; --role-idle: #30363b; --role-unknown: #4b535a;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 14px; line-height: 1.45; padding-inline: 16px;
+  padding-block: 20px 40px;
+}
+.wrap { max-width: 1400px; margin-inline: auto; display: grid; gap: 18px; }
+header { display: grid; gap: 6px; }
+h1 {
+  font-family: var(--font-label); font-weight: 600; font-size: 22px;
+  letter-spacing: 0.01em; margin: 0; text-wrap: balance;
+}
+.sub { color: var(--ink-2); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+h2 {
+  font-family: var(--font-label); font-weight: 600; font-size: 13px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+  margin: 0;
+}
+.stats { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.stat { display: grid; gap: 0; min-width: 0; }
+.stat .k { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.stat .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+.legend .pct { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--rule); }
+.seg button:last-child { border-right: 0; }
+button, .file {
+  font: 500 13px var(--font-body); color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 5px 11px; cursor: pointer;
+}
+.seg button { border-radius: 0; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+button:focus-visible, .file:focus-within { outline: 2px solid var(--focus); outline-offset: 2px; }
+.file input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+.hint { color: var(--ink-3); font-size: 12px; }
+.viz { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 0 6px; position: relative; }
+.viz canvas { display: block; width: 100%; touch-action: none; }
+#overview { height: 44px; cursor: crosshair; }
+#main { cursor: grab; }
+#main.dragging { cursor: grabbing; }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; max-width: min(420px, calc(100vw - 32px));
+  background: var(--panel); color: var(--ink); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.4;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.14); overflow-wrap: anywhere;
+}
+.tip b { font-family: var(--font-label); font-size: 13px; font-weight: 600; }
+.tip .m { font-family: var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.tables { display: grid; align-items: start; grid-template-columns: repeat(auto-fit, minmax(min(100%, 520px), 1fr)); gap: 18px; }
+.tbl { min-width: 0; display: grid; gap: 8px; align-content: start; }
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); max-height: 420px; overflow-y: auto; }
+table { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+th, td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+th { font-family: var(--font-label); font-weight: 600; letter-spacing: 0.04em; color: var(--ink-2); position: sticky; top: 0; background: var(--panel); }
+td.n { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+td.c { font-family: var(--font-data); font-size: 11.5px; color: var(--ink-2); max-width: 360px; overflow-wrap: anywhere; }
+tr.click { cursor: pointer; }
+tr.click:hover td { background: var(--bg); }
+footer { color: var(--ink-3); font-size: 12px; }
+footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap: anywhere; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Guest task schedule</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Summary"></section>
+  <section class="legend" id="legend" aria-label="Roles"></section>
+
+  <section class="controls" aria-label="View controls">
+    <div class="seg" role="group" aria-label="Time axis">
+      <button id="u-insts" aria-pressed="true">Instructions</button>
+      <button id="u-ms" aria-pressed="false">Simulated ms</button>
+    </div>
+    <div class="seg" role="group" aria-label="Lanes">
+      <button id="l-name" aria-pressed="true">Lane per name</button>
+      <button id="l-pid" aria-pressed="false">Lane per process</button>
+    </div>
+    <div class="seg" role="group" aria-label="Replay processes">
+      <button id="r-show" aria-pressed="true">Show replay</button>
+      <button id="r-hide" aria-pressed="false">Hide replay</button>
+    </div>
+    <div class="seg" role="group" aria-label="Kernel-mode split" id="k-group" hidden>
+      <button id="k-show" aria-pressed="true">Kernel split</button>
+      <button id="k-hide" aria-pressed="false">Plain</button>
+    </div>
+    <div class="seg" role="group" aria-label="Zoom">
+      <button id="z-in" aria-label="Zoom in">+</button>
+      <button id="z-out" aria-label="Zoom out">−</button>
+      <button id="z-reset">Whole run</button>
+    </div>
+    <label class="file">Open view.json<input id="file" type="file" accept=".json,application/json"></label>
+    <span class="hint">Scroll to zoom, drag to pan, drag the strip above to select a range, click a tool call to zoom to it.</span>
+  </section>
+
+  <section class="viz" aria-label="Schedule timeline">
+    <canvas id="overview" aria-label="Whole-run overview; drag to select a range"></canvas>
+    <canvas id="main" aria-label="Who ran on the CPU over time, one lane per process"></canvas>
+  </section>
+
+  <section class="tables">
+    <div class="tbl">
+      <h2>Tool calls</h2>
+      <div class="scroll"><table id="t-tools"></table></div>
+    </div>
+    <div class="tbl" id="sw-box" hidden>
+      <h2>Scheduler cost per switch</h2>
+      <div class="scroll"><table id="t-sw"></table></div>
+    </div>
+    <div class="tbl">
+      <h2>Processes</h2>
+      <div class="scroll"><table id="t-procs"></table></div>
+    </div>
+  </section>
+
+  <footer>Generated from <code>tasktrace.jsonl</code> by <code>python3 configs/garfield/arm/trace_view.py &lt;outdir&gt;</code>. Bars show which task the single guest CPU ran between two context switches; the darker band at the bottom of a bar is the share of that time slice spent in kernel mode on the task's behalf (system calls, interrupts, page faults, the scheduler), and the dark end is the scheduler's own path (<code>__schedule</code> to the switch); the replay driver and its <code>docker inspect</code> polls exist only in the model-free replay; instruction counts are the global committed count since the restore.</footer>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<script id="trace-data" type="application/json">__TRACE_DATA__</script>
+<script>
+(() => {
+  "use strict";
+  const ROLES = ["harness", "harness-child", "tool", "framework", "replay", "daemon", "kernel", "idle", "other", "unknown"];
+  const ROLE_LABEL = {
+    "harness": "Harness (OpenCode)", "harness-child": "Harness children", "tool": "Fenced tools",
+    "framework": "Benchmark framework", "replay": "Replay driver", "daemon": "Daemons",
+    "kernel": "Kernel threads", "idle": "Idle", "other": "Other", "unknown": "Unknown",
+    "plumbing": "Docker plumbing",
+  };
+  const CONTAINER_LABEL = (c) => c === "host" ? "guest host" : c === "opencode-container" ? "OpenCode container" : (c || "unknown");
+  const $ = (id) => document.getElementById(id);
+  const ov = $("overview"), mc = $("main"), tip = $("tip");
+  let D = null, unit = "insts", laneMode = "name", hideReplay = false, showKernel = true, view = [0, 1], lanes = [], laneOf = [];
+  let colors = {};
+
+  // ---------- formatting ----------
+  const fmtI = (v) => {
+    const a = Math.abs(v);
+    if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 1 : 2) + "G";
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e8 ? 0 : 1) + "M";
+    if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";
+    return String(Math.round(v));
+  };
+  const fmtMs = (v) => (Math.abs(v) >= 100 ? v.toFixed(0) : Math.abs(v) >= 10 ? v.toFixed(1) : v.toFixed(2)) + " ms";
+  const fmtU = (v) => unit === "insts" ? fmtI(v) : fmtMs(v);
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const pct = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (n) => cs.getPropertyValue(n).trim();
+    colors = { ink: g("--ink"), ink2: g("--ink-2"), ink3: g("--ink-3"), grid: g("--grid"),
+      rule: g("--rule"), panel: g("--panel"), bg: g("--bg"), toolcall: g("--tool"), focus: g("--focus"),
+      font: g("--font-data"), label: g("--font-label") };
+    ROLES.forEach((r) => (colors[r] = g("--role-" + r)));
+    colors["plumbing"] = colors["daemon"];   // view files from older traces
+  }
+
+  // ---------- model ----------
+  function load(model) {
+    D = model;
+    const n = D.segs.s.length;
+    D.segOrder = Array.from({ length: n }, (_, i) => i);   // already in time order
+    D.procs.forEach((p, i) => { p.idx = i; p.label = p.names[p.names.length - 1] || "?"; });
+    D.domain = { insts: [D.i0, D.i1], ms: [0, D.t1] };
+    const tot = {}; let all = 0;
+    for (let i = 0; i < n; i++) {
+      const r = D.procs[D.segs.p[i]].role, w = D.segs.e[i] - D.segs.s[i];
+      tot[r] = (tot[r] || 0) + w; all += w;
+    }
+    D.hasUser = !!D.segs.u;
+    D.userTotal = D.hasUser ? D.segs.u.reduce((a, b) => a + b, 0) : 0;
+    D.schedTotal = D.hasUser ? D.segs.sc.reduce((a, b) => a + b, 0) : 0;
+    D.allInsts = all;
+    $("k-group").hidden = !D.hasUser;
+    $("sw-box").hidden = !(D.switchCost && D.switchCost.length);
+    D.roleShare = Object.fromEntries(ROLES.map((r) => [r, (tot[r] || 0) / (all || 1)]));
+    buildLanes();
+    view = D.domain[unit].slice();
+    renderSummary();
+    renderTables();
+    resize();
+  }
+
+  function buildLanes() {
+    const key = (p) => laneMode === "name" ? p.role + "\u0000" + p.label : String(p.tgid);
+    const map = new Map();
+    D.procs.forEach((p) => {
+      if (hideReplay && p.role === "replay") return;
+      const k = key(p);
+      if (!map.has(k)) map.set(k, { key: k, procs: [], role: p.role, label: p.label, insts: 0 });
+      const l = map.get(k); l.procs.push(p.idx); l.insts += p.insts;
+    });
+    lanes = [...map.values()];
+    lanes.forEach((l) => {
+      l.title = laneMode === "name"
+        ? (l.procs.length > 1 ? `${l.label} ×${l.procs.length}` : `${l.label} (${D.procs[l.procs[0]].tgid})`)
+        : `${l.label} (${D.procs[l.procs[0]].tgid})`;
+    });
+    lanes.sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || b.insts - a.insts);
+    laneOf = new Array(D.procs.length).fill(-1);
+    lanes.forEach((l, li) => { l.procs.forEach((p) => (laneOf[p] = li)); l.segs = []; l.marks = []; });
+    for (let i = 0; i < D.segs.s.length; i++) if (laneOf[D.segs.p[i]] >= 0) lanes[laneOf[D.segs.p[i]]].segs.push(i);
+    D.marks.forEach((m, mi) => { if (laneOf[m.p] >= 0) lanes[laneOf[m.p]].marks.push(mi); });
+  }
+
+  const sv = (i) => unit === "insts" ? D.segs.s[i] : D.segs.ts[i];
+  const ev = (i) => unit === "insts" ? D.segs.e[i] : D.segs.te[i];
+  const pv = (pt) => unit === "insts" ? pt.i : pt.t;
+
+  // ---------- geometry ----------
+  const G = { labelW: 170, axisH: 22, toolH: 22, cpuH: 18, gap: 10, laneH: 15, lanePad: 3, right: 12 };
+  let W = 800, H = 400, dpr = 1;
+
+  function plotX(v) { return G.labelW + (v - view[0]) / (view[1] - view[0]) * (W - G.labelW - G.right); }
+  function valAt(x) { return view[0] + (x - G.labelW) / (W - G.labelW - G.right) * (view[1] - view[0]); }
+  const yTool = () => G.axisH;
+  const yCpu = () => G.axisH + G.toolH + 4;
+  const yLanes = () => yCpu() + G.cpuH + G.gap;
+  const laneY = (li) => yLanes() + li * (G.laneH + G.lanePad);
+
+  function resize() {
+    if (!D) return;
+    dpr = window.devicePixelRatio || 1;
+    W = mc.clientWidth;
+    G.labelW = W < 560 ? 104 : 170;
+    H = yLanes() + lanes.length * (G.laneH + G.lanePad) + 6;
+    for (const [c, h] of [[mc, H], [ov, 44]]) {
+      c.style.height = h + "px"; c.width = Math.round(W * dpr); c.height = Math.round(h * dpr);
+    }
+    draw();
+  }
+
+  function niceTicks(a, b, target) {
+    const span = b - a, raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    const out = []; for (let v = Math.ceil(a / step) * step; v <= b; v += step) out.push(v);
+    return out;
+  }
+
+  // ---------- drawing ----------
+  function draw() {
+    if (!D) return;
+    drawMain(); drawOverview();
+  }
+
+  function drawMain() {
+    const c = mc.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    const x0 = G.labelW, x1 = W - G.right;
+
+    // grid + axis labels
+    c.font = `11px ${colors.font}`; c.textBaseline = "middle"; c.textAlign = "center";
+    for (const t of niceTicks(view[0], view[1], Math.max(3, Math.floor((x1 - x0) / 110)))) {
+      const x = plotX(t);
+      c.fillStyle = colors.grid; c.fillRect(Math.round(x), G.axisH - 4, 1, H - G.axisH);
+      c.fillStyle = colors.ink3; c.fillText(fmtU(t), x, 10);
+    }
+
+    // row labels
+    c.textAlign = "right"; c.font = `600 11px ${colors.label}`; c.fillStyle = colors.ink2;
+    c.fillText("TOOL CALLS", x0 - 8, yTool() + G.toolH / 2);
+    c.fillText("CPU", x0 - 8, yCpu() + G.cpuH / 2);
+
+    c.save(); c.beginPath(); c.rect(x0, 0, x1 - x0, H); c.clip();
+
+    // tool calls
+    D.tools.forEach((t) => {
+      const a = t.pending || t.running, b = t.completed || t.error;
+      if (!a) return;
+      const ya = yTool() + 2, h = G.toolH - 4;
+      if (t.pending && t.running) {
+        const xa = plotX(pv(t.pending)), xb = plotX(pv(t.running));
+        c.globalAlpha = 0.35; c.fillStyle = colors.toolcall; c.fillRect(xa, ya + h / 4, Math.max(1, xb - xa), h / 2); c.globalAlpha = 1;
+      }
+      if (t.running && b) {
+        const xa = plotX(pv(t.running)), xb = plotX(pv(b));
+        c.fillStyle = colors.toolcall; roundRect(c, xa, ya, Math.max(2, xb - xa), h, 3); c.fill();
+        if (xb - xa > 40) {
+          c.save(); c.beginPath(); c.rect(xa, ya, xb - xa, h); c.clip();
+          c.fillStyle = colors.panel; c.font = `500 11px ${colors.font}`; c.textAlign = "left";
+          c.fillText(t.tool, xa + 5, ya + h / 2); c.restore();
+        }
+      }
+      if (t.logged) {
+        const x = plotX(pv(t.logged)); c.fillStyle = colors.toolcall; c.fillRect(x, ya - 1, 1.5, h + 2);
+      }
+    });
+
+    // CPU strip
+    const yc = yCpu();
+    drawSegs(c, D.segOrder, yc, G.cpuH);
+
+    // lanes
+    lanes.forEach((l, li) => {
+      const y = laneY(li);
+      c.fillStyle = colors.grid; c.globalAlpha = 0.45; c.fillRect(x0, y, x1 - x0, G.laneH); c.globalAlpha = 1;
+      drawSegs(c, l.segs, y, G.laneH);
+      l.marks.forEach((mi) => {
+        const m = D.marks[mi], x = plotX(pv(m));
+        if (x < x0 - 6 || x > x1 + 6) return;
+        c.fillStyle = colors.ink;
+        if (m.k === "exec") { c.beginPath(); c.moveTo(x - 4, y); c.lineTo(x + 4, y); c.lineTo(x, y + 6); c.closePath(); c.fill(); }
+        else if (m.k === "fork") { c.beginPath(); c.arc(x, y + G.laneH - 3, 2.5, 0, 7); c.fill(); }
+        else if (m.k === "exit") { c.fillRect(x - 0.75, y - 1, 1.5, G.laneH + 2); }
+        else if (m.k === "io") { c.fillStyle = colors.toolcall; c.fillRect(x - 3, y + 2, 6, G.laneH - 4); c.strokeStyle = colors.panel; c.lineWidth = 1; c.strokeRect(x - 3, y + 2, 6, G.laneH - 4); }
+        else if (m.k === "fence") { c.beginPath(); c.moveTo(x, y); c.lineTo(x + 4, y + G.laneH / 2); c.lineTo(x, y + G.laneH); c.lineTo(x - 4, y + G.laneH / 2); c.closePath(); c.fill(); }
+      });
+    });
+    c.restore();
+
+    // lane labels
+    c.textAlign = "right"; c.font = `11px ${colors.font}`;
+    lanes.forEach((l, li) => {
+      const y = laneY(li) + G.laneH / 2;
+      c.fillStyle = colors[l.role]; c.fillRect(6, y - 4, 8, 8);
+      c.fillStyle = colors.ink2;
+      c.fillText(clip(c, l.title, G.labelW - 30), x0 - 8, y);
+    });
+  }
+
+  function drawSegs(c, list, y, h) {
+    const x0 = G.labelW, x1 = W - G.right;
+    const S = D.segs, split = showKernel && D.hasUser;
+    // Binary-search the first visible segment (lists are in time order).
+    let lo = 0, hi = list.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (ev(list[m]) < view[0]) lo = m + 1; else hi = m; }
+    let lastX = -1, lastRole = null, colK = 0, colN = 0;
+    // Kernel-mode share of a slice as a darker band along its bottom edge;
+    // slices narrower than a pixel are merged and share one band. The order
+    // of user and kernel code inside a slice is not recorded, so the band
+    // is a proportion, not a position.
+    const flush = () => {
+      if (split && colN > 0 && lastX >= 0) {
+        const kf = colK / colN;
+        if (kf > 0.01) { c.globalAlpha = 0.5; c.fillStyle = colors.ink; c.fillRect(lastX, y + h * (1 - kf), 1, h * kf); c.globalAlpha = 1; }
+      }
+      colK = 0; colN = 0;
+    };
+    for (let k = lo; k < list.length; k++) {
+      const i = list[k], s = sv(i);
+      if (s > view[1]) break;
+      let xa = plotX(s), xb = plotX(ev(i));
+      xa = Math.max(xa, x0 - 2); xb = Math.min(xb, x1 + 2);
+      const role = D.procs[S.p[i]].role;
+      const n = S.e[i] - S.s[i], kn = split ? n - S.u[i] : 0;
+      if (xb - xa < 0.6) { // sub-pixel: merge into one hairline per pixel
+        const px = Math.floor(xa);
+        if (px === lastX && role === lastRole) { colK += kn; colN += n; continue; }
+        flush();
+        lastX = px; lastRole = role; xb = xa + 1; colK = kn; colN = n;
+      } else { flush(); lastX = -1; }
+      c.fillStyle = colors[role] || colors.unknown;
+      const dim = hideReplay && role === "replay" ? 0.25 : 1;
+      c.globalAlpha = dim;
+      c.fillRect(xa, y, xb - xa, h);
+      if (split && xb - xa >= 1) {
+        const kf = n > 0 ? kn / n : 0;
+        if (kf > 0.01) { c.globalAlpha = 0.5 * dim; c.fillStyle = colors.ink; c.fillRect(xa, y + h * (1 - kf), xb - xa, h * kf); }
+        // The scheduler's own path ends the slice.
+        const sc = S.sc[i];
+        if (sc > 0 && n > 0 && xb - xa > 3) {
+          const wd = Math.max(1.5, (xb - xa) * sc / n);
+          c.globalAlpha = dim; c.fillStyle = colors.ink; c.fillRect(xb - wd, y, wd, h);
+        }
+      }
+      c.globalAlpha = 1;
+      if (xb - xa > 5) { c.fillStyle = colors.panel; c.fillRect(xb - 1, y, 1, h); }
+    }
+    flush();
+  }
+
+  function drawOverview() {
+    const c = ov.getContext("2d"), h = 44;
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, W, h);
+    const dom = D.domain[unit], x0 = G.labelW, x1 = W - G.right;
+    const X = (v) => x0 + (v - dom[0]) / (dom[1] - dom[0]) * (x1 - x0);
+    c.textAlign = "right"; c.textBaseline = "middle"; c.font = `600 11px ${colors.label}`; c.fillStyle = colors.ink2;
+    c.fillText("WHOLE RUN", x0 - 8, 16);
+    // role strip of the whole run, one column per pixel coloured by the
+    // role that ran most of it
+    const cols = Math.max(1, Math.floor(x1 - x0));
+    const acc = Array.from({ length: cols }, () => ({}));
+    for (let i = 0; i < D.segs.s.length; i++) {
+      const a = Math.max(0, Math.floor(X(sv(i)) - x0)), b = Math.min(cols - 1, Math.floor(X(ev(i)) - x0));
+      const r = D.procs[D.segs.p[i]].role, w = (ev(i) - sv(i)) / Math.max(1, b - a + 1);
+      for (let k = a; k <= b; k++) acc[k][r] = (acc[k][r] || 0) + w;
+    }
+    acc.forEach((o, k) => {
+      let best = null, bw = -1; for (const r in o) if (o[r] > bw) { bw = o[r]; best = r; }
+      if (best) { c.fillStyle = colors[best]; c.fillRect(x0 + k, 8, 1, 16); }
+    });
+    D.tools.forEach((t) => {
+      const a = t.running || t.pending, b = t.completed || t.error || a;
+      if (!a) return;
+      c.fillStyle = colors.toolcall; c.fillRect(X(pv(a)), 28, Math.max(2, X(pv(b)) - X(pv(a))), 5);
+    });
+    // brush
+    const bx = X(view[0]), bw = Math.max(2, X(view[1]) - bx);
+    c.strokeStyle = colors.ink; c.lineWidth = 1.5; c.strokeRect(bx + 0.5, 4.5, bw - 1, 33);
+    c.globalAlpha = 0.08; c.fillStyle = colors.ink; c.fillRect(bx, 4, bw, 34); c.globalAlpha = 1;
+  }
+
+  function roundRect(c, x, y, w, h, r) {
+    r = Math.min(r, w / 2, h / 2); c.beginPath();
+    c.moveTo(x + r, y); c.arcTo(x + w, y, x + w, y + h, r); c.arcTo(x + w, y + h, x, y + h, r);
+    c.arcTo(x, y + h, x, y, r); c.arcTo(x, y, x + w, y, r); c.closePath();
+  }
+  function clip(c, s, w) {
+    if (c.measureText(s).width <= w) return s;
+    while (s.length > 1 && c.measureText(s + "…").width > w) s = s.slice(0, -1);
+    return s + "…";
+  }
+
+  // ---------- view changes ----------
+  function setView(a, b) {
+    const dom = D.domain[unit], minSpan = unit === "insts" ? 2000 : 0.001;
+    if (b - a < minSpan) { const m = (a + b) / 2; a = m - minSpan / 2; b = m + minSpan / 2; }
+    const span = Math.min(b - a, dom[1] - dom[0]);
+    a = Math.max(dom[0], Math.min(a, dom[1] - span));
+    view = [a, a + span]; draw();
+  }
+  function zoom(f, at) {
+    const m = at ?? (view[0] + view[1]) / 2;
+    setView(m - (m - view[0]) * f, m + (view[1] - m) * f);
+  }
+  function convert(v, to) {
+    // map a position between units through the segment containing it
+    const S = D.segs, n = S.s.length, from = to === "ms" ? "insts" : "ms";
+    const key = from === "insts" ? S.s : S.ts, keyE = from === "insts" ? S.e : S.te;
+    let lo = 0, hi = n - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (key[m] <= v) lo = m; else hi = m - 1; }
+    const a0 = key[lo], a1 = keyE[lo], b0 = to === "ms" ? S.ts[lo] : S.s[lo], b1 = to === "ms" ? S.te[lo] : S.e[lo];
+    return a1 > a0 ? b0 + (v - a0) / (a1 - a0) * (b1 - b0) : b0;
+  }
+
+  // ---------- hover ----------
+  function hit(x, y) {
+    if (x < G.labelW || x > W - G.right) return null;
+    const v = valAt(x), tol = (view[1] - view[0]) / (W - G.labelW) * 4;
+    if (y >= yTool() && y < yTool() + G.toolH) {
+      const t = D.tools.find((t) => {
+        const a = t.pending || t.running, b = t.completed || t.error || t.logged || a;
+        return a && pv(a) - tol <= v && v <= pv(b) + tol;
+      });
+      return t ? { kind: "tool", t } : null;
+    }
+    let list = null;
+    if (y >= yCpu() && y < yCpu() + G.cpuH) list = D.segOrder;
+    const li = Math.floor((y - yLanes()) / (G.laneH + G.lanePad));
+    if (!list && li >= 0 && li < lanes.length) {
+      const l = lanes[li];
+      const m = l.marks.map((mi) => D.marks[mi]).find((m) => Math.abs(pv(m) - v) <= tol);
+      if (m) return { kind: "mark", m };
+      list = l.segs;
+    }
+    if (!list) return null;
+    let lo = 0, hi = list.length - 1;
+    while (lo < hi) { const m = (lo + hi + 1) >> 1; if (sv(list[m]) <= v) lo = m; else hi = m - 1; }
+    const i = list[lo];
+    if (i === undefined || v < sv(i) - tol || v > ev(i) + tol) return null;
+    return { kind: "seg", i };
+  }
+
+  function tipHtml(h) {
+    if (h.kind === "seg") {
+      const S = D.segs, i = h.i, p = D.procs[S.p[i]];
+      return `<b>${esc(p.names.join(" → "))}</b> <span class="m">tgid ${p.tgid}</span><br>
+        Thread ${esc(D.threads[S.th[i]])} · ${esc(ROLE_LABEL[p.role] || p.role)}${p.container ? " · " + esc(CONTAINER_LABEL(p.container)) : ""}<br>
+        <span class="m">${fmtI(S.e[i] - S.s[i])} insts · ${fmtMs(S.te[i] - S.ts[i])}<br>
+        ${S.u ? `user ${fmtI(S.u[i])} · kernel ${fmtI(S.e[i] - S.s[i] - S.u[i])} (${pct((S.e[i] - S.s[i] - S.u[i]) / Math.max(1, S.e[i] - S.s[i]))}) · scheduler ${fmtI(S.sc[i])}<br>` : ""}
+        ${fmtI(S.s[i])} → ${fmtI(S.e[i])} · ${fmtMs(S.ts[i])} → ${fmtMs(S.te[i])}</span>
+        ${p.argv ? `<br><span class="m">${esc(p.argv.slice(0, 160))}</span>` : ""}`;
+    }
+    if (h.kind === "mark") {
+      const m = h.m, p = D.procs[m.p];
+      return `<b>${esc(m.k)}</b> · ${esc(p.label)} <span class="m">(${p.tgid})</span><br>${esc(m.text)}<br>
+        <span class="m">${fmtI(m.i)} insts · ${fmtMs(m.t)}</span>`;
+    }
+    const t = h.t, b = t.completed || t.error;
+    const rows = ["pending", "running", "completed", "error", "logged"].filter((k) => t[k])
+      .map((k) => `${k} ${fmtI(t[k].i)} · ${fmtMs(t[k].t)}`).join("<br>");
+    return `<b>${esc(t.tool)}</b> ${esc(t.input || "")}${t.kind ? `<br><span class="m">${esc(t.kind)}${t.io ? ` · file ${t.io.k} at ${fmtI(t.io.i)}` : ""}</span>` : ""}<br>
+      ${t.running && b ? `<span class="m">running → ${t.completed ? "completed" : "error"}: ${fmtI(b.i - t.running.i)} insts · ${fmtMs(b.t - t.running.t)}</span><br>` : ""}
+      <span class="m">${rows}</span>`;
+  }
+
+  // ---------- interaction ----------
+  let drag = null;
+  mc.addEventListener("pointerdown", (e) => {
+    const r = mc.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const h = hit(x, y);
+    if (h && h.kind === "tool") { zoomToTool(h.t); return; }
+    drag = { x: e.clientX, v: view.slice(), moved: false };
+    mc.setPointerCapture(e.pointerId); mc.classList.add("dragging");
+  });
+  mc.addEventListener("pointermove", (e) => {
+    const r = mc.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (drag) {
+      const dv = (e.clientX - drag.x) / (W - G.labelW - G.right) * (drag.v[1] - drag.v[0]);
+      if (Math.abs(e.clientX - drag.x) > 2) drag.moved = true;
+      setView(drag.v[0] - dv, drag.v[1] - dv); tip.hidden = true; return;
+    }
+    const h = hit(x, y);
+    if (!h) { tip.hidden = true; return; }
+    tip.innerHTML = tipHtml(h); tip.hidden = false;
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let tx = e.clientX + 14, ty = e.clientY + 14;
+    if (tx + tw > window.innerWidth - 8) tx = e.clientX - tw - 14;
+    if (ty + th > window.innerHeight - 8) ty = e.clientY - th - 14;
+    tip.style.left = Math.max(8, tx) + "px"; tip.style.top = Math.max(8, ty) + "px";
+  });
+  const endDrag = () => { drag = null; mc.classList.remove("dragging"); };
+  mc.addEventListener("pointerup", endDrag);
+  mc.addEventListener("pointercancel", endDrag);
+  mc.addEventListener("pointerleave", () => { tip.hidden = true; });
+  mc.addEventListener("dblclick", () => setView(...D.domain[unit]));
+  mc.addEventListener("wheel", (e) => {
+    const r = mc.getBoundingClientRect(), x = e.clientX - r.left;
+    if (x < G.labelW) return;
+    e.preventDefault();
+    if (Math.abs(e.deltaX) > Math.abs(e.deltaY)) {
+      const dv = e.deltaX / (W - G.labelW) * (view[1] - view[0]); setView(view[0] + dv, view[1] + dv);
+    } else zoom(Math.exp(e.deltaY * 0.0015), valAt(x));
+  }, { passive: false });
+
+  let brush = null;
+  const ovVal = (x) => { const dom = D.domain[unit]; return dom[0] + (x - G.labelW) / (W - G.labelW - G.right) * (dom[1] - dom[0]); };
+  ov.addEventListener("pointerdown", (e) => {
+    const r = ov.getBoundingClientRect(); brush = { x: e.clientX - r.left };
+    ov.setPointerCapture(e.pointerId);
+  });
+  ov.addEventListener("pointermove", (e) => {
+    if (!brush) return;
+    const r = ov.getBoundingClientRect(), x = e.clientX - r.left;
+    if (Math.abs(x - brush.x) > 3) { const a = ovVal(Math.min(x, brush.x)), b = ovVal(Math.max(x, brush.x)); setView(a, b); brush.moved = true; }
+  });
+  ov.addEventListener("pointerup", (e) => {
+    if (brush && !brush.moved) {
+      const r = ov.getBoundingClientRect(), m = ovVal(e.clientX - r.left), s = view[1] - view[0];
+      setView(m - s / 2, m + s / 2);
+    }
+    brush = null;
+  });
+
+  function zoomToTool(t) {
+    const a = t.pending || t.running, b = t.logged || t.completed || t.error || a;
+    const pad = (pv(b) - pv(a)) * 0.25 || (unit === "insts" ? 1e6 : 0.5);
+    setView(pv(a) - pad, pv(b) + pad);
+    mc.scrollIntoView({ block: "nearest", behavior: "smooth" });
+  }
+
+  function press(on, off) { $(on).setAttribute("aria-pressed", "true"); $(off).setAttribute("aria-pressed", "false"); }
+  $("u-insts").onclick = () => switchUnit("insts");
+  $("u-ms").onclick = () => switchUnit("ms");
+  function switchUnit(u) {
+    if (u === unit) return;
+    const v = [convert(view[0], u), convert(view[1], u)];
+    unit = u; press(u === "insts" ? "u-insts" : "u-ms", u === "insts" ? "u-ms" : "u-insts");
+    setView(v[0], v[1]);
+  }
+  $("r-show").onclick = () => { hideReplay = false; press("r-show", "r-hide"); buildLanes(); resize(); };
+  $("r-hide").onclick = () => { hideReplay = true; press("r-hide", "r-show"); buildLanes(); resize(); };
+  $("l-name").onclick = () => { laneMode = "name"; press("l-name", "l-pid"); buildLanes(); resize(); };
+  $("l-pid").onclick = () => { laneMode = "pid"; press("l-pid", "l-name"); buildLanes(); resize(); };
+  $("k-show").onclick = () => { showKernel = true; press("k-show", "k-hide"); draw(); };
+  $("k-hide").onclick = () => { showKernel = false; press("k-hide", "k-show"); draw(); };
+  $("z-in").onclick = () => zoom(0.5);
+  $("z-out").onclick = () => zoom(2);
+  $("z-reset").onclick = () => setView(...D.domain[unit]);
+  $("file").onchange = async (e) => {
+    const f = e.target.files[0]; if (!f) return;
+    try {
+      const m = JSON.parse(await f.text());
+      if (!m.segs || !m.procs) throw new Error("not a schedule.view.json");
+      load(m);
+    } catch (err) {
+      $("sub").textContent = `Could not open ${f.name}: ${err.message}. Generate one with trace_view.py.`;
+    }
+  };
+
+  // ---------- summary + tables ----------
+  function renderSummary() {
+    const sw = D.marks.length;
+    const count = (k) => D.marks.filter((m) => m.k === k).length;
+    $("sub").textContent = `${D.name} · KASLR slide ${D.kaslrSlide}`;
+    const stats = [
+      ["Instructions", fmtI(D.i1 - D.i0)], ["Simulated", fmtMs(D.t1)],
+      ["Context switches", D.segs.s.length.toLocaleString()],
+      ["Processes", D.procs.length], ["Execs", count("exec")], ["Forks", count("fork")],
+      ["Tool calls", D.tools.length],
+    ];
+    if (D.hasUser) stats.splice(2, 0, ["Kernel mode", pct(1 - D.userTotal / (D.allInsts || 1))],
+      ["Scheduler path", pct(D.schedTotal / (D.allInsts || 1))]);
+    $("stats").innerHTML = stats.map(([k, v]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+    $("legend").innerHTML = ROLES.filter((r) => D.roleShare[r] > 0)
+      .map((r) => `<span><i class="sw" style="background:var(--role-${r})"></i>${ROLE_LABEL[r]} <span class="pct">${pct(D.roleShare[r])}</span></span>`).join("")
+      + `<span><i class="sw" style="background:var(--tool)"></i>Tool call (running → done)</span>`
+      + (D.hasUser ? `<span class="pct">darker bottom band = kernel-mode share of the slice · dark end = scheduler path</span>` : "")
+      + `<span class="pct">▼ exec · ● fork · | exit · ■ tool file I/O · ◆ cgroup move</span>`;
+  }
+
+  function renderTables() {
+    const tr = D.tools.map((t, i) => {
+      const b = t.completed || t.error;
+      return `<tr class="click" data-i="${i}" tabindex="0"><td>${esc(t.tool)}</td><td class="c">${esc(t.input || "")}</td>
+        <td>${esc(t.kind || "")}</td>
+        <td class="n">${t.running ? fmtI(t.running.i) : "—"}</td>
+        <td class="n">${t.running && b ? fmtI(b.i - t.running.i) : "—"}</td>
+        <td class="n">${t.running && b ? fmtMs(b.t - t.running.t) : "—"}</td></tr>`;
+    }).join("");
+    $("t-tools").innerHTML = `<thead><tr><th>Tool</th><th>Input</th><th>Runs as</th><th>Starts at</th><th>Runs (insts)</th><th>Runs (sim)</th></tr></thead>
+      <tbody>${tr || `<tr><td colspan="6">No OpenCode tool calls in this trace.</td></tr>`}</tbody>`;
+    $("t-tools").querySelectorAll("tr.click").forEach((row) => {
+      const go = () => zoomToTool(D.tools[+row.dataset.i]);
+      row.onclick = go; row.onkeydown = (e) => { if (e.key === "Enter") go(); };
+    });
+    if (D.switchCost && D.switchCost.length) {
+      $("t-sw").innerHTML = `<thead><tr><th>Switch</th><th>Count</th><th>Scheduler insts p50</th><th>p90</th><th>Mean time</th></tr></thead><tbody>` +
+        D.switchCost.map((r) => `<tr><td>${esc(r.cause)}</td><td class="n">${r.n.toLocaleString()}</td><td class="n">${fmtI(r.p50)}</td><td class="n">${fmtI(r.p90)}</td><td class="n">${r.ns} ns</td></tr>`).join("") +
+        `</tbody>`;
+    }
+    const total = D.i1 - D.i0 || 1;
+    const pr = D.procs.slice().sort((a, b) => b.insts - a.insts).slice(0, 60).map((p) =>
+      `<tr><td>${esc(p.names.join(" → "))} <span class="hint">${p.tgid}</span></td><td>${esc(ROLE_LABEL[p.role] || p.role)}</td><td>${esc(CONTAINER_LABEL(p.container))}</td>
+       <td class="n">${fmtI(p.insts)}</td><td class="n">${pct(p.insts / total)}</td>${D.hasUser ? `<td class="n">${p.insts ? pct(1 - (p.user || 0) / p.insts) : "—"}</td>` : ""}<td class="n">${p.switchIns}</td>
+       <td class="c">${esc(p.argv || "")}</td></tr>`).join("");
+    $("t-procs").innerHTML = `<thead><tr><th>Process</th><th>Role</th><th>Where</th><th>Insts</th><th>Share</th>${D.hasUser ? "<th>Kernel mode</th>" : ""}<th>Switch-ins</th><th>Command</th></tr></thead><tbody>${pr}</tbody>`;
+  }
+
+  // ---------- boot ----------
+  readColors();
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const recolor = () => { readColors(); draw(); };
+  mq.addEventListener?.("change", recolor);
+  new MutationObserver(recolor).observe(document.documentElement, { attributes: true, attributeFilter: ["data-theme"] });
+  window.addEventListener("resize", resize);
+  document.fonts?.ready.then(() => { readColors(); draw(); });
+  let model = null;
+  try { model = JSON.parse($("trace-data").textContent); } catch (_) { model = null; }
+  if (model && model.segs) load(model);
+  else $("sub").textContent = "No trace embedded. Open a schedule.view.json made by trace_view.py.";
+})();
+</script>

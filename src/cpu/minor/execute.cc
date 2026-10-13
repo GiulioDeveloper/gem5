@@ -886,6 +886,7 @@ Execute::doInstCommitAccounting(MinorDynInstPtr inst)
         cpu.baseStats.numInsts++;
         if (in_user_mode) {
             cpu.commitStats[tid]->numUserInsts++;
+            cpu.countUserInsts();
         }
 
         if (!is_nop) {

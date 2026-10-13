@@ -1162,6 +1162,11 @@ CPU::instDone(ThreadID tid, const DynInstPtr &inst)
         thread[tid]->numInst++;
         thread[tid]->threadStats.numInsts++;
         commitStats[tid]->numInstsNotNOP++;
+        // On the basis of numInst (totalInsts()), which leaves out NOPs and
+        // instruction prefetches, so that totalInsts() - userInsts() is the
+        // kernel-mode count.
+        if (inUserMode(tid))
+            countUserInsts();
 
         // Check for instruction-count-based events.
         thread[tid]->comInstEventQueue.serviceEvents(thread[tid]->numInst);
