@@ -21,8 +21,12 @@ For one restored checkpoint, a run with tracing produces:
 |---|---|
 | `tasktrace.jsonl` | a snapshot of every guest process and thread at the restore, then one JSON line per guest event: context switch, fork, exec (with path and argv), rename, exit, every `write()` (with payload) and `read()` (without data) of OpenCode, and every write to a `cgroup.procs` file |
 | `intervals.csv` + `stats.txt` | optional: gem5 stats dumped every N instructions of the detailed region, with each block's tick and instruction range |
-| `analysis/*.csv`, `summary.md` | per process, per container, per tool call, per context-switch cause, per stats interval and event-aligned tables (from `trace_analysis.py`) |
+| `analysis/*.csv`, `summary.md` | per process, per place (host or container), per tool call, per context-switch cause, per stats interval and event-aligned tables (from `trace_analysis.py`) |
 | `analysis/schedule.html` | an interactive timeline of the run (from `trace_view.py`) |
+| `analysis/window.html` | per-block microarchitecture metrics of a detailed window as bar charts, with the schedule on the same axis and averages around scheduling events (from `window_view.py`) |
+
+The same tracer works on the SPEC CPU 2026 checkpoints through `fs_run.py`
+(4.6): both guests run the same kernel binary.
 
 Everything lives in this repository. Nothing in gem5-infra is needed beyond
 the checkpoint files it produced.
@@ -30,7 +34,7 @@ the checkpoint files it produced.
 ## 2. The pieces
 
 ```
-              gem5 run (virt_run.py --task-trace ...)
+        gem5 run (virt_run.py or fs_run.py --task-trace ...)
  ┌─────────────────────────────────────────────────────────────┐
  │ task_trace.py ──► kernel_layout.py (gdb on vmlinux)         │
  │      │                                                      │
@@ -42,9 +46,10 @@ the checkpoint files it produced.
                  host Python, after the run
  trace_analysis.py ──► analysis/{processes,writes,tools,blocks,aligned}.csv, summary.md
  trace_view.py     ──► analysis/schedule.html, schedule.view.json
+ window_view.py    ──► analysis/window.html, window.view.json
 ```
 
-| file | role |
+| file | purpose |
 |---|---|
 | `src/arch/arm/linux/task_tracer.{hh,cc}` | the tracer, `gem5::ArmISA::LinuxTaskTracer` |
 | `src/arch/arm/ArmLinuxTaskTracer.py` | its SimObject declaration and parameters |
@@ -52,9 +57,11 @@ the checkpoint files it produced.
 | `src/arch/arm/SConscript` | registers the source, the SimObject and the `TaskTracer` debug flag |
 | `configs/garfield/arm/kernel_layout.py` | reads struct offsets from the guest vmlinux |
 | `configs/garfield/arm/task_trace.py` | `--task-trace*` flags; builds the tracer and attaches it to the board |
-| `configs/garfield/arm/virt_run.py` | the restore script; also `--stats-interval-insts` and `--tail-insts` |
+| `configs/garfield/arm/virt_run.py` | the restore script for the agentic (QEMU-virt) checkpoints; also `--stats-interval-insts` and `--tail-insts` |
+| `configs/garfield/arm/fs_run.py` | the restore script for the SPEC CPU 2026 SimPoint checkpoints (VExpress); also `--stats-interval-insts` and `--task-trace` |
 | `configs/garfield/arm/trace_analysis.py` | host-side analysis (stdlib only) |
 | `configs/garfield/arm/trace_view.py`, `trace_view.html` | interactive schedule viewer generator and template |
+| `configs/garfield/arm/window_view.py`, `window_view.html` | detailed-window metrics viewer generator and template |
 
 ## 3. Prerequisites
 
@@ -136,6 +143,7 @@ them from the repository root; `<task>` is a checkpoint name without the
 | `atomic.sh [task] [max-insts] [virt_run args]` | an atomic-only traced restore (4.1); `GEM5_OPTS="--debug-flags=TaskTracer"` passes gem5 options |
 | `o3-window.sh TASK SETTLE WARMUP DETAILED INTERVAL [virt_run args]` | a detailed window with stats intervals (4.2), stats without descriptions |
 | `o3-pair.sh [task] [warmup] [detailed]` | the no-perturbation check: the same window with and without the tracer, diffing `stats.txt` (section 9). `PAIR_ON_ARGS=` runs the plain configuration twice, a determinism check |
+| `spec-window.sh BENCH SETTLE WARMUP DETAILED INTERVAL [TAG] [fs_run args]` | a traced detailed window of a SPEC CPU 2026 checkpoint (4.6) |
 | `landing-all.sh [insts] [parallel]` | the landing check over every local checkpoint (section 9), summarized by `landing_summary.py`; `TASKS="<task> ..."` limits the tasks |
 
 ### 4.5 Choosing where to put an O3 window
@@ -166,6 +174,31 @@ the atomic core until the next marker appears, then stop (SIGINT keeps the
 flushed `tasktrace.jsonl`). Rounds are billions of instructions apart. The progress line's
 "total committed" counts micro-ops and runs about 12% above the
 instruction count used by the trace.
+
+### 4.6 SPEC CPU 2026 checkpoints
+
+`fs_run.py` restores the SPEC SimPoint checkpoints (one per benchmark under
+`gem5-ckpts/fs_ckpts/spec26/ckpts/<bench>/`) and takes the same
+`--task-trace*` and `--stats-interval-insts` flags. Its kernel resource is
+the same vmlinux as the agentic guests' (same md5), so the tracer finds its
+hooks unchanged. `fs_run.py` resolves the kernel through
+`GEM5_RESOURCE_DIR`, which `spec-window.sh` points at
+`gem5-ckpts/fs_ckpts/spec26/restore_resources`:
+
+```sh
+run_scripts/tasktrace/spec-window.sh 714.cpython_r 1 20000000 200000000 200000
+```
+
+restores `714.cpython_r`, runs 1 atomic instruction, warms up 20M and
+simulates 200M instructions on O3 in 200K-instruction stats blocks. There
+is no OpenCode process in these guests, so no reads, writes or tool calls
+are recorded; the trace holds the schedule only. The benchmark runs
+alone, under the launch tree of the console login (`login > bash >
+after_boot.sh > <benchmark>`), and is switched out rarely: 2 switches in
+200M O3 instructions of `729.abc_r`, none at all in `714.cpython_r`. The
+tracer names a task only when it is switched in or out, so a window with no
+switch has one CPU slice labelled `not recorded`; the snapshot shows the
+benchmark exists (with its lineage) but not that it is the one on the CPU.
 
 ## 5. How the tracer works
 
@@ -374,14 +407,14 @@ Writes `<outdir>/analysis/` and prints `summary.md`.
 
 | file | contents |
 |---|---|
-| `summary.md` | event counts per million instructions and per simulated ms, instruction share per role, top processes, tool calls |
-| `processes.csv` | per process: names over its life (e.g. `python3\|docker` = fork then exec), role, exec path and argv, instructions run split into user and kernel mode, switch-ins |
-| `containers.csv` | one row per container: its label and member processes |
+| `summary.md` | event counts per million instructions and per simulated ms, instruction share by place, by launch tree and by process (7.2), top processes with their lineage, tool calls |
+| `processes.csv` | per process: names over its life (e.g. `python3\|docker` = fork then exec), kind, place, launch tree and lineage (7.2), exec path and argv, instructions run split into user and kernel mode, switch-ins |
+| `containers.csv` | one row per place (the host and each container): its namespace set and member processes |
 | `switches.csv` | context switches counted by cause (7.4), with the scheduler's cost (instructions p50/p90/mean, simulated ns) and the kernel-mode share of the time slice each switch ended; first row `ALL` |
 | `writes.csv` | every recorded write: the traced process's, and `cgroup.procs` writes by any process |
 | `reads.csv` | every recorded read of the traced process (path, size, offset) |
 | `tools.csv` | one row per OpenCode tool call (7.3) |
-| `blocks.csv` | per stats interval: IPC, user fraction (from gem5 stats) and `user_frac_trace` (from the trace), scheduler instructions per kilo-instruction (`sched_pki`), L1I/L1D/L2 MPKI, conditional-branch and BTB-caused mispredicts per kilo-instruction, iTLB/dTLB misses and page walks per kilo-instruction, dominant process and role, instruction share per role, the events inside it |
+| `blocks.csv` | per stats interval: IPC, user fraction (from gem5 stats) and `user_frac_trace` (from the trace), scheduler instructions per kilo-instruction (`sched_pki`), L1I/L1D/L2 MPKI, conditional-branch and BTB-caused mispredicts per kilo-instruction, iTLB/dTLB misses and page walks per kilo-instruction, the dominant process (`top_process`, `top_process_share`) and launch tree (`top_tree`), the kernel-thread and idle shares, every launch tree's share (`trees`), the events inside it |
 | `aligned.csv` | per event kind, each metric averaged over the intervals at offsets −K..+K from the interval holding the event, beside the mean over all intervals |
 
 `blocks.csv` and `aligned.csv` need a run with `--stats-interval-insts`.
@@ -394,11 +427,14 @@ in the context of whichever task is current, under that task's own pid, and
 the scheduler runs on the task that is giving up the CPU. So thread A
 followed directly by thread B with no kernel segment between them is the
 normal picture. Only kernel threads (`kworker`, `rcu_*`, ...) have pids of
-their own, and they are the `kernel` role.
+their own, and they are of kind `kernel`. The slice before the first switch
+belongs to that switch's `prev`, and the last slice runs to the end of the
+last stats block (12, "no end record"); a trace with no switch at all has
+one slice labelled `not recorded`.
 
 **User and kernel mode.** Each time slice also carries its user-mode
-instruction count (`uinsts` difference), so every slice, process, role and
-tool call splits into user and kernel instructions (`summary.md`,
+instruction count (`uinsts` difference), so every slice, process, group
+and tool call splits into user and kernel instructions (`summary.md`,
 `processes.csv`, `tools.csv`: `run_user_insts`, `run_kernel_insts`). The
 trace records totals per slice, not where inside it the transitions
 happened; where a range cuts a slice, its user instructions are assumed
@@ -411,49 +447,63 @@ and `summary.md` reports its mean absolute difference from gem5's own
 `exit`, `rename`, `write`, `read`, `fence` (a `cgroup.procs` write),
 `tool_start`, `tool_end`.
 
-### 7.2 Roles and containers
+### 7.2 Process labels
 
-Every process gets one role (the first rule that matches):
+Every process is described by what the trace shows, not by a guess at its
+purpose:
 
-| role | rule |
+| label | what it is |
 |---|---|
-| `idle` | pid 0 |
-| `kernel` | `kthread` (`PF_KTHREAD`); traces without the flag: kthreadd and its children |
-| `harness` | the `opencode` process (all its threads: main JS thread, `JITWorker`, `Bun Pool N`, `HTTP Client`, ...) |
-| `tool` | `bash.fence-real` / `rg.fence-real` and their descendants: OpenCode's subprocess tools |
-| `harness-child` | anything else OpenCode started, e.g. its snapshot `git` |
-| `daemon` | `dockerd`, `containerd*`, `runc`, systemd services and similar |
-| `replay` | any other user process on the guest host: the model-free replay driver (`python3`), its `docker inspect` polls, `watch_rounds.sh`, `sleep`, `make`, `uv` |
-| `framework` | any other process inside a container: the tool server (`python`), `faketime`, the orchestrator's model proxy |
-| `other` | unclassified (only in traces without namespaces) |
+| kind | `user`, `kernel` (`PF_KTHREAD`; traces without the flag: kthreadd and its children) or `idle` (pid 0) |
+| name | the process's latest name; a fork child is named after its parent until it execs |
+| place | `host`, or `container <top> (<tgid>)`: a namespace set (`ns`) entered under a `containerd-shim`, named after its top process, the first process inside it. Host services that systemd sandboxes into private namespaces (`systemd-resolved`, ...) count as host. A process with no recorded `ns` (seen only while exiting, or only in a fork record) takes its parent's, since a fork child starts in its parent's namespaces |
+| launch tree | `<name> (<tgid>)` of the process's topmost ancestor below systemd (pid 1) on the host, or of the container's top process. Everything a login shell, a service or a container started shares one tree |
+| lineage | the names from the launch tree's root down to the process, e.g. `run.sh > sudo > make > sh > uv > python3 > docker` |
 
-A process's role follows its latest name (a fork child is named after its
-parent until it execs). Ancestry comes from the snapshot, `ppid` in every
-task record, and fork events.
+Ancestry comes from the snapshot, `ppid` in every task record, and fork
+events. Traces from before the start-up snapshot and `ns` existed (the
+first 2026-10-08 runs) have place `unknown`, and a launch tree whose root
+never ran is labelled `pid <tgid>`. `summary.md` reports instruction shares grouped three ways: by
+place, by launch tree and by process name; kernel threads and the idle
+task form the groups `kernel` and `idle` in all three. The viewers colour
+by any of the three (section 8).
 
-**Containers.** Processes are grouped by `ns`. The group holding pid 1 is
-the **guest host**; the one holding `opencode` is the **OpenCode
-container** (the SWE-bench task image, where OpenCode, its tools and
-`/testbed` live); any other group entered under a `containerd-shim` is a
-container named by its identifier (in the replay, the orchestrator
-container with the model proxy). Host services that systemd sandboxes into
-private namespaces (`systemd-resolved`, ...) count as host.
+What these labels look like in the traces so far:
 
-**The tools fence is not effective in the replay guests.** OpenCode's
-`fence-exec.sh` moves `bash`/`rg` into a separate "tools" cgroup before
-exec'ing `bash.fence-real`/`rg.fence-real`, but only when
-`/benchmark-fence/tools` is mounted. In the replay guests a running
-`rg.fence-real` has the same cgroup set as OpenCode, and no `cgroup.procs`
-write occurs, so the fence fell through. The `tool` role therefore rests on
-the `*.fence-real` names, which `fence-exec.sh` applies either way;
-`summary.md` states the fence verdict for every trace.
+| guest | where | launch tree | processes |
+|---|---|---|---|
+| agentic | `container python (1003)` | `python (1003)` | the container's `python` (described by the benchmark as its tool server), `faketime`, `opencode`, the processes OpenCode starts (`git`, `bash.fence-real`, `rg.fence-real` and their children) |
+| agentic | `container python (1077)` | `python (1077)` | a second container's `python` (described as the orchestrator's model proxy) |
+| agentic | `host` | `run.sh (519)` | `run.sh > watch_rounds.sh > sleep` and `run.sh > sudo > make > sh > uv > python3 > docker` |
+| agentic | `host` | one per service | `dockerd`, `containerd`, `containerd-shim`, `systemd-*`, `snapd`, ... |
+| SPEC | `host` | `login (248)` | `login > bash > after_boot.sh > <benchmark>` |
 
-**Replay processes are not agent work.** The replay driver runs
+What a process is *for* (OpenCode the harness, `python3` the model-free
+replay driver, `docker inspect` its polling) is not in the trace: the
+processes that existed at the checkpoint carry only their names, no command
+line. Treat such readings as interpretation, and say so. The earlier
+version of this analysis assigned purpose roles (`harness`, `tool`,
+`replay`, `framework`, ...) by rules such as "any user process on the host
+outside a container is the replay driver"; that put `snapd`, `run.sh`,
+`watch_rounds.sh` and the SPEC benchmarks under `replay`, and merged two
+containers and OpenCode's launch wrapper into `framework`, so it was
+removed.
+
+**The tools fence.** OpenCode's `fence-exec.sh` moves `bash`/`rg` into a
+separate "tools" cgroup before exec'ing `bash.fence-real`/`rg.fence-real`,
+but only when `/benchmark-fence/tools` is mounted. `summary.md` reports the
+`cgroup.procs` writes and whether each moved process ended in a cgroup set
+different from its mover's. In the replay guests there are none: the fence
+fell through, and a running `rg.fence-real` has the same cgroup set as
+OpenCode.
+
+**Host processes in the agentic guests.** The `run.sh` launch tree runs
 `docker inspect` on the orchestrator container roughly every 50 ms of guest
-time to check it is still running (framework `sweagent_driver.py`,
-`_orchestrator_running`); each poll is a fresh Docker CLI process of about
-40M instructions. `summary.md` reports role shares with and without
-`replay`, and `tools.csv` gives each call's instructions without replay.
+time (each a fresh Docker CLI process of about 40M instructions); the
+benchmark's `sweagent_driver.py` (`_orchestrator_running`) does this to check
+the orchestrator is still running. It is about a fifth of the instructions
+in the traces so far. Report shares with and without the `run.sh` tree
+where it matters.
 
 ### 7.3 Tool calls
 
@@ -469,14 +519,13 @@ log (`agentic-benchmark-opencode.log`), recorded as `logged`.
 | column | meaning |
 |---|---|
 | `tool`, `input` | tool name; file path or shell command |
-| `kind` | `in-process`, or `subprocess (<names>)` when a fenced tool process ran during the call. Observed, not inferred from the tool's name |
+| `kind` | `in-process`, or `subprocess (<names>)` when a descendant of the process that recorded the call (OpenCode) ran during it. Observed, not inferred from the tool's name |
 | `io`, `io_insts` | the call's own file I/O: the first `read` or `write` of its file by the harness while it runs (for `read`/`edit`-style tools) |
-| `run_agent_insts` | running → completed instructions excluding `replay` processes |
 | `pending_insts`, `running_insts`, `completed_insts`, `error_insts`, `logged_insts` | instruction count at the first write showing that state |
 | `run_insts`, `run_ms` | running → completed, in instructions and simulated ms |
 | `start_ms`, `end_ms` | the call's own guest-clock timestamps (ms since the epoch; the guest runs under `faketime` pinned to 2026-08-19 12:00:00) |
-| `run_share_<role>` | share of the running span's instructions taken by each role |
-| `run_top_threads` | the five threads that ran most during the span |
+| `run_share_caller`, `run_share_descendants`, `run_share_kernel`, `run_share_idle`, `run_share_other` | share of the running span's instructions taken by the process that recorded the call, the processes it started, kernel threads, the idle task, and any other user process |
+| `run_top_processes`, `run_top_threads` | the five processes and threads that ran most during the span |
 
 A page also carries neighbouring rows, some stale, so a state counts from
 its first appearance. Rows are parsed as brace-balanced JSON objects; a row
@@ -490,7 +539,8 @@ Bun's thread pool (`Bun Pool N`). An `edit`'s file write appears in
 separate process (`bash.fence-real`), and so does ripgrep
 (`rg.fence-real`): it can be a direct child of `opencode`,
 so OpenCode's own search tools spawn it too. That is why `kind` is observed
-rather than derived from the tool's name.
+rather than derived from the tool's name. It lists every descendant that
+ran, so a snapshot `git` that OpenCode starts during a call appears too.
 
 ### 7.4 Two views of "tool call"
 
@@ -498,11 +548,13 @@ rather than derived from the tool's name.
   start and end OpenCode records (`tools.csv`). In-process tools are harness
   work; only fenced subprocesses are tool execution.
 - **CPU view:** what matters is every change of execution context,
-  whoever causes it. `switches.csv` counts context switches by cause: `within
-  <role>` for a switch between threads of one process, `<role> -> <role>`
-  otherwise. In the traces so far, most switches are inside
-  OpenCode (its JIT, I/O pool and HTTP threads) or inside the replay
-  driver's Docker CLI processes; fenced tools contribute few.
+  whoever causes it. `switches.csv` counts context switches by cause, by
+  process name: `within <process>` for a switch between threads of one
+  process, `<process> -> <process>` otherwise, with `kernel` and `idle` for
+  kernel threads and the idle task (e.g. `opencode -> docker`,
+  `docker -> kernel`). In the traces so far, most switches are inside
+  `opencode` (its JIT, I/O pool and HTTP threads) or inside the `docker`
+  CLI processes of the `run.sh` tree; fenced tools contribute few.
 
 Use the framework view to say what the agent was doing, and the CPU view
 (switch, fork and exec events, by cause) as the unit of disruption.
@@ -523,7 +575,9 @@ blocks = ta.load_blocks(Path(outdir))   # raw counts per interval
 gem5 leaves a stat out of a block when it stayed at zero; `load_blocks`
 treats a missing stat as 0.
 
-## 8. Interactive timeline: `trace_view.py`
+## 8. Viewers
+
+### 8.1 Schedule timeline: `trace_view.py`
 
 ```sh
 python3 configs/garfield/arm/trace_view.py <outdir> [-o out.html] [--fragment]
@@ -537,16 +591,17 @@ browser; its *Open view.json* button loads any other run's
 
 The page shows:
 
-- a whole-run strip coloured by the role that ran most of each pixel, with
+- a whole-run strip coloured by the group that ran most of each pixel, with
   the tool calls under it; drag on it to select a range;
 - a tool-call track (faint: pending, solid: running → completed, tick: the
   JSON log line); click a call to zoom to it;
 - a CPU track: which task held the single core;
-- one lane per process name (or per process), coloured by role, with exec
-  (triangle), fork (dot), exit (bar), tool file I/O (square) and cgroup
-  move (diamond) marks;
-- *Hide replay* removes the replay driver's lanes and dims its share of the
-  CPU track;
+- one lane per process name (or per process), with exec (triangle), fork
+  (dot), exit (bar), tool file I/O (square) and cgroup move (diamond) marks;
+- *Colour by process / Launch tree / Where* groups processes by the labels
+  of 7.2. The ten groups that ran most get their own colour, the rest share
+  one, and kernel threads and the idle task are grey. Clicking a legend
+  entry hides that group's lanes and dims it on the CPU track;
 - hover details for every bar and mark; scroll to zoom, drag to pan,
   double-click for the whole run; an instruction or simulated-ms axis;
 - when the trace has `uinsts`: each bar's **darker bottom band** is the
@@ -555,9 +610,66 @@ The page shows:
   scheduler's own path (`__schedule` to the switch), and *Plain* turns both
   off; the header adds kernel-mode and scheduler-path shares;
 - the same data as tables (tool calls with how they ran, a scheduler cost
-  per kind of switch, processes with role, container and kernel-mode share).
+  per kind of switch, processes with place, lineage and kernel-mode share).
 
-Roles and tool calls come from `trace_analysis.py`, so both tools agree.
+Process labels and tool calls come from `trace_analysis.py`, so both tools
+agree. *Open view.json* accepts only files made by the current
+`trace_view.py` (`version` 3); regenerate older ones.
+
+### 8.2 Metrics over a detailed window: `window_view.py`
+
+```sh
+python3 configs/garfield/arm/window_view.py <outdir> [-o out.html] \
+    [--metric KEY=STAT[/insts|/cycles]] [--fragment]
+```
+
+Needs a run with `--stats-interval-insts`; works without a task trace too
+(metrics only). Writes `<outdir>/analysis/window.view.json` and a
+self-contained `<outdir>/analysis/window.html`. Its purpose is to show how
+the core behaves around scheduling points.
+
+- **One bar chart per metric**, stacked and sharing the instruction axis: a
+  bar per stats block, as wide as the instructions it committed. Pick
+  metrics from five groups: throughput (IPC, user-mode share, fetch and
+  issue rate), front end (L1I and iTLB MPKI, BTB misses, I-cache stall
+  cycles, FTQ full, decode blocked), bad speculation (conditional and all
+  mispredicts, BTB-miss mispredicts, squashed per committed, fetch
+  squashing, memory-order violations), memory (L1D, L2, dTLB MPKI, page
+  walks, L1D/L1I miss latency in cycles) and back end (rename blocked, ROB,
+  IQ, LSQ and register full, LQ/SQ occupancy). Garfield counters (ghost,
+  MRN, VP shares) and the top-down Level 1 fractions appear when the build
+  has them; a metric that is zero throughout is listed but not plotted.
+  `--metric` adds any stat: raw, per 1000 instructions (`/insts`) or as a
+  share of cycles (`/cycles`).
+- **The dashed line is the metric over the whole window**, from the stats
+  summed over all blocks (cycle-weighted for averages such as queue
+  occupancy). It is not the mean of the bars: with equal-instruction blocks,
+  window IPC is the harmonic mean of block IPCs, so low-IPC blocks, which
+  take most of the cycles, pull it below the average bar (0.956 against
+  1.21 on framework-52684).
+- **The schedule on the same axis**: the CPU strip (who ran, with its
+  kernel-mode share), tool calls, and an event row (process, thread and
+  kernel-thread switches, exec, fork, exit, tool-call states). Event lines
+  can be drawn through every chart; each block can be shaded, or its bar
+  coloured, by the group that ran most of it, grouped by process, launch
+  tree or place (7.2).
+- **Step through events** of one kind, and for switches one cause
+  (`opencode -> docker`, ...): ◀ ▶ or the arrow keys centre each event with
+  ±K blocks around it. A link ending in
+  `#kind=switch_process&cause=opencode%20-%3E%20docker&n=3&ctx=12` opens on
+  that event.
+- **Around events**: for each selected metric, the mean and 25th–75th
+  percentile at block offsets −K..+K from the block holding each selected
+  event (a block holding several counts once), against the window value.
+  Optionally only events with no other of their kind within ±K.
+- **Event table**: every selected event with its block's IPC and its
+  difference from the window; click to jump. Hovering a block lists every
+  plotted metric against the window, who ran in it and its events.
+
+When blocks are narrower than two pixels, a pixel column shows their mean
+(solid) and maximum (faint); *Clip outliers* caps the y axis near the 98th
+percentile of the visible blocks (a capped bar has a dark top), *Fit all*
+shows everything.
 
 ## 9. Validation you can repeat
 
@@ -615,9 +727,9 @@ The last runs used for these checks are listed in the research log.
 - A different kernel only needs its own vmlinux: the slide and offsets are
   derived from it. Symbols the tracer hooks must exist (it stops if one is
   missing).
-- The analysis's roles are specific to the OpenCode replay (`HARNESS`,
-  `TOOL_ROOTS`, `PLUMBING` at the top of `trace_analysis.py`). For another
-  workload, change those and the `--task-trace-process` name.
+- The process labels (7.2) hold for any Linux guest. Only the tool-call
+  parsing (7.3) is specific to OpenCode; for another workload set
+  `--task-trace-process` to the process whose reads and writes matter.
 
 ## 12. Known limits and open issues
 
@@ -634,18 +746,33 @@ The last runs used for these checks are listed in the research log.
   a multi-core machine and "who ran when" is a single timeline.
 - **No cgroup or container names.** Only identities (`ns`, `cg`) are
   available with this kernel's reduced debug info; containers are labelled
-  by their members.
-- **The tools fence is not active in the replay guests** (7.2), so tool vs
-  harness rests on process names.
+  by their top process.
+- **No command lines for processes that predate the checkpoint.** Only
+  their names are in the snapshot, so what such a process is for cannot be
+  read from the trace (7.2). Recording `mm->arg_start..arg_end` in the
+  snapshot would close this.
+- **The tools fence is not active in the replay guests** (7.2), so OpenCode
+  and the processes it starts share one cgroup set.
 - **Execs whose syscall entry happened before the restore** have no path or
   argv (only the new name).
+- **The task running at the restore is not recorded.** The first switch
+  names it (as `prev`); a trace with no switch shows its only slice as
+  `not recorded`. Reading `current` at the restore would close this; on
+  arm64 `SP_EL0` holds it only at EL1, so at EL0 it would have to be found
+  by matching `SP_EL1` to a task's kernel stack.
+- **The trace has no end record.** The tools end it at the end of the last
+  stats block (`intervals.csv`); the user-mode count there adds the stats'
+  user-mode instructions after the last event, and is left unknown when the
+  last event precedes the first block (an atomic settle with no switch in
+  the detailed window). Traces without `intervals.csv` end at their last
+  event.
 - **Reads are recorded without data**, and only through `vfs_read`
   (`read`, `pread`); `readv` and io_uring reads are not seen. Paths do not
   cross mount points.
-- **Replay infrastructure in the measurement.** The replay driver's
-  `docker inspect` polling is roughly a fifth of instructions in
-  the traces so far and shares the vCPU with OpenCode. It is its own role
-  (`replay`); report numbers without it as well.
+- **Replay infrastructure in the measurement.** The `docker inspect`
+  polling of the `run.sh` launch tree (7.2) is roughly a fifth of the
+  instructions in the agentic traces so far and shares the vCPU with
+  OpenCode; report numbers without that tree as well.
 - **L2 TLB connected since 2026-10-13.** `NeoverseMMU`
   (`configs/garfield/arm/neoverse_v2.py`) used to override `itb`/`dtb`
   without `next_level=Parent.l2_shared`, so every L1 TLB miss was a page

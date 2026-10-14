@@ -16,16 +16,9 @@
   --grid: #e9ecef;
   --focus: #2a78d6;
   --tool: #4a3aa7;
-  --role-harness: #2a78d6;
-  --role-tool: #eb6834;
-  --role-daemon: #1baf7a;
-  --role-harness-child: #eda100;
-  --role-replay: #e87ba4;
-  --role-framework: #008300;
-  --role-other: #a7aeb5;
-  --role-kernel: #8a939c;
-  --role-idle: #d5dadf;
-  --role-unknown: #b9c0c7;
+  --g1: #2a78d6; --g2: #eb6834; --g3: #008300; --g4: #e87ba4; --g5: #eda100;
+  --g6: #7a5cc7; --g7: #1baf7a; --g8: #8c5a3c; --g9: #4fb3d9; --g10: #b8b02a;
+  --g-kernel: #8a939c; --g-idle: #d5dadf; --g-other: #b9c0c7;
   --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -35,10 +28,9 @@
     --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
     --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
     --tool: #9085e9;
-    --role-harness: #3987e5; --role-tool: #d95926; --role-daemon: #199e70;
-    --role-harness-child: #c98500; --role-replay: #d55181;
-    --role-framework: #008300; --role-other: #59626a;
-    --role-kernel: #6b747c; --role-idle: #30363b; --role-unknown: #4b535a;
+    --g1: #3987e5; --g2: #d95926; --g3: #2a9a2a; --g4: #d55181; --g5: #c98500;
+    --g6: #9079dd; --g7: #199e70; --g8: #a8714f; --g9: #4aa6c9; --g10: #a39c28;
+    --g-kernel: #6b747c; --g-idle: #30363b; --g-other: #4b535a;
     color-scheme: dark;
   }
 }
@@ -46,10 +38,9 @@
   --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
   --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
   --tool: #9085e9;
-  --role-harness: #3987e5; --role-tool: #d95926; --role-daemon: #199e70;
-  --role-harness-child: #c98500; --role-replay: #d55181;
-  --role-framework: #008300; --role-other: #59626a;
-  --role-kernel: #6b747c; --role-idle: #30363b; --role-unknown: #4b535a;
+  --g1: #3987e5; --g2: #d95926; --g3: #2a9a2a; --g4: #d55181; --g5: #c98500;
+  --g6: #9079dd; --g7: #199e70; --g8: #a8714f; --g9: #4aa6c9; --g10: #a39c28;
+  --g-kernel: #6b747c; --g-idle: #30363b; --g-other: #4b535a;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
@@ -76,6 +67,9 @@ h2 {
 .stat .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
 .legend span { display: inline-flex; align-items: center; gap: 6px; }
+.legend button.lg { all: unset; display: inline-flex; align-items: center; gap: 6px; cursor: pointer; border-radius: 4px; }
+.legend button.lg:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+.legend button.lg[aria-pressed="false"] { opacity: 0.4; text-decoration: line-through; }
 .sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
 .legend .pct { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); font-variant-numeric: tabular-nums; }
 .controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
@@ -126,7 +120,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   </header>
 
   <section class="stats" id="stats" aria-label="Summary"></section>
-  <section class="legend" id="legend" aria-label="Roles"></section>
+  <section class="legend" id="legend" aria-label="Colours; click one to hide its lanes"></section>
 
   <section class="controls" aria-label="View controls">
     <div class="seg" role="group" aria-label="Time axis">
@@ -137,9 +131,10 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
       <button id="l-name" aria-pressed="true">Lane per name</button>
       <button id="l-pid" aria-pressed="false">Lane per process</button>
     </div>
-    <div class="seg" role="group" aria-label="Replay processes">
-      <button id="r-show" aria-pressed="true">Show replay</button>
-      <button id="r-hide" aria-pressed="false">Hide replay</button>
+    <div class="seg" role="group" aria-label="Colour by">
+      <button id="c-process" aria-pressed="true">Colour by process</button>
+      <button id="c-tree" aria-pressed="false">Launch tree</button>
+      <button id="c-place" aria-pressed="false">Where</button>
     </div>
     <div class="seg" role="group" aria-label="Kernel-mode split" id="k-group" hidden>
       <button id="k-show" aria-pressed="true">Kernel split</button>
@@ -174,7 +169,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     </div>
   </section>
 
-  <footer>Generated from <code>tasktrace.jsonl</code> by <code>python3 configs/garfield/arm/trace_view.py &lt;outdir&gt;</code>. Bars show which task the single guest CPU ran between two context switches; the darker band at the bottom of a bar is the share of that time slice spent in kernel mode on the task's behalf (system calls, interrupts, page faults, the scheduler), and the dark end is the scheduler's own path (<code>__schedule</code> to the switch); the replay driver and its <code>docker inspect</code> polls exist only in the model-free replay; instruction counts are the global committed count since the restore.</footer>
+  <footer>Generated from <code>tasktrace.jsonl</code> by <code>python3 configs/garfield/arm/trace_view.py &lt;outdir&gt;</code>. Bars show which task the single guest CPU ran between two context switches; the darker band at the bottom of a bar is the share of that time slice spent in kernel mode on the task's behalf (system calls, interrupts, page faults, the scheduler), and the dark end is the scheduler's own path (<code>__schedule</code> to the switch). Colours group processes by name, by launch tree (the topmost ancestor below systemd on the host, or the container's top process) or by where they ran (host or container); kernel threads and the idle task are grey. Labels are read from the trace, not inferred from purpose; see <code>trace_analysis.py</code>. Instruction counts are the global committed count since the restore.</footer>
 </div>
 
 <div class="tip" id="tip" hidden></div>
@@ -183,17 +178,13 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
 <script>
 (() => {
   "use strict";
-  const ROLES = ["harness", "harness-child", "tool", "framework", "replay", "daemon", "kernel", "idle", "other", "unknown"];
-  const ROLE_LABEL = {
-    "harness": "Harness (OpenCode)", "harness-child": "Harness children", "tool": "Fenced tools",
-    "framework": "Benchmark framework", "replay": "Replay driver", "daemon": "Daemons",
-    "kernel": "Kernel threads", "idle": "Idle", "other": "Other", "unknown": "Unknown",
-    "plumbing": "Docker plumbing",
-  };
-  const CONTAINER_LABEL = (c) => c === "host" ? "guest host" : c === "opencode-container" ? "OpenCode container" : (c || "unknown");
+  // Colour groups: up to PALETTE colours by instruction share, the rest
+  // share one; kernel threads and the idle task have fixed greys.
+  const PALETTE = 10;
+  const GROUP_PLURAL = { process: "processes", tree: "launch trees", place: "places" };
   const $ = (id) => document.getElementById(id);
   const ov = $("overview"), mc = $("main"), tip = $("tip");
-  let D = null, unit = "insts", laneMode = "name", hideReplay = false, showKernel = true, view = [0, 1], lanes = [], laneOf = [];
+  let D = null, unit = "insts", laneMode = "name", colourBy = "process", hidden = new Set(), showKernel = true, view = [0, 1], lanes = [], laneOf = [];
   let colors = {};
 
   // ---------- formatting ----------
@@ -215,8 +206,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     colors = { ink: g("--ink"), ink2: g("--ink-2"), ink3: g("--ink-3"), grid: g("--grid"),
       rule: g("--rule"), panel: g("--panel"), bg: g("--bg"), toolcall: g("--tool"), focus: g("--focus"),
       font: g("--font-data"), label: g("--font-label") };
-    ROLES.forEach((r) => (colors[r] = g("--role-" + r)));
-    colors["plumbing"] = colors["daemon"];   // view files from older traces
+    for (let k = 1; k <= PALETTE; k++) colors["g" + k] = g("--g" + k);
+    ["kernel", "idle", "other"].forEach((k) => (colors["g-" + k] = g("--g-" + k)));
   }
 
   // ---------- model ----------
@@ -226,18 +217,16 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     D.segOrder = Array.from({ length: n }, (_, i) => i);   // already in time order
     D.procs.forEach((p, i) => { p.idx = i; p.label = p.names[p.names.length - 1] || "?"; });
     D.domain = { insts: [D.i0, D.i1], ms: [0, D.t1] };
-    const tot = {}; let all = 0;
-    for (let i = 0; i < n; i++) {
-      const r = D.procs[D.segs.p[i]].role, w = D.segs.e[i] - D.segs.s[i];
-      tot[r] = (tot[r] || 0) + w; all += w;
-    }
+    let all = 0;
+    for (let i = 0; i < n; i++) all += D.segs.e[i] - D.segs.s[i];
     D.hasUser = !!D.segs.u;
-    D.userTotal = D.hasUser ? D.segs.u.reduce((a, b) => a + b, 0) : 0;
+    D.userTotal = D.hasUser ? D.segs.u.reduce((a, b) => a + (b || 0), 0) : 0;
     D.schedTotal = D.hasUser ? D.segs.sc.reduce((a, b) => a + b, 0) : 0;
     D.allInsts = all;
     $("k-group").hidden = !D.hasUser;
     $("sw-box").hidden = !(D.switchCost && D.switchCost.length);
-    D.roleShare = Object.fromEntries(ROLES.map((r) => [r, (tot[r] || 0) / (all || 1)]));
+    hidden = new Set();
+    rankGroups();
     buildLanes();
     view = D.domain[unit].slice();
     renderSummary();
@@ -245,13 +234,32 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     resize();
   }
 
+  // The group a process is coloured and hidden by.
+  const groupOf = (p) => p.kind && p.kind !== "user" ? p.kind
+    : colourBy === "process" ? p.label : colourBy === "tree" ? p.tree : p.place;
+  function rankGroups() {
+    const tot = {};
+    for (let i = 0; i < D.segs.s.length; i++) {
+      const g = groupOf(D.procs[D.segs.p[i]]);
+      tot[g] = (tot[g] || 0) + D.segs.e[i] - D.segs.s[i];
+    }
+    D.groupShare = Object.fromEntries(Object.entries(tot).map(([g, v]) => [g, v / (D.allInsts || 1)]));
+    D.groups = Object.keys(tot).sort((a, b) => tot[b] - tot[a]);
+    D.groupColor = {};
+    let k = 0;
+    D.groups.forEach((g) => {
+      D.groupColor[g] = g === "kernel" || g === "idle" ? "g-" + g : ++k <= PALETTE ? "g" + k : "g-other";
+    });
+  }
+  const colorOf = (g) => colors[D.groupColor[g]] || colors["g-other"];
+
   function buildLanes() {
-    const key = (p) => laneMode === "name" ? p.role + "\u0000" + p.label : String(p.tgid);
+    const key = (p) => laneMode === "name" ? groupOf(p) + "\u0000" + p.label : String(p.tgid);
     const map = new Map();
     D.procs.forEach((p) => {
-      if (hideReplay && p.role === "replay") return;
+      if (hidden.has(groupOf(p))) return;
       const k = key(p);
-      if (!map.has(k)) map.set(k, { key: k, procs: [], role: p.role, label: p.label, insts: 0 });
+      if (!map.has(k)) map.set(k, { key: k, procs: [], group: groupOf(p), label: p.label, insts: 0 });
       const l = map.get(k); l.procs.push(p.idx); l.insts += p.insts;
     });
     lanes = [...map.values()];
@@ -260,7 +268,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
         ? (l.procs.length > 1 ? `${l.label} ×${l.procs.length}` : `${l.label} (${D.procs[l.procs[0]].tgid})`)
         : `${l.label} (${D.procs[l.procs[0]].tgid})`;
     });
-    lanes.sort((a, b) => ROLES.indexOf(a.role) - ROLES.indexOf(b.role) || b.insts - a.insts);
+    lanes.sort((a, b) => D.groups.indexOf(a.group) - D.groups.indexOf(b.group) || b.insts - a.insts);
     laneOf = new Array(D.procs.length).fill(-1);
     lanes.forEach((l, li) => { l.procs.forEach((p) => (laneOf[p] = li)); l.segs = []; l.marks = []; });
     for (let i = 0; i < D.segs.s.length; i++) if (laneOf[D.segs.p[i]] >= 0) lanes[laneOf[D.segs.p[i]]].segs.push(i);
@@ -377,7 +385,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     c.textAlign = "right"; c.font = `11px ${colors.font}`;
     lanes.forEach((l, li) => {
       const y = laneY(li) + G.laneH / 2;
-      c.fillStyle = colors[l.role]; c.fillRect(6, y - 4, 8, 8);
+      c.fillStyle = colorOf(l.group); c.fillRect(6, y - 4, 8, 8);
       c.fillStyle = colors.ink2;
       c.fillText(clip(c, l.title, G.labelW - 30), x0 - 8, y);
     });
@@ -389,7 +397,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     // Binary-search the first visible segment (lists are in time order).
     let lo = 0, hi = list.length;
     while (lo < hi) { const m = (lo + hi) >> 1; if (ev(list[m]) < view[0]) lo = m + 1; else hi = m; }
-    let lastX = -1, lastRole = null, colK = 0, colN = 0;
+    let lastX = -1, lastGroup = null, colK = 0, colN = 0;
     // Kernel-mode share of a slice as a darker band along its bottom edge;
     // slices narrower than a pixel are merged and share one band. The order
     // of user and kernel code inside a slice is not recorded, so the band
@@ -406,16 +414,16 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
       if (s > view[1]) break;
       let xa = plotX(s), xb = plotX(ev(i));
       xa = Math.max(xa, x0 - 2); xb = Math.min(xb, x1 + 2);
-      const role = D.procs[S.p[i]].role;
-      const n = S.e[i] - S.s[i], kn = split ? n - S.u[i] : 0;
+      const grp = groupOf(D.procs[S.p[i]]);
+      const n = S.e[i] - S.s[i], kn = split && S.u[i] != null ? n - S.u[i] : 0;
       if (xb - xa < 0.6) { // sub-pixel: merge into one hairline per pixel
         const px = Math.floor(xa);
-        if (px === lastX && role === lastRole) { colK += kn; colN += n; continue; }
+        if (px === lastX && grp === lastGroup) { colK += kn; colN += n; continue; }
         flush();
-        lastX = px; lastRole = role; xb = xa + 1; colK = kn; colN = n;
+        lastX = px; lastGroup = grp; xb = xa + 1; colK = kn; colN = n;
       } else { flush(); lastX = -1; }
-      c.fillStyle = colors[role] || colors.unknown;
-      const dim = hideReplay && role === "replay" ? 0.25 : 1;
+      c.fillStyle = colorOf(grp);
+      const dim = hidden.has(grp) ? 0.25 : 1;
       c.globalAlpha = dim;
       c.fillRect(xa, y, xb - xa, h);
       if (split && xb - xa >= 1) {
@@ -441,18 +449,18 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     const X = (v) => x0 + (v - dom[0]) / (dom[1] - dom[0]) * (x1 - x0);
     c.textAlign = "right"; c.textBaseline = "middle"; c.font = `600 11px ${colors.label}`; c.fillStyle = colors.ink2;
     c.fillText("WHOLE RUN", x0 - 8, 16);
-    // role strip of the whole run, one column per pixel coloured by the
-    // role that ran most of it
+    // strip of the whole run, one column per pixel coloured by the group
+    // that ran most of it
     const cols = Math.max(1, Math.floor(x1 - x0));
     const acc = Array.from({ length: cols }, () => ({}));
     for (let i = 0; i < D.segs.s.length; i++) {
       const a = Math.max(0, Math.floor(X(sv(i)) - x0)), b = Math.min(cols - 1, Math.floor(X(ev(i)) - x0));
-      const r = D.procs[D.segs.p[i]].role, w = (ev(i) - sv(i)) / Math.max(1, b - a + 1);
+      const r = groupOf(D.procs[D.segs.p[i]]), w = (ev(i) - sv(i)) / Math.max(1, b - a + 1);
       for (let k = a; k <= b; k++) acc[k][r] = (acc[k][r] || 0) + w;
     }
     acc.forEach((o, k) => {
       let best = null, bw = -1; for (const r in o) if (o[r] > bw) { bw = o[r]; best = r; }
-      if (best) { c.fillStyle = colors[best]; c.fillRect(x0 + k, 8, 1, 16); }
+      if (best) { c.fillStyle = colorOf(best); c.fillRect(x0 + k, 8, 1, 16); }
     });
     D.tools.forEach((t) => {
       const a = t.running || t.pending, b = t.completed || t.error || a;
@@ -530,9 +538,10 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     if (h.kind === "seg") {
       const S = D.segs, i = h.i, p = D.procs[S.p[i]];
       return `<b>${esc(p.names.join(" → "))}</b> <span class="m">tgid ${p.tgid}</span><br>
-        Thread ${esc(D.threads[S.th[i]])} · ${esc(ROLE_LABEL[p.role] || p.role)}${p.container ? " · " + esc(CONTAINER_LABEL(p.container)) : ""}<br>
+        Thread ${esc(D.threads[S.th[i]])} · ${esc(p.kind && p.kind !== "user" ? p.kind : p.place || "")}<br>
+        ${p.lineage ? `<span class="m">${esc(p.lineage)}</span><br>` : ""}
         <span class="m">${fmtI(S.e[i] - S.s[i])} insts · ${fmtMs(S.te[i] - S.ts[i])}<br>
-        ${S.u ? `user ${fmtI(S.u[i])} · kernel ${fmtI(S.e[i] - S.s[i] - S.u[i])} (${pct((S.e[i] - S.s[i] - S.u[i]) / Math.max(1, S.e[i] - S.s[i]))}) · scheduler ${fmtI(S.sc[i])}<br>` : ""}
+        ${S.u && S.u[i] != null ? `user ${fmtI(S.u[i])} · kernel ${fmtI(S.e[i] - S.s[i] - S.u[i])} (${pct((S.e[i] - S.s[i] - S.u[i]) / Math.max(1, S.e[i] - S.s[i]))}) · scheduler ${fmtI(S.sc[i])}<br>` : ""}
         ${fmtI(S.s[i])} → ${fmtI(S.e[i])} · ${fmtMs(S.ts[i])} → ${fmtMs(S.te[i])}</span>
         ${p.argv ? `<br><span class="m">${esc(p.argv.slice(0, 160))}</span>` : ""}`;
     }
@@ -623,8 +632,14 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     unit = u; press(u === "insts" ? "u-insts" : "u-ms", u === "insts" ? "u-ms" : "u-insts");
     setView(v[0], v[1]);
   }
-  $("r-show").onclick = () => { hideReplay = false; press("r-show", "r-hide"); buildLanes(); resize(); };
-  $("r-hide").onclick = () => { hideReplay = true; press("r-hide", "r-show"); buildLanes(); resize(); };
+  const COLOUR_BTN = { process: "c-process", tree: "c-tree", place: "c-place" };
+  Object.entries(COLOUR_BTN).forEach(([by, id]) => {
+    $(id).onclick = () => {
+      colourBy = by; hidden = new Set();
+      Object.values(COLOUR_BTN).forEach((b) => $(b).setAttribute("aria-pressed", b === id));
+      rankGroups(); renderLegend(); buildLanes(); resize();
+    };
+  });
   $("l-name").onclick = () => { laneMode = "name"; press("l-name", "l-pid"); buildLanes(); resize(); };
   $("l-pid").onclick = () => { laneMode = "pid"; press("l-pid", "l-name"); buildLanes(); resize(); };
   $("k-show").onclick = () => { showKernel = true; press("k-show", "k-hide"); draw(); };
@@ -637,6 +652,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     try {
       const m = JSON.parse(await f.text());
       if (!m.segs || !m.procs) throw new Error("not a schedule.view.json");
+      if (!(m.version >= 3)) throw new Error("made by an older trace_view.py; regenerate it");
       load(m);
     } catch (err) {
       $("sub").textContent = `Could not open ${f.name}: ${err.message}. Generate one with trace_view.py.`;
@@ -657,11 +673,24 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     if (D.hasUser) stats.splice(2, 0, ["Kernel mode", pct(1 - D.userTotal / (D.allInsts || 1))],
       ["Scheduler path", pct(D.schedTotal / (D.allInsts || 1))]);
     $("stats").innerHTML = stats.map(([k, v]) => `<div class="stat"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
-    $("legend").innerHTML = ROLES.filter((r) => D.roleShare[r] > 0)
-      .map((r) => `<span><i class="sw" style="background:var(--role-${r})"></i>${ROLE_LABEL[r]} <span class="pct">${pct(D.roleShare[r])}</span></span>`).join("")
+    renderLegend();
+  }
+
+  function renderLegend() {
+    const shown = D.groups.slice(0, PALETTE + 2);
+    const rest = D.groups.length - shown.length;
+    $("legend").innerHTML = shown.map((g) =>
+      `<button class="lg" data-g="${esc(g)}" aria-pressed="${!hidden.has(g)}" title="Click to hide or show its lanes"><i class="sw" style="background:var(--${D.groupColor[g]})"></i>${esc(g)} <span class="pct">${pct(D.groupShare[g])}</span></button>`).join("")
+      + (rest > 0 ? `<span><i class="sw" style="background:var(--g-other)"></i>${rest} more ${GROUP_PLURAL[colourBy]}</span>` : "")
       + `<span><i class="sw" style="background:var(--tool)"></i>Tool call (running → done)</span>`
       + (D.hasUser ? `<span class="pct">darker bottom band = kernel-mode share of the slice · dark end = scheduler path</span>` : "")
       + `<span class="pct">▼ exec · ● fork · | exit · ■ tool file I/O · ◆ cgroup move</span>`;
+    $("legend").querySelectorAll("button.lg").forEach((b) => b.addEventListener("click", () => {
+      const g = b.dataset.g;
+      hidden.has(g) ? hidden.delete(g) : hidden.add(g);
+      b.setAttribute("aria-pressed", !hidden.has(g));
+      buildLanes(); resize();
+    }));
   }
 
   function renderTables() {
@@ -686,10 +715,10 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     }
     const total = D.i1 - D.i0 || 1;
     const pr = D.procs.slice().sort((a, b) => b.insts - a.insts).slice(0, 60).map((p) =>
-      `<tr><td>${esc(p.names.join(" → "))} <span class="hint">${p.tgid}</span></td><td>${esc(ROLE_LABEL[p.role] || p.role)}</td><td>${esc(CONTAINER_LABEL(p.container))}</td>
+      `<tr><td>${esc(p.names.join(" → "))} <span class="hint">${p.tgid}</span></td><td>${esc(p.kind === "user" ? p.place : p.kind)}</td><td class="c">${esc(p.lineage || "")}</td>
        <td class="n">${fmtI(p.insts)}</td><td class="n">${pct(p.insts / total)}</td>${D.hasUser ? `<td class="n">${p.insts ? pct(1 - (p.user || 0) / p.insts) : "—"}</td>` : ""}<td class="n">${p.switchIns}</td>
        <td class="c">${esc(p.argv || "")}</td></tr>`).join("");
-    $("t-procs").innerHTML = `<thead><tr><th>Process</th><th>Role</th><th>Where</th><th>Insts</th><th>Share</th>${D.hasUser ? "<th>Kernel mode</th>" : ""}<th>Switch-ins</th><th>Command</th></tr></thead><tbody>${pr}</tbody>`;
+    $("t-procs").innerHTML = `<thead><tr><th>Process</th><th>Where</th><th>Lineage</th><th>Insts</th><th>Share</th>${D.hasUser ? "<th>Kernel mode</th>" : ""}<th>Switch-ins</th><th>Command</th></tr></thead><tbody>${pr}</tbody>`;
   }
 
   // ---------- boot ----------

@@ -402,6 +402,78 @@ switches: identical stats, IPC 0.854 both ways. The full 400M window repeats
 the previous run's cycle count exactly (439,252,297; IPC 0.911) with the new
 hook and counters.
 
+### 15. Process labels are facts from the trace, not purpose roles (2026-10-13)
+
+The analysis used to give every process one role (`harness`,
+`harness-child`, `tool`, `framework`, `replay`, `daemon`, `kernel`,
+`idle`) by first-match rules. Two of the rules assumed purpose from
+location. "Any other user process on the host is `replay`" put `snapd`,
+`run.sh`, `watch_rounds.sh`, `sleep`, `sudo`, `make` and `uv` there beside
+the plausible replay driver (`python3` 608) and its `docker` children, and
+in a SPEC guest the benchmark itself. "Any other process in a container is
+`framework`" merged two different containers (the OpenCode container's
+`python` 1003 and the second container's `python` 1077) with OpenCode's
+launch wrapper `faketime`. None of these processes has a command line in
+the trace (they predate the checkpoint), so even "python3 608 is the replay
+driver" is circumstantial.
+
+Now every process carries only labels the trace supports (guide 7.2):
+kind (user, kernel, idle), place (host, or `container <top> (<tgid>)` named
+after the container's top process), launch tree (its topmost ancestor below
+systemd, or the container's top process) and lineage. Shares are reported
+by place, launch tree and process name. Other changes that removed a
+purpose assumption:
+
+- **Tool-call kind:** `subprocess (<names>)` now means a descendant of the
+  process that recorded the call ran during it, instead of "a process
+  named `*.fence-real` ran". `run_share_<role>` became
+  `run_share_{caller,descendants,kernel,idle,other}`; `run_agent_insts`
+  (instructions without `replay`) is gone.
+- **Switch causes** are by process name (`opencode -> docker`) instead of
+  by role (`harness -> replay`).
+- **Fence verdict** comes from the `cgroup.procs` writes themselves (did
+  the moved process end in a cgroup set different from its mover's?)
+  instead of comparing the cgroups of processes named `opencode` and
+  `*.fence-real`.
+- **A process with no recorded namespace set** (seen only while exiting,
+  or only in a fork record) takes its parent's: the two snapshot `git`
+  processes that used to be `unknown` are now in the OpenCode container.
+
+Earlier entries in this log use the old roles. Read `harness` as the
+process `opencode`, `tool` as `bash.fence-real`/`rg.fence-real` and their
+children, `replay` as the host's `run.sh` launch tree (with `snapd` and any
+other unlisted host service), `framework` as the containers' other
+processes.
+
+A layer that names purpose (harness, replay driver, ...) from an explicit
+per-workload rules file, and recording command lines of pre-existing
+processes in the snapshot, were discussed and deferred.
+
+### 16. Metrics view of a detailed window (2026-10-13)
+
+`window_view.py` plots per-block metrics of a `--stats-interval-insts` run
+as bar charts on the instruction axis with the schedule on the same axis,
+and averages each metric over the blocks around a chosen kind of event
+(guide 8.2). The window value it compares against comes from the summed
+stats, not from the mean of the blocks: with equal-instruction blocks,
+window IPC is the harmonic mean of block IPCs (framework-52684: 0.956
+against an arithmetic block mean of 1.21).
+
+### 17. Where the trace starts and ends (2026-10-14)
+
+The tracer names a task only when it is switched in or out, and writes
+nothing when the simulation stops. The tools used to end the last slice at
+the last event and to drop everything when there was no switch, which left
+the `714.cpython_r` window (no switch in 220M instructions) with an empty
+schedule. `trace_analysis.load_events` now appends an `end` event at the
+end of the last stats block, with a user-mode count from the stats when
+they cover the tail, and a trace with no switch gets one slice labelled
+`not recorded` rather than a guessed owner. The split of a slice whose
+user-mode count is unknown is left out of the kernel-mode figures instead
+of being counted as kernel. Reading `current` at the restore would remove
+the `not recorded` slice (guide 12); that is a tracer change and is not
+done.
+
 ## Validation
 
 ### 2026-10-08 — first run, gin-2121 cpt.0, atomic, 20M instructions
@@ -745,3 +817,46 @@ does not, so the global count changes basis slightly across a core switch.
 on `itb` and `dtb` (user's change). Every O3 run cited above predates it:
 their iTLB/dTLB miss and page-walk figures, and to a lesser degree their
 IPC, are not comparable with runs from now on.
+
+### 2026-10-14: example windows for the metrics view, labels from facts
+
+Three O3 windows on the L2-TLB build, 1 atomic settle instruction, 20M
+warm-up, 200K-instruction stats blocks (`spec-window.sh`, `o3-window.sh`):
+`714.cpython_r` (200M detailed), `jq-2598` and `redis-12272` (400M
+detailed). Outputs in `runs/tasktrace/20261013-1735*`; all three tools run
+on every trace in `runs/tasktrace` without errors.
+
+| run | window IPC | who ran | switches (process / thread / kernel) |
+|---|---|---|---|
+| cpython | 2.098 | one slice, `not recorded` (benchmark alone) | 0 / 0 / 0 |
+| jq | 1.420 | `m4` 50%, `bison` 13%, `docker` 11%, `git` 9% | 274 / 129 / 117 |
+| redis | 0.778 | `opencode` 70%, `docker` 19%, `git` 6% | 165 / 475 / 137 |
+
+The `run.sh` launch tree (the `docker inspect` polling) is 12% of the jq
+window and 22% of the redis window. No `cgroup.procs` writes in either.
+
+**Metrics around events** (block holding the event against the window
+value; mean over events, a block counted once per event):
+
+- jq, `bison -> m4` and `m4 -> bison` (pipe hand-offs, 63 events): IPC
+  +20%, L1I MPKI −65%, L2 MPKI −80%. The two processes are small and hot,
+  and the switch costs nothing visible at 200K-instruction resolution.
+- jq, process switches overall (247): IPC −36%, L1I MPKI +522%, iTLB MPKI
+  +380%; exits (−48% IPC) and process forks (−54%) are worse. These blocks
+  are dominated by short-lived shells (`bash.fence-real`, `sed`, `mkdir`)
+  that run 76–93% in kernel mode.
+- redis, `within opencode` thread switches (156): IPC −44%, L1I MPKI
+  +393%; `within docker` (290): IPC +13%, L1I MPKI +105%.
+- Most of the drop recovers within one block: redis process switches go
+  from −31% IPC in the event block to −7% in the next.
+
+So the cost attributed to a switch depends on who runs around it rather
+than on the switch itself; process-switch averages mix the cheap pipe
+hand-offs with the expensive short-lived processes, and a per-cause view
+(the navigator's cause filter) is needed to separate them.
+
+**cpython control.** No scheduling event in the window, yet L1I MPKI
+steps from 0.34 to 0.50 (block means) at 64.8M instructions and stays
+there: a program phase change. A metric shift near an event is not
+evidence of the event's effect without such a check.
+

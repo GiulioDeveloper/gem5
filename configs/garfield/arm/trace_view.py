@@ -8,8 +8,9 @@ Turns <outdir>/tasktrace.jsonl into a compact view model (who ran on the
 CPU when, process lifecycle events, OpenCode tool calls) and writes
 <outdir>/analysis/schedule.view.json plus a self-contained
 <outdir>/analysis/schedule.html built from trace_view.html. The page can
-also load any other schedule.view.json. Roles and tool calls come from
-trace_analysis.py, so both tools agree.
+also load any other schedule.view.json. Process labels (kind, where,
+launch tree, lineage) and tool calls come from trace_analysis.py, so both
+tools agree.
 """
 
 import argparse
@@ -36,10 +37,15 @@ def view_model(outdir):
         if tgid not in proc_index:
             path, argv = tree.exec.get(tgid, ("", []))
             proc_index[tgid] = len(procs)
+            kind = tree.kind(task)
+            user = kind == "user"
             procs.append({"tgid": tgid, "ppid": tree.parent.get(tgid),
                           "names": tree.names.get(tgid, [task["process"]]),
-                          "role": tree.role(task),
-                          "container": tree.container(tgid), "exec": path,
+                          "kind": kind,
+                          "place": tree.place(tgid) if user else kind,
+                          "tree": tree.tree(tgid) if user else kind,
+                          "lineage": tree.lineage(tgid) if user else "",
+                          "exec": path,
                           "argv": " ".join(argv)[:400], "insts": 0,
                           "switchIns": 0})
         return proc_index[tgid]
@@ -88,20 +94,25 @@ def view_model(outdir):
         last = e
     end_i = max(e["insts"] for e in events)
     end_t = max(e["tick"] for e in events)
-    if last and last["next"]:
-        p = proc(last["next"])
+    # The last task runs to the end of the trace; without any switch the
+    # trace never names the task that was running.
+    tail = last["next"] if last else ta.NOT_RECORDED
+    if tail and end_i > cur[0]:
+        p = proc(tail)
         segs["s"].append(cur[0])
         segs["e"].append(end_i)
         segs["p"].append(p)
-        segs["th"].append(thread(last["next"]))
+        segs["th"].append(thread(tail))
         segs["ts"].append(ms(cur[1]))
         segs["te"].append(ms(end_t))
         procs[p]["insts"] += end_i - cur[0]
         if has_user:
-            u = max(events, key=lambda e: e["insts"])["uinsts"] - cur[2]
+            # None when the stats do not cover the end of the trace.
+            uend = max(events, key=lambda e: e["insts"]).get("uinsts")
+            u = None if uend is None or cur[2] is None else uend - cur[2]
             segs["u"].append(u)
             segs["sc"].append(0)
-            procs[p]["user"] = procs[p].get("user", 0) + u
+            procs[p]["user"] = procs[p].get("user", 0) + (u or 0)
 
     D = {"procs": procs}
     marks = []
@@ -146,11 +157,16 @@ def view_model(outdir):
         hi = end[0] if end else end_i
         row["kind"] = "in-process"
         if lo is not None:
+            # A subprocess call: a descendant of the process that recorded
+            # it ran while it was running (as in trace_analysis.py).
+            writer = c.get("writer")
             spawned = sorted({D["procs"][p]["names"][-1]
                               for s0, e0, p in zip(segs["s"], segs["e"],
                                                    segs["p"])
-                              if e0 > lo and s0 < hi
-                              and D["procs"][p]["role"] == "tool"})
+                              if e0 > lo and s0 < hi and writer is not None
+                              and D["procs"][p]["tgid"] != writer
+                              and writer in tree.ancestors(
+                                  D["procs"][p]["tgid"])})
             if spawned:
                 row["kind"] = "subprocess (" + ", ".join(spawned) + ")"
             # The tool's own file I/O: the first read or write of its file
@@ -182,7 +198,7 @@ def view_model(outdir):
                                         / len(es) / 1000, 1)})
 
     return {
-        "version": 2,
+        "version": 3,
         "switchCost": sw_cost,
         "name": outdir.name,
         "kaslrSlide": hex(start.get("kaslr_slide", 0)),

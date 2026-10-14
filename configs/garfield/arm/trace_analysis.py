@@ -1,6 +1,7 @@
 # LICENSE-PLACEHOLDER: GARFIELD-LICENSE-TBD
 
-"""Analyse a --task-trace run of virt_run.py (host Python, stdlib only).
+"""Analyse a --task-trace run of virt_run.py or fs_run.py (host Python,
+stdlib only).
 
     python3 configs/garfield/arm/trace_analysis.py <outdir> [--window K]
 
@@ -8,42 +9,41 @@ Reads <outdir>/tasktrace.jsonl and, when the run used
 --stats-interval-insts, <outdir>/intervals.csv and the per-interval blocks of
 <outdir>/stats.txt. Writes <outdir>/analysis/:
 
-  processes.csv  one row per process seen: names, exec path and argv, role,
-                 instructions it ran inside the trace (split into user and
-                 kernel mode), times switched in
+  processes.csv  one row per process seen: names, kind, where, launch tree
+                 and lineage, exec path and argv, instructions it ran
+                 inside the trace (split into user and kernel mode), times
+                 switched in
   writes.csv     every recorded write(): the traced process's, and writes
                  to cgroup.procs (a task entering a cgroup) from any process
   reads.csv      every recorded read() of the traced process (no data)
-  containers.csv one row per namespace set: its label and member processes
+  containers.csv one row per place (host or container): its namespace
+                 set and member processes
   switches.csv   context switches counted by cause (who switched to whom),
                  with what the scheduler spent on each: instructions and
                  time from __schedule() entry to the switch, and the kernel
                  share of the time slice the switch ended
   tools.csv      one row per OpenCode tool call: name, input, the trace
                  position of each state change, and who ran in between
-  blocks.csv     per stats interval: metrics, the dominant process and role,
-                 instruction share per role, and the events inside it
+  blocks.csv     per stats interval: metrics, the dominant process and
+                 launch tree, kernel and idle shares, the share of every
+                 launch tree, and the events inside it
   aligned.csv    per event kind, each metric averaged over the intervals at
                  offsets -K..+K from the interval holding the event
   summary.md     the headline numbers
 
-Roles (ROLES, in display order):
-  harness        the OpenCode process (all its threads)
-  harness-child  anything else OpenCode started, e.g. its snapshot git
-  tool           bash.fence-real / rg.fence-real and their descendants:
-                 OpenCode's subprocess tools
-  framework      other benchmark processes inside the containers (the tool
-                 server, the orchestrator's model proxy, faketime)
-  replay         user processes on the guest host: the model-free replay
-                 driver and what it runs (its `docker inspect` polls,
-                 watch_rounds.sh, sleep)
-  daemon         system daemons: dockerd, containerd and its shims, runc,
-                 systemd services
-  kernel         kernel threads (PF_KTHREAD)
-  idle           pid 0
-  other          anything unclassified
-Containers come from the namespace-set pointer (`ns`) the tracer records;
-traces from before that field existed fall back to names.
+Every process is labelled with facts read from the trace, not with guesses
+about its purpose (see Tree):
+  kind           user, kernel (a kernel thread) or idle (pid 0)
+  where          host, or `container <top> (<tgid>)` for a namespace set
+                 entered under a containerd-shim, named after the
+                 container's top process
+  launch tree    `<name> (<tgid>)` of the process's topmost ancestor below
+                 systemd (pid 1) on the host, or the container's top
+                 process; everything a login shell or a service started
+                 shares its tree
+  lineage        the names from the launch tree's root down to the process
+Shares are reported by process name, launch tree and place; kernel threads
+and the idle task form the groups `kernel` and `idle`.
 """
 
 import argparse
@@ -54,12 +54,11 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
-HARNESS = "opencode"
-TOOL_ROOTS = ("bash.fence-real", "rg.fence-real")
-DAEMONS = ("dockerd", "containerd", "runc", "docker-proxy", "systemd",
-           "haveged", "agetty", "dbus", "cron", "sshd")
-ROLES = ("harness", "harness-child", "tool", "framework", "replay", "daemon",
-         "kernel", "idle", "other")
+KINDS = ("user", "kernel", "idle")
+GROUP_BY = ("process", "tree", "place")
+# Who ran during a tool call: the process that recorded it, its
+# descendants, kernel threads, the idle task, any other user process.
+TOOL_SHARES = ("caller", "descendants", "kernel", "idle", "other")
 
 CORE = "board.processor.start.core."
 CACHES = "board.cache_hierarchy."
@@ -81,9 +80,62 @@ METRICS = ("ipc", "user_frac", "l1i_mpki", "l1d_mpki", "l2_mpki",
            "br_mpki", "btb_mpki", "itlb_mpki", "dtlb_mpki", "walks_pki")
 
 
+# The task on the CPU when a trace with no context switch was recorded:
+# the tracer names a task only when it is switched in or out.
+NOT_RECORDED = {"pid": -1, "tgid": -1, "ppid": 0, "comm": "not recorded",
+                "process": "not recorded", "kernel_thread": False,
+                "kthread": False}
+
+
 def load_events(path):
+    """The trace's events, plus an `end` event at the end of the last stats
+    block when the run has intervals.csv: the tracer writes nothing when the
+    simulation stops, so without it the last slice would end at the last
+    event. The end event's user-mode count adds the stats' user-mode
+    instructions after the last event: exact for whole blocks, pro rata for
+    the block the last event falls in. It is left out when the last event
+    precedes the first block (e.g. in the atomic settle before a detailed
+    window), since the stats do not cover that stretch."""
     with open(path) as f:
-        return [json.loads(line) for line in f if line.strip()]
+        events = [json.loads(line) for line in f if line.strip()]
+    ivs = path.parent / "intervals.csv"
+    if not events or not ivs.exists():
+        return events
+    with open(ivs) as f:
+        rows = list(csv.DictReader(f))
+    last = max(events, key=lambda e: e["insts"])
+    if not rows or int(rows[-1]["insts_end"]) <= last["insts"]:
+        return events
+    end = {"tick": int(rows[-1]["tick_end"]),
+           "insts": int(rows[-1]["insts_end"]), "event": "end"}
+    if "uinsts" in last and int(rows[0]["insts_start"]) <= last["insts"]:
+        user, commit = user_per_block(path.parent / "stats.txt")
+        uinsts = last["uinsts"]
+        for r, u, c in zip(rows, user, commit):
+            lo, hi = int(r["insts_start"]), int(r["insts_end"])
+            if hi > last["insts"] and c:
+                uinsts += u * (hi - max(lo, last["insts"])) / (hi - lo)
+        end["uinsts"] = round(uinsts)
+    events.append(end)
+    return events
+
+
+def user_per_block(stats):
+    """User-mode and committed instructions of each stats dump."""
+    keys = (STATS["user_insts"], STATS["commit_insts"])
+    user, commit = [], []
+    with open(stats) as f:
+        for line in f:
+            if line.startswith("---------- Begin"):
+                user.append(0.0)
+                commit.append(0.0)
+            elif line.startswith(keys):
+                parts = line.split()
+                if parts[0] == keys[0]:
+                    user[-1] = float(parts[1])
+                elif parts[0] == keys[1]:
+                    commit[-1] = float(parts[1])
+    return user, commit
 
 
 class Tree:
@@ -108,9 +160,10 @@ class Tree:
             if e["event"] == "exec" and e["task"]:
                 self.exec[e["task"]["tgid"]] = (
                     e.get("path", ""), e.get("argv", []))
+        if not any(e["event"] == "switch" for e in events):
+            self._note(NOT_RECORDED)
         self.host_ns = self.ns.get(1)
-        self.harness_ns = next((self.ns[t] for t, n in self.names.items()
-                                if HARNESS in n and t in self.ns), None)
+        self._place, self._root = {}, {}
 
     def _note(self, t):
         tgid = t["tgid"]
@@ -142,55 +195,105 @@ class Tree:
         # drops its mm before its last context switch.
         return tgid == 2 or self.parent.get(tgid) == 2
 
-    def container(self, tgid):
-        """'host', 'opencode-container', 'container-<id>' or 'unknown'.
+    def name(self, tgid):
+        """The process's latest name: a fork child is named after its
+        parent until it execs."""
+        names = self.names.get(tgid)
+        return names[-1] if names else "?"
 
-        A container is a namespace set entered under a containerd-shim.
-        Host services that systemd sandboxes into private namespaces
-        (systemd-resolved, ...) are still on the host.
-        """
-        ns = self.ns.get(tgid)
-        if ns is None:
-            return "unknown"
-        if ns == self.host_ns:
-            return "host"
-        if ns == self.harness_ns:
-            return "opencode-container"
-        lineage = self.ancestors(tgid)
-        if any(n.startswith("containerd-shim")
-               for t in lineage for n in self.names.get(t, [])):
-            return "container-" + ns[-4:]
-        return "host"
-
-    def role(self, task):
+    def kind(self, task):
+        """'user', 'kernel' (a kernel thread) or 'idle' (pid 0)."""
         if task is None:
             return "unknown"
         if task["pid"] == 0:
             return "idle"
-        if self.is_kernel(task):
-            return "kernel"
+        return "kernel" if self.is_kernel(task) else "user"
+
+    def _ns(self, tgid):
+        """The process's namespace set. A process seen only after it
+        released its namespaces (exiting) or only in a fork record has
+        none of its own; a fork child starts in its parent's namespace
+        set, so it inherits the parent's."""
+        for t in [tgid] + self.ancestors(tgid):
+            if t in self.ns:
+                return self.ns[t]
+        return None
+
+    def _in_container(self, tgid):
+        return any(n.startswith("containerd-shim")
+                   for t in self.ancestors(tgid)
+                   for n in self.names.get(t, []))
+
+    def container_top(self, tgid):
+        """The topmost ancestor sharing the process's namespace set: the
+        process the container runtime started."""
+        ns, top = self._ns(tgid), tgid
+        for t in self.ancestors(tgid):
+            if self._ns(t) != ns:
+                break
+            top = t
+        return top
+
+    def place(self, tgid):
+        """'host', 'container <top> (<tgid>)' or 'unknown'.
+
+        A container is a namespace set entered under a containerd-shim,
+        named after its top process. Host services that systemd sandboxes
+        into private namespaces (systemd-resolved, ...) are on the host.
+        """
+        if tgid not in self._place:
+            ns = self._ns(tgid)
+            if ns is None:
+                where = "unknown"
+            elif ns == self.host_ns or not self._in_container(tgid):
+                where = "host"
+            else:
+                top = self.container_top(tgid)
+                where = f"container {self.name(top)} ({top})"
+            self._place[tgid] = where
+        return self._place[tgid]
+
+    def root(self, tgid):
+        """The launch tree's root: in a container its top process, on the
+        host the topmost ancestor below systemd (pid 1)."""
+        if tgid not in self._root:
+            if self.place(tgid).startswith("container"):
+                r = self.container_top(tgid)
+            else:
+                chain = [tgid] + self.ancestors(tgid)
+                below_init = [t for t in chain if t > 1]
+                r = below_init[-1] if below_init else chain[-1]
+            self._root[tgid] = r
+        return self._root[tgid]
+
+    def tree(self, tgid):
+        """'<name> (<tgid>)' of the launch tree's root; 'pid <tgid>' when
+        the root's name is not in the trace (traces from before the
+        start-up snapshot, for an ancestor that never ran)."""
+        r = self.root(tgid)
+        return f"{self.name(r)} ({r})" if r in self.names else f"pid {r}"
+
+    def lineage(self, tgid):
+        r = self.root(tgid)
+        chain = [tgid]
+        for t in self.ancestors(tgid):
+            if chain[-1] == r:
+                break
+            chain.append(t)
+        return " > ".join(self.name(t) for t in reversed(chain))
+
+    def group(self, task, by="process"):
+        """The label a task is counted under: 'kernel' or 'idle' for those
+        kinds, else its process name, launch tree or place (GROUP_BY)."""
+        kind = self.kind(task)
+        if kind != "user":
+            return kind
         tgid = task["tgid"]
-        # A process's role follows its latest name: a fork child is named
-        # after its parent until it execs.
-        process = (self.names.get(tgid) or [task["process"]])[-1]
-        if process == HARNESS:
-            return "harness"
-        lineage = [tgid] + self.ancestors(tgid)
-        names = {n for t in lineage for n in self.names.get(t, [])}
-        names.add(task["comm"])
-        if names & set(TOOL_ROOTS):
-            return "tool"
-        if any(HARNESS in self.names.get(t, []) for t in lineage[1:]):
-            return "harness-child"
-        if process.startswith(DAEMONS):
-            return "daemon"
-        where = self.container(tgid)
-        if where == "host":
-            return "replay"
-        if where != "unknown":
-            return "framework"
-        # Traces without namespaces: the replay driver's docker CLI calls.
-        return "replay" if process == "docker" else "other"
+        if by == "process":
+            return self.name(tgid)
+        if by == "tree":
+            return self.tree(tgid)
+        return self.place(tgid)
 
 
 def running_segments(events):
@@ -214,20 +317,26 @@ def running_segments(events):
         if e["prev"]:
             add(e["insts"], e.get("uinsts"), e["prev"])
         start, ustart = e["insts"], e.get("uinsts")
-    if switches and switches[-1]["next"]:
-        last = max(events, key=lambda e: e["insts"])
-        add(last["insts"], last.get("uinsts"), switches[-1]["next"])
+    # The last task runs to the end of the trace. Without any switch the
+    # trace never names the task that was running.
+    tail = switches[-1]["next"] if switches else NOT_RECORDED
+    last = max(events, key=lambda e: e["insts"])
+    if tail and last["insts"] > start:
+        add(last["insts"], last.get("uinsts"), tail)
     return segs, user
 
 
 def user_between(segs, user, lo, hi):
     """User-mode instructions in the instruction range [lo, hi), assuming
     each slice's user instructions are spread evenly over it (exact for
-    whole slices; the order inside a slice is not recorded)."""
+    whole slices; the order inside a slice is not recorded). NaN when a
+    slice overlapping the range has no user-mode count."""
     total = 0.0
     for (s, e, _), u in zip(segs, user):
         a, b = max(s, lo), min(e, hi)
-        if b > a and u is not None and e > s:
+        if b > a and e > s:
+            if u is None:
+                return float("nan")
             total += u * (b - a) / (e - s)
     return total
 
@@ -243,8 +352,7 @@ def event_kinds(e, tree=None):
     if ev == "switch":
         p, n = e["prev"] or {}, e["next"] or {}
         if tree and p and n:
-            kern = tree.role(p) in ("kernel", "idle") or \
-                tree.role(n) in ("kernel", "idle")
+            kern = tree.kind(p) != "user" or tree.kind(n) != "user"
         else:
             kern = p.get("kernel_thread") or n.get("kernel_thread")
         if kern:
@@ -261,12 +369,13 @@ def event_kinds(e, tree=None):
 
 
 def switch_cause(e, tree):
-    """Who switched to whom, by role: 'within harness' for a switch between
-    threads of one process, else the two roles, e.g. 'harness -> replay'."""
+    """Who switched to whom, by process name ('kernel' and 'idle' for
+    kernel threads and the idle task): 'within opencode' for a switch
+    between threads of one process, else e.g. 'opencode -> docker'."""
     p, n = e["prev"], e["next"]
     if not p or not n:
         return "unknown"
-    a, b = tree.role(p), tree.role(n)
+    a, b = tree.group(p), tree.group(n)
     if e["same_mm"]:
         return f"within {a}"
     return f"{a} -> {b}"
@@ -348,7 +457,8 @@ def tool_calls(events):
     to opencode.db-wal, which the tracer records. A page also carries other
     rows, some stale, so a state counts from its FIRST appearance. The JSON
     event line OpenCode prints for a finished call (its --format json log)
-    is recorded as `logged`.
+    is recorded as `logged`. `writer` is the process that recorded the
+    call (OpenCode).
     """
     calls = {}
     for e in events:
@@ -360,6 +470,8 @@ def tool_calls(events):
             if not f or not f["callID"] or f["status"] not in STATUSES:
                 continue
             c = calls.setdefault(f["callID"], {"call": f["callID"]})
+            if e.get("task"):
+                c.setdefault("writer", e["task"]["tgid"])
             for k in ("tool", "filePath", "command"):
                 if f[k] and not c.get(k):
                     c[k] = f[k]
@@ -456,11 +568,15 @@ def main():
     i1 = max(e["insts"] for e in events)
 
     # ---- per process ------------------------------------------------------
+    # `split` counts the instructions of slices whose user-mode count is
+    # known (the last slice's is not when the stats do not cover it).
     ran, ran_user, switched_in = Counter(), Counter(), Counter()
+    ran_split = Counter()
     task_of = {}
     for (s, e, t), u in zip(segs, user):
         ran[t["tgid"]] += e - s
         ran_user[t["tgid"]] += u or 0
+        ran_split[t["tgid"]] += e - s if u is not None else 0
         task_of.setdefault(t["tgid"], t)
     for e in events:
         if e["event"] == "switch" and e["next"]:
@@ -475,37 +591,53 @@ def main():
     procs = []
     for tgid, t in task_of.items():
         path, argv = tree.exec.get(tgid, ("", []))
+        kind = tree.kind(t)
         procs.append({
             "tgid": tgid, "ppid": tree.parent.get(tgid, ""),
-            "names": "|".join(tree.names.get(tgid, [])),
-            "role": tree.role(t), "container": tree.container(tgid),
+            "names": "|".join(tree.names.get(tgid, [])), "kind": kind,
+            "place": tree.place(tgid) if kind == "user" else "",
+            "tree": tree.tree(tgid) if kind == "user" else "",
+            "lineage": tree.lineage(tgid) if kind == "user" else "",
             "insts": ran[tgid], "user_insts": ran_user[tgid],
-            "kernel_insts": ran[tgid] - ran_user[tgid] if has_user else "",
+            "kernel_insts": (ran_split[tgid] - ran_user[tgid] if has_user
+                             else ""),
             "switch_ins": switched_in[tgid],
             "exec_path": path, "argv": " ".join(argv)[:300],
         })
     procs.sort(key=lambda r: (-r["insts"], r["tgid"]))
     write_csv(out / "processes.csv", procs,
-              ["tgid", "ppid", "names", "role", "container", "insts",
-               "user_insts", "kernel_insts", "switch_ins", "exec_path",
-               "argv"])
+              ["tgid", "ppid", "names", "kind", "place", "tree", "lineage",
+               "insts", "user_insts", "kernel_insts", "switch_ins",
+               "exec_path", "argv"])
 
-    role_insts, role_user = Counter(), Counter()
+    # Instructions (and user-mode instructions) per group, for each way of
+    # grouping.
+    group_insts = {by: Counter() for by in GROUP_BY}
+    group_user = {by: Counter() for by in GROUP_BY}
+    group_split = {by: Counter() for by in GROUP_BY}
     for (s, e, t), u in zip(segs, user):
-        role_insts[tree.role(t)] += e - s
-        role_user[tree.role(t)] += u or 0
+        for by in GROUP_BY:
+            g = tree.group(t, by)
+            group_insts[by][g] += e - s
+            group_user[by][g] += u or 0
+            group_split[by][g] += e - s if u is not None else 0
 
-    # ---- containers -------------------------------------------------------
+    # ---- places -----------------------------------------------------------
     members = defaultdict(Counter)
+    place_ns = {}
     for tgid in tree.names:
-        if tgid in tree.ns:
-            members[tree.container(tgid)][tree.names[tgid][-1]] += 1
-    containers = [{"container": k, "processes": sum(v.values()),
+        if tree.kthread.get(tgid) or tgid == 0:
+            continue
+        where = tree.place(tgid)
+        members[where][tree.name(tgid)] += 1
+        place_ns.setdefault(where, tree._ns(tgid) or "")
+    containers = [{"place": k, "ns": place_ns.get(k, ""),
+                   "processes": sum(v.values()),
                    "members": " ".join(f"{n}×{c}" if c > 1 else n
                                        for n, c in v.most_common(12))}
                   for k, v in sorted(members.items())]
     write_csv(out / "containers.csv", containers,
-              ["container", "processes", "members"])
+              ["place", "ns", "processes", "members"])
 
     # ---- file I/O ---------------------------------------------------------
     def io_row(e):
@@ -536,17 +668,21 @@ def main():
     for e in fence_entries:
         events.append({"event": "fence", "insts": e["insts"],
                        "tick": e["tick"]})
-    # Is the fence effective? Fenced tools must sit in a different cgroup
-    # set from the harness.
-    harness_cg = {tree.cg[t] for t, n in tree.names.items()
-                  if HARNESS in n and t in tree.cg}
-    fenced = [t for t, n in tree.names.items()
-              if set(n) & set(TOOL_ROOTS) and t in tree.cg]
-    fence_note = ("no fenced tool process in this trace" if not fenced else
-                  "fence effective: fenced tools are in their own cgroup"
-                  if all(tree.cg[t] not in harness_cg for t in fenced) else
-                  "fence NOT effective: fenced tools share the harness's "
-                  "cgroup (tool/harness split by process name only)")
+    # Did the moves take effect? A moved process must end up in a cgroup
+    # set different from the process that moved it.
+    moved = []
+    for e in fence_entries:
+        try:
+            pid = int((e["data"] or "").strip())
+        except ValueError:
+            continue
+        mover = e["task"]["tgid"] if e.get("task") else None
+        moved.append(pid in tree.cg and tree.cg.get(pid) != tree.cg.get(mover))
+    fence_note = ("no cgroup.procs write: no process was moved into another "
+                  "cgroup" if not fence_entries else
+                  f"{len(fence_entries)} cgroup.procs writes; "
+                  f"{sum(moved)} of {len(moved)} moved processes ended in a "
+                  "cgroup set different from their mover's")
 
     # ---- tool calls -------------------------------------------------------
     tools = tool_calls(events)
@@ -556,36 +692,45 @@ def main():
                 c[st + "_insts"], c[st + "_tick"] = c[st]
         end = c.get("completed") or c.get("error")
         # Observed, not assumed from the tool's name: a call is a
-        # subprocess call if a fenced tool process (bash.fence-real,
-        # rg.fence-real) ran while it was running.
+        # subprocess call if a descendant of the process that recorded it
+        # (OpenCode) ran while it was running.
+        writer = c.get("writer")
+
+        def descends(t):
+            return (writer is not None and t["tgid"] != writer
+                    and writer in tree.ancestors(t["tgid"]))
         c["kind"] = "in-process"
         if "running" in c:
             lo = c["running"][0]
             hi = end[0] if end else i1
-            spawned = sorted({t["process"] for s0, e0, t in segs
-                              if e0 > lo and s0 < hi
-                              and tree.role(t) == "tool"})
+            spawned = sorted({tree.name(t["tgid"]) for s0, e0, t in segs
+                              if e0 > lo and s0 < hi and descends(t)})
             if spawned:
                 c["kind"] = "subprocess (" + ", ".join(spawned) + ")"
         if "running" in c and end:
             lo, hi = c["running"][0], end[0]
             c["run_insts"] = hi - lo
             c["run_ms"] = (end[1] - c["running"][1]) / 1e9
-            share, threads = Counter(), Counter()
+            share, procs_in, threads = Counter(), Counter(), Counter()
             for s0, e0, t in segs:
                 a0, b0 = max(s0, lo), min(e0, hi)
                 if b0 > a0:
-                    share[tree.role(t)] += b0 - a0
+                    who = ("caller" if t["tgid"] == writer else
+                           "descendants" if descends(t) else
+                           tree.kind(t) if tree.kind(t) != "user" else
+                           "other")
+                    share[who] += b0 - a0
+                    procs_in[tree.group(t)] += b0 - a0
                     threads[f"{t['process']}/{t['comm']}"] += b0 - a0
             tot = sum(share.values()) or 1
-            for r in ROLES:
-                c["run_share_" + r] = share[r] / tot
-            agent = tot - share["replay"]
-            c["run_agent_insts"] = agent
+            for who in TOOL_SHARES:
+                c["run_share_" + who] = share[who] / tot
             if has_user:
                 u = user_between(segs, user, lo, hi)
                 c["run_user_insts"] = round(u)
                 c["run_kernel_insts"] = round(hi - lo - u)
+            c["run_top_processes"] = " ".join(
+                f"{k}:{v / tot:.0%}" for k, v in procs_in.most_common(5))
             c["run_top_threads"] = " ".join(
                 f"{k}:{v / tot:.0%}" for k, v in threads.most_common(5))
             # The tool's own file I/O: the first read or write of its file
@@ -602,10 +747,10 @@ def main():
     write_csv(out / "tools.csv", tools,
               ["call", "tool", "kind", "input", "pending_insts",
                "running_insts", "io", "io_insts", "completed_insts",
-               "error_insts", "logged_insts", "run_insts", "run_agent_insts",
-               "run_ms", "run_user_insts", "run_kernel_insts", "start_ms",
-               "end_ms", *("run_share_" + r for r in ROLES),
-               "run_top_threads"])
+               "error_insts", "logged_insts", "run_insts", "run_ms",
+               "run_user_insts", "run_kernel_insts", "start_ms", "end_ms",
+               *("run_share_" + w for w in TOOL_SHARES),
+               "run_top_processes", "run_top_threads"])
     # Tool-call edges become events too, for blocks.csv and aligned.csv.
     for c in tools:
         for st, kind in (("running", "tool_start"), ("completed", "tool_end"),
@@ -671,23 +816,26 @@ def main():
     blocks = load_blocks(args.outdir)
     starts = [b["insts_start"] for b in blocks]
     for b in blocks:
-        share = Counter()
-        procs_in = Counter()
+        trees, procs_in = Counter(), Counter()
         for s, e, t in segs:
             lo, hi = max(s, b["insts_start"]), min(e, b["insts_end"])
             if hi > lo:
-                share[tree.role(t)] += hi - lo
-                procs_in[t["process"]] += hi - lo
-        total = sum(share.values()) or 1
-        for r in ROLES:
-            b["share_" + r] = share[r] / total
+                trees[tree.group(t, "tree")] += hi - lo
+                procs_in[tree.group(t)] += hi - lo
+        total = sum(trees.values()) or 1
+        for k in ("kernel", "idle"):
+            b["share_" + k] = trees[k] / total
         if has_user:
             b["user_frac_trace"] = (user_between(
                 segs, user, b["insts_start"], b["insts_end"]) / (
                     b["insts_end"] - b["insts_start"] or 1))
         b["sched_insts"] = 0
-        b["top_process"] = procs_in.most_common(1)[0][0] if procs_in else ""
-        b["top_role"] = share.most_common(1)[0][0] if share else ""
+        top = procs_in.most_common(1)
+        b["top_process"] = top[0][0] if top else ""
+        b["top_process_share"] = top[0][1] / total if top else 0.0
+        b["top_tree"] = trees.most_common(1)[0][0] if trees else ""
+        b["trees"] = " ".join(f"{k}={v / total:.3f}"
+                              for k, v in trees.most_common())
         b["events"] = Counter()
     for e in events:
         i = bisect.bisect_right(starts, e["insts"]) - 1
@@ -703,8 +851,9 @@ def main():
     if blocks:
         write_csv(out / "blocks.csv", blocks,
                   ["block", "tick_start", "insts_start", "insts", *METRICS,
-                   "user_frac_trace", "sched_pki", "top_process", "top_role",
-                   *("share_" + r for r in ROLES), "events"])
+                   "user_frac_trace", "sched_pki", "top_process",
+                   "top_process_share", "top_tree", "share_kernel",
+                   "share_idle", "trees", "events"])
 
     # ---- event-aligned ----------------------------------------------------
     aligned = []
@@ -737,22 +886,28 @@ def main():
              "| event | count | per M insts | per ms |", "|---|---|---|---|"]
     for k, v in sorted(kinds.items()):
         lines.append(f"| {k} | {v} | {v / minsts:.2f} | {v / ms:.3f} |")
-    tot = sum(role_insts.values()) or 1
-    agent = tot - role_insts["replay"]
+    tot = i1 - i0 or 1
     if has_user:
-        tu = sum(role_user.values())
-        lines += ["", f"User mode {tu / tot:.1%} of the instructions, kernel "
-                  f"mode {1 - tu / tot:.1%} (system calls, interrupts, page "
+        tu = sum(group_user["process"].values())
+        ts = sum(group_split["process"].values()) or 1
+        lines += ["", f"User mode {tu / ts:.1%} of the instructions, kernel "
+                  f"mode {1 - tu / ts:.1%} (system calls, interrupts, page "
                   "faults, the scheduler, kernel threads)."]
-    lines += ["", "Instruction share by role; *without replay* leaves out the "
-              "model-free replay's own processes.", "",
-              "| role | share | share without replay | kernel mode |"
-              if has_user else "| role | share | share without replay |",
-              "|---|---|---|---|" if has_user else "|---|---|---|"]
-    for r, v in role_insts.most_common():
-        wo = "—" if r == "replay" else f"{v / (agent or 1):.1%}"
-        kern = f" {1 - role_user[r] / v:.1%} |" if has_user and v else ""
-        lines.append(f"| {r} | {v / tot:.1%} | {wo} |{kern}")
+        if ts < tot:
+            lines.append(f"The split is over {ts / tot:.1%} of the "
+                         "instructions: the last slice's user-mode count is "
+                         "not known before the first stats block.")
+    titles = {"place": "where", "tree": "launch tree", "process": "process"}
+    for by, top_n in (("place", 12), ("tree", 12), ("process", 15)):
+        lines += ["", f"Instruction share by {titles[by]}.", "",
+                  f"| {titles[by]} | share | kernel mode |"
+                  if has_user else f"| {titles[by]} | share |",
+                  "|---|---|---|" if has_user else "|---|---|"]
+        for g, v in group_insts[by].most_common(top_n):
+            n = group_split[by][g]
+            kern = (f" {1 - group_user[by][g] / n:.1%} |" if n
+                    else " — |" if has_user else "")
+            lines.append(f"| {g} | {v / tot:.1%} |{kern}")
     lines += ["", "Context switches by cause. *sched* is the scheduler's own "
               "path (`__schedule` entry to the switch), kernel mode; "
               "*slice kernel* is the kernel-mode share of the time slice the "
@@ -768,37 +923,44 @@ def main():
             f"{fmt(r['slice_kernel_frac'] * 100) if r['slice_kernel_frac'] == r['slice_kernel_frac'] else '—'}"
             "% |")
     if containers:
-        lines += ["", "| container | processes | members |", "|---|---|---|"]
+        lines += ["", "| where | processes | members |", "|---|---|---|"]
         for c in containers:
-            lines.append(f"| {c['container']} | {c['processes']} | "
+            lines.append(f"| {c['place']} | {c['processes']} | "
                          f"{c['members'][:90]} |")
-    lines += ["", "| process | role | insts | switch-ins | exec |",
-              "|---|---|---|---|---|"]
+    lines += ["", "| process | kind | lineage | insts | switch-ins | exec |",
+              "|---|---|---|---|---|---|"]
     for p in procs[:15]:
-        lines.append(f"| {p['names']} ({p['tgid']}) | {p['role']} | "
-                     f"{p['insts']:,} | {p['switch_ins']} | "
-                     f"{p['argv'][:60]} |")
+        lines.append(f"| {p['names']} ({p['tgid']}) | {p['kind']} | "
+                     f"{p['lineage'][-60:]} | {p['insts']:,} | "
+                     f"{p['switch_ins']} | {p['argv'][:60]} |")
     if tools:
-        lines += ["", "| tool | kind | input | running→done (insts) | "
-                  "of which not replay | file I/O at | harness | replay |",
-                  "|---|---|---|---|---|---|---|---|"]
+        lines += ["", "Tool calls. *caller* is the process that recorded the "
+                  "call, *descendants* the processes it started; shares are "
+                  "of the running → done span.", "",
+                  "| tool | kind | input | running→done (insts) | "
+                  "file I/O at | caller | descendants | kernel | other |",
+                  "|---|---|---|---|---|---|---|---|---|"]
         for c in tools:
             lines.append(
                 f"| {c.get('tool', '')} | {c['kind']} | {c['input'][:40]} | "
-                f"{c.get('run_insts', '—')} | "
-                f"{c.get('run_agent_insts', '—')} "
+                f"{c.get('run_insts', '—')} "
                 f"| {c.get('io', '')} {c.get('io_insts', '')} | "
-                + " | ".join(f"{c['run_share_' + r]:.0%}"
-                             if 'run_share_' + r in c else "—"
-                             for r in ("harness", "replay"))
+                + " | ".join(f"{c['run_share_' + w]:.0%}"
+                             if 'run_share_' + w in c else "—"
+                             for w in ("caller", "descendants", "kernel",
+                                       "other"))
                 + " |")
     if blocks:
         lines += ["", f"{len(blocks)} stats intervals; see blocks.csv and "
                   "aligned.csv."]
-        if has_user:
-            w = sum(b["insts"] for b in blocks) or 1
+        # Blocks where both shares are known (NaN != NaN).
+        both = [b for b in blocks if has_user
+                and b["user_frac"] == b["user_frac"]
+                and b["user_frac_trace"] == b["user_frac_trace"]]
+        if both:
+            w = sum(b["insts"] for b in both) or 1
             diff = sum(abs(b["user_frac"] - b["user_frac_trace"]) * b["insts"]
-                       for b in blocks if b["user_frac"] == b["user_frac"]) / w
+                       for b in both) / w
             lines.append(f"User-mode share, gem5 stats vs this trace: mean "
                          f"absolute difference {diff:.3f} per interval "
                          "(the trace spreads a slice's user instructions "

@@ -1,0 +1,1026 @@
+<title>Window Metrics</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: summary strip, metric picker, overlay and event controls, then
+   one canvas with the schedule on top and a bar chart per metric below it,
+   all on the committed-instruction axis; the event-aligned averages and the
+   event list underneath. Colours match trace_view.html. */
+:root {
+  --bg: #f4f6f7;
+  --panel: #fdfdfd;
+  --ink: #13171b;
+  --ink-2: #4a535c;
+  --ink-3: #85909a;
+  --rule: #dfe3e7;
+  --grid: #e9ecef;
+  --focus: #2a78d6;
+  --bar: #3c6e9e;
+  --mean: #d0442a;
+  --tool: #4a3aa7;
+  --g1: #2a78d6; --g2: #eb6834; --g3: #008300; --g4: #e87ba4; --g5: #eda100;
+  --g6: #7a5cc7; --g7: #1baf7a; --g8: #8c5a3c; --g9: #4fb3d9; --g10: #b8b02a;
+  --g-kernel: #8a939c; --g-idle: #d5dadf; --g-other: #b9c0c7;
+  --ev-switch_process: #13171b;
+  --ev-switch_thread: #85909a;
+  --ev-switch_kernel: #a7aeb5;
+  --ev-exec: #eb6834;
+  --ev-fork_process: #1baf7a;
+  --ev-fork_thread: #1baf7a;
+  --ev-exit: #d0442a;
+  --ev-tool: #4a3aa7;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+    --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+    --bar: #6f9fcf; --mean: #ef6a50; --tool: #9085e9;
+    --g1: #3987e5; --g2: #d95926; --g3: #2a9a2a; --g4: #d55181; --g5: #c98500;
+    --g6: #9079dd; --g7: #199e70; --g8: #a8714f; --g9: #4aa6c9; --g10: #a39c28;
+    --g-kernel: #6b747c; --g-idle: #30363b; --g-other: #4b535a;
+    --ev-switch_process: #eef1f3; --ev-switch_thread: #7b858f;
+    --ev-switch_kernel: #59626a; --ev-exec: #d95926; --ev-fork_process: #199e70;
+    --ev-fork_thread: #199e70; --ev-exit: #ef6a50; --ev-tool: #9085e9;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+  --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+  --bar: #6f9fcf; --mean: #ef6a50; --tool: #9085e9;
+  --g1: #3987e5; --g2: #d95926; --g3: #2a9a2a; --g4: #d55181; --g5: #c98500;
+  --g6: #9079dd; --g7: #199e70; --g8: #a8714f; --g9: #4aa6c9; --g10: #a39c28;
+  --g-kernel: #6b747c; --g-idle: #30363b; --g-other: #4b535a;
+  --ev-switch_process: #eef1f3; --ev-switch_thread: #7b858f;
+  --ev-switch_kernel: #59626a; --ev-exec: #d95926; --ev-fork_process: #199e70;
+  --ev-fork_thread: #199e70; --ev-exit: #ef6a50; --ev-tool: #9085e9;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 14px; line-height: 1.45; padding-inline: 16px;
+  padding-block: 20px 40px; margin: 0;
+}
+.wrap { max-width: 1400px; margin-inline: auto; display: grid; gap: 16px; }
+header { display: grid; gap: 6px; }
+h1 {
+  font-family: var(--font-label); font-weight: 600; font-size: 22px;
+  letter-spacing: 0.01em; margin: 0; text-wrap: balance;
+}
+.sub { color: var(--ink-2); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+h2 {
+  font-family: var(--font-label); font-weight: 600; font-size: 13px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2);
+  margin: 0;
+}
+.stats { display: flex; flex-wrap: wrap; gap: 8px 22px; }
+.stat { display: grid; gap: 0; min-width: 0; }
+.stat .k { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.stat .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 13px; }
+.legend span { display: inline-flex; align-items: center; gap: 6px; }
+.sw { width: 12px; height: 12px; border-radius: 3px; display: inline-block; flex: none; }
+.picker { display: grid; gap: 6px; }
+.pgroup { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.pgroup .gl { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); min-width: 112px; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 18px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--rule); border-radius: 0; }
+.seg button:last-child { border-right: 0; }
+button, select, input[type="number"] {
+  font: 500 13px var(--font-body); color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 5px 11px; cursor: pointer;
+}
+input[type="number"] { width: 64px; padding: 4px 6px; cursor: text; font-family: var(--font-data); }
+select { max-width: 280px; }
+button.chip { padding: 3px 9px; font-size: 12.5px; border-radius: 999px; }
+button[aria-pressed="true"] { background: var(--ink); color: var(--panel); border-color: var(--ink); }
+button.ev[aria-pressed="true"] { background: var(--panel); color: var(--ink); border-color: var(--ink-2); }
+button.ev .sw { width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
+button.ev[aria-pressed="false"] { color: var(--ink-3); }
+button.ev[aria-pressed="false"] .sw { opacity: 0.3; }
+button:focus-visible, select:focus-visible, input:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+label.inl { display: inline-flex; gap: 6px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.hint { color: var(--ink-3); font-size: 12px; }
+.nav { display: flex; flex-wrap: wrap; gap: 8px 12px; align-items: center; }
+.nav .readout { font-family: var(--font-data); font-size: 12px; color: var(--ink-2); overflow-wrap: anywhere; min-width: 0; flex: 1 1 260px; }
+.viz { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 0 6px; position: relative; }
+.viz canvas { display: block; width: 100%; touch-action: none; }
+#overview { height: 44px; cursor: crosshair; }
+#main { cursor: grab; }
+#main.dragging { cursor: grabbing; }
+.tip {
+  position: fixed; z-index: 10; pointer-events: none; max-width: min(440px, calc(100vw - 32px));
+  background: var(--panel); color: var(--ink); border: 1px solid var(--rule);
+  border-radius: 6px; padding: 8px 10px; font-size: 12px; line-height: 1.4;
+  box-shadow: 0 4px 18px rgba(0,0,0,0.14); overflow-wrap: anywhere;
+}
+.tip b { font-family: var(--font-label); font-size: 13px; font-weight: 600; }
+.tip .m { font-family: var(--font-data); font-variant-numeric: tabular-nums; color: var(--ink-2); }
+.tip table { border-collapse: collapse; margin-top: 4px; }
+.tip td { padding: 0 8px 0 0; border: 0; font-size: 12px; }
+.tip td.n { font-family: var(--font-data); text-align: right; font-variant-numeric: tabular-nums; }
+.tip .dim { color: var(--ink-3); }
+.section { display: grid; gap: 8px; }
+.scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px; background: var(--panel); max-height: 420px; overflow-y: auto; }
+table.t { border-collapse: collapse; width: 100%; font-size: 12.5px; }
+.t th, .t td { text-align: left; padding: 6px 10px; border-bottom: 1px solid var(--grid); vertical-align: top; }
+.t th { font-family: var(--font-label); font-weight: 600; letter-spacing: 0.04em; color: var(--ink-2); position: sticky; top: 0; background: var(--panel); }
+.t td.n { font-family: var(--font-data); font-variant-numeric: tabular-nums; text-align: right; white-space: nowrap; }
+.t td.c { font-family: var(--font-data); font-size: 11.5px; color: var(--ink-2); max-width: 520px; overflow-wrap: anywhere; }
+.t tr { cursor: pointer; }
+.t tr:hover td { background: var(--bg); }
+.t tr.cur td { background: var(--grid); }
+.empty { color: var(--ink-3); font-size: 13px; padding: 8px 0; }
+footer { color: var(--ink-3); font-size: 12px; }
+footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap: anywhere; }
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Detailed window metrics</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+
+  <section class="stats" id="stats" aria-label="Summary"></section>
+
+  <section class="picker" id="picker" aria-label="Metrics to plot"></section>
+
+  <section class="controls" aria-label="Overlay controls">
+    <div class="seg" role="group" aria-label="Schedule overlay">
+      <button id="o-off" aria-pressed="false">Plain bars</button>
+      <button id="o-shade" aria-pressed="true">Shade by who ran</button>
+      <button id="o-color" aria-pressed="false">Colour bars by who ran</button>
+    </div>
+    <div class="seg" role="group" aria-label="Who ran, grouped by">
+      <button id="g-process" aria-pressed="true">Process</button>
+      <button id="g-tree" aria-pressed="false">Launch tree</button>
+      <button id="g-place" aria-pressed="false">Where</button>
+    </div>
+    <div class="seg" role="group" aria-label="Y axis">
+      <button id="y-clip" aria-pressed="true">Clip outliers</button>
+      <button id="y-fit" aria-pressed="false">Fit all</button>
+    </div>
+    <div class="seg" role="group" aria-label="Zoom">
+      <button id="z-in" aria-label="Zoom in">+</button>
+      <button id="z-out" aria-label="Zoom out">−</button>
+      <button id="z-reset">Whole window</button>
+    </div>
+    <span class="hint">Scroll to zoom, drag to pan, drag the strip above the chart to select a range, click an event tick to centre on it; ← → step through events.</span>
+  </section>
+
+  <section class="legend" id="legend" aria-label="Who ran"></section>
+  <section class="controls" id="evlines" aria-label="Event lines drawn through the charts"></section>
+
+  <section class="nav" aria-label="Event navigator">
+    <h2>Step through</h2>
+    <select id="n-kind" aria-label="Event kind"></select>
+    <select id="n-cause" aria-label="Switch cause"></select>
+    <div class="seg" role="group" aria-label="Previous or next event">
+      <button id="n-prev" aria-label="Previous event">◀</button>
+      <button id="n-next" aria-label="Next event">▶</button>
+    </div>
+    <label class="inl">± blocks <input id="n-ctx" type="number" min="1" max="200" value="10"></label>
+    <div class="readout" id="n-read"></div>
+  </section>
+
+  <section class="viz" aria-label="Metrics over the window">
+    <canvas id="overview" aria-label="Whole-window overview; drag to select a range"></canvas>
+    <canvas id="main" aria-label="Schedule and one bar chart per metric, a bar per stats block"></canvas>
+  </section>
+
+  <section class="section" aria-label="Event-aligned averages">
+    <h2 id="al-title">Around events</h2>
+    <div class="controls">
+      <label class="inl"><input type="checkbox" id="al-iso"> Only events with no other event of this kind within ±K blocks</label>
+      <span class="hint" id="al-n"></span>
+    </div>
+    <div class="viz"><canvas id="aligned" aria-label="Each metric averaged over the blocks around the selected events"></canvas></div>
+  </section>
+
+  <section class="section" aria-label="Events">
+    <h2 id="ev-title">Events</h2>
+    <div class="scroll"><table class="t" id="t-ev"></table></div>
+  </section>
+
+  <footer>Generated from <code>stats.txt</code>, <code>intervals.csv</code> and <code>tasktrace.jsonl</code> by <code>python3 configs/garfield/arm/window_view.py &lt;outdir&gt;</code>. Each bar is one stats block; its width is the instructions it committed. The dashed line is the metric over the whole window, computed from the stats summed over all blocks (cycle-weighted for averages such as queue occupancy), so it is not the mean of the bars. When blocks are narrower than two pixels, a pixel column shows their mean (solid) and maximum (faint). The CPU strip shows who ran between two context switches, with the kernel-mode share of each slice as a darker lower band; who ran is grouped by process name, launch tree (the topmost ancestor below systemd on the host, or the container's top process) or where it ran, as in <code>trace_analysis.py</code>, and shading uses the group that ran most of each block. Around events: blocks are indexed relative to the block holding each event, and a block holding several events of the kind counts once.</footer>
+</div>
+
+<div class="tip" id="tip" hidden></div>
+
+<script id="window-data" type="application/json">__WINDOW_DATA__</script>
+<script>
+(() => {
+  "use strict";
+  const D = JSON.parse(document.getElementById("window-data").textContent);
+  // Who ran is grouped by process name, launch tree or place; up to PALETTE
+  // groups get their own colour by instruction share, the rest share one,
+  // and kernel threads and the idle task are grey (as in trace_view.html).
+  const PALETTE = 10;
+  const GROUP_PLURAL = { process: "processes", tree: "launch trees", place: "places" };
+  const KINDS = [
+    ["switch_process", "Process switch"], ["switch_thread", "Thread switch"],
+    ["switch_kernel", "Kernel-thread switch"], ["exec", "exec"],
+    ["fork_process", "Process fork"], ["fork_thread", "Thread fork"], ["exit", "Exit"],
+    ["tool_pending", "Tool call pending"], ["tool_running", "Tool call starts"],
+    ["tool_completed", "Tool call ends"], ["tool_error", "Tool call fails"],
+  ];
+  const KIND_LABEL = Object.fromEntries(KINDS);
+  const DEFAULT_METRICS = ["ipc", "l1i_mpki", "itlb_mpki", "br_mpki", "l1d_mpki", "rename_blocked"];
+  const $ = (id) => document.getElementById(id);
+  const ov = $("overview"), mc = $("main"), ac = $("aligned"), tip = $("tip");
+
+  // ---------- model ----------
+  const B = D.blocks, NB = B.s.length;
+  const M = D.metrics;
+  M.forEach((m) => {
+    const xs = m.v.filter((x) => x !== null);
+    // the metric over the whole window (from the summed stats), not the
+    // mean of the blocks: IPC over the window is not the mean block IPC
+    m.mean = m.whole !== null && m.whole !== undefined ? m.whole
+      : xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : 0;
+    const sorted = xs.slice().sort((a, b) => a - b);
+    m.p99 = sorted.length ? sorted[Math.min(sorted.length - 1, Math.floor(0.99 * sorted.length))] : 1;
+    m.max = sorted.length ? sorted[sorted.length - 1] : 1;
+  });
+  const ipcM = M.find((m) => m.key === "ipc");
+  const S = D.sched;
+  const marks = S ? S.marks : [];
+  const kindOf = (k) => k.startsWith("tool_") ? "tool" : k;
+  const present = KINDS.filter(([k]) => marks.some((m) => m.k === k)).map(([k]) => k);
+  let groupBy = "process";
+  const groupOf = (p) => p.kind !== "user" ? p.kind
+    : groupBy === "process" ? p.name : groupBy === "tree" ? p.tree : p.place;
+  // Per block, the instruction share of every group that ran in it
+  // (shares[g][k]), the group that ran most (dominant[k]), each group's
+  // colour token and the groups in order of instructions.
+  let shares = {}, dominant = new Array(NB).fill(null), groupColor = {}, groups = [];
+  function computeGroups() {
+    shares = {}; dominant = new Array(NB).fill(null);
+    const tot = {};
+    if (S) {
+      const sg = S.segs;
+      let k = 0;
+      for (let i = 0; i < sg.s.length; i++) {
+        const g = groupOf(S.procs[sg.p[i]]);
+        while (k > 0 && B.s[k] > sg.s[i]) k--;
+        while (k < NB - 1 && B.e[k] <= sg.s[i]) k++;
+        for (let j = k; j < NB && B.s[j] < sg.e[i]; j++) {
+          const w = Math.min(sg.e[i], B.e[j]) - Math.max(sg.s[i], B.s[j]);
+          if (w <= 0) continue;
+          (shares[g] = shares[g] || new Float64Array(NB))[j] += w / (B.e[j] - B.s[j]);
+          tot[g] = (tot[g] || 0) + w;
+        }
+      }
+    }
+    groups = Object.keys(tot).sort((a, b) => tot[b] - tot[a]);
+    groupColor = {}; let c = 0;
+    groups.forEach((g) => { groupColor[g] = g === "kernel" || g === "idle" ? "g-" + g : ++c <= PALETTE ? "g" + c : "g-other"; });
+    for (let j = 0; j < NB; j++) {
+      let best = null, bv = 0;
+      for (const g of groups) if (shares[g][j] > bv) { bv = shares[g][j]; best = g; }
+      dominant[j] = best;
+    }
+    const all = D.i1 - D.i0 || 1;
+    groups.share = Object.fromEntries(groups.map((g) => [g, tot[g] / all]));
+  }
+  const colorOf = (g) => colors[groupColor[g]] || colors["g-other"];
+  const blockOf = (x) => {   // index of the block holding instruction x
+    let lo = 0, hi = NB;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (B.s[m] <= x) lo = m + 1; else hi = m; }
+    return Math.max(0, Math.min(NB - 1, lo - 1));
+  };
+  marks.forEach((m) => (m.b = blockOf(m.i)));
+  const blockEvents = Array.from({ length: NB }, () => []);
+  marks.forEach((m, j) => blockEvents[m.b].push(j));
+
+  // ---------- state ----------
+  let selected = DEFAULT_METRICS.filter((k) => M.some((m) => m.key === k));
+  let overlay = "shade", clip = true;
+  let lines = new Set(["switch_process", "exec", "tool"]);
+  let view = [D.i0, D.i1];
+  let navKind = present.includes("switch_process") ? "switch_process" : (present[0] || null);
+  let navCause = "", navPos = -1;
+  let ctx = 10;
+  let colors = {};
+
+  // ---------- formatting ----------
+  const fmtI = (v) => {
+    const a = Math.abs(v);
+    if (a >= 1e9) return (v / 1e9).toFixed(a >= 1e10 ? 1 : 3) + "G";
+    if (a >= 1e6) return (v / 1e6).toFixed(a >= 1e8 ? 1 : 2) + "M";
+    if (a >= 1e3) return (v / 1e3).toFixed(a >= 1e5 ? 0 : 1) + "k";
+    return String(Math.round(v));
+  };
+  const fmtV = (m, v) => {
+    if (v === null || v === undefined || Number.isNaN(v)) return "–";
+    if (isShare(m)) return (v * 100).toFixed(Math.abs(v) < 0.1 ? 2 : 1) + "%";
+    const a = Math.abs(v);
+    return a >= 100 ? v.toFixed(0) : a >= 10 ? v.toFixed(1) : a >= 1 ? v.toFixed(2) : v.toFixed(3);
+  };
+  const isShare = (m) => m.unit.startsWith("%");
+  const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  const pct = (x) => (x * 100).toFixed(x < 0.1 ? 1 : 0) + "%";
+
+  function readColors() {
+    const cs = getComputedStyle(document.documentElement);
+    const g = (n) => cs.getPropertyValue(n).trim();
+    colors = { ink: g("--ink"), ink2: g("--ink-2"), ink3: g("--ink-3"), grid: g("--grid"),
+      rule: g("--rule"), panel: g("--panel"), bg: g("--bg"), focus: g("--focus"), bar: g("--bar"),
+      mean: g("--mean"), toolcall: g("--tool"), font: g("--font-data"), label: g("--font-label") };
+    for (let k = 1; k <= PALETTE; k++) colors["g" + k] = g("--g" + k);
+    ["kernel", "idle", "other"].forEach((k) => (colors["g-" + k] = g("--g-" + k)));
+    ["switch_process", "switch_thread", "switch_kernel", "exec", "fork_process", "fork_thread", "exit", "tool"]
+      .forEach((k) => (colors["ev-" + k] = g("--ev-" + k)));
+  }
+  const evColor = (k) => colors["ev-" + kindOf(k)] || colors.ink3;
+
+  // ---------- static parts ----------
+  function renderSummary() {
+    const insts = D.i1 - D.i0, cyc = B.cyc.reduce((a, b) => a + b, 0);
+    const sizes = B.s.map((s, i) => B.e[i] - s).sort((a, b) => a - b);
+    $("sub").textContent = `${D.name} · instructions ${fmtI(D.i0)}–${fmtI(D.i1)}`;
+    const items = [
+      ["Window", fmtI(insts) + " insts"], ["Blocks", `${NB} × ${fmtI(sizes[sizes.length >> 1])}`],
+      ["IPC", (insts / cyc).toFixed(3)],
+    ];
+    if (S) {
+      const c = (k) => marks.filter((m) => m.k === k).length;
+      items.push(["Process switches", c("switch_process")], ["Thread switches", c("switch_thread")],
+        ["Kernel-thread switches", c("switch_kernel")], ["exec / exit", `${c("exec")} / ${c("exit")}`]);
+    } else items.push(["Schedule", "no tasktrace.jsonl"]);
+    $("stats").innerHTML = items.map(([k, v]) => `<div class="stat"><span class="k">${esc(k)}</span><span class="v">${esc(v)}</span></div>`).join("");
+    renderLegend();
+  }
+
+  function renderLegend() {
+    const shown = groups.slice(0, PALETTE + 2), rest = groups.length - shown.length;
+    $("legend").innerHTML = shown.map((g) =>
+      `<span><i class="sw" style="background:var(--${groupColor[g]})"></i>${esc(g)} <span class="hint">${pct(groups.share[g])}</span></span>`).join("")
+      + (rest > 0 ? `<span><i class="sw" style="background:var(--g-other)"></i>${rest} more ${GROUP_PLURAL[groupBy]}</span>` : "");
+  }
+
+  function renderPicker() {
+    const mgroups = [];
+    M.forEach((m) => { let g = mgroups.find((x) => x.name === m.group); if (!g) mgroups.push(g = { name: m.group, ms: [] }); g.ms.push(m); });
+    $("picker").innerHTML = mgroups.map((g) => `<div class="pgroup"><span class="gl">${esc(g.name)}</span>` +
+      g.ms.map((m) => `<button class="chip" data-k="${m.key}" title="${esc(m.desc)}" aria-pressed="${selected.includes(m.key)}">${esc(m.label)}</button>`).join("") + "</div>").join("") +
+      (D.zeroMetrics && D.zeroMetrics.length ? `<div class="hint">Zero throughout, not shown: ${esc(D.zeroMetrics.join(", "))}</div>` : "");
+    $("picker").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      const k = b.dataset.k;
+      selected = selected.includes(k) ? selected.filter((x) => x !== k) : selected.concat([k]);
+      // keep picker order stable: by metric definition order
+      selected = M.map((m) => m.key).filter((x) => selected.includes(x));
+      b.setAttribute("aria-pressed", selected.includes(k));
+      resize(); drawAligned();
+    }));
+  }
+
+  function renderEventToggles() {
+    if (!S) { $("evlines").hidden = true; return; }
+    const groups = [...new Set(present.map(kindOf))];
+    const label = (g) => g === "tool" ? "Tool calls" : KIND_LABEL[g];
+    $("evlines").innerHTML = `<h2>Event lines</h2>` + groups.map((g) =>
+      `<button class="ev" data-g="${g}" aria-pressed="${lines.has(g)}"><i class="sw" style="background:var(--ev-${g})"></i>${esc(label(g))}</button>`).join("");
+    $("evlines").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
+      const g = b.dataset.g; lines.has(g) ? lines.delete(g) : lines.add(g);
+      b.setAttribute("aria-pressed", lines.has(g)); draw();
+    }));
+  }
+
+  // ---------- event navigator ----------
+  function navList() {
+    return marks.map((m, j) => j).filter((j) => marks[j].k === navKind && (!navCause || marks[j].cause === navCause));
+  }
+
+  function renderNav() {
+    const nav = document.querySelector(".nav");
+    if (!S || !present.length) { nav.hidden = true; return; }
+    $("n-kind").innerHTML = present.map((k) => `<option value="${k}"${k === navKind ? " selected" : ""}>${esc(KIND_LABEL[k])} (${marks.filter((m) => m.k === k).length})</option>`).join("");
+    const causes = {};
+    marks.forEach((m) => { if (m.k === navKind && m.cause) causes[m.cause] = (causes[m.cause] || 0) + 1; });
+    const cs = Object.entries(causes).sort((a, b) => b[1] - a[1]);
+    $("n-cause").hidden = !cs.length;
+    if (navCause && !causes[navCause]) navCause = "";
+    $("n-cause").innerHTML = `<option value="">any cause</option>` + cs.map(([c, n]) => `<option value="${esc(c)}"${c === navCause ? " selected" : ""}>${esc(c)} (${n})</option>`).join("");
+    renderReadout();
+  }
+
+  function renderReadout() {
+    const list = navList();
+    if (navPos < 0 || navPos >= list.length) { $("n-read").textContent = `${list.length} events · press ▶ to step through them`; return; }
+    const m = marks[list[navPos]];
+    $("n-read").textContent = `${navPos + 1} / ${list.length} · block ${m.b} · ${fmtI(m.i)} · ${m.cause ? m.cause + " · " : ""}${m.text}`;
+  }
+
+  function jumpTo(j) {
+    const m = marks[j];
+    const a = Math.max(0, m.b - ctx), b = Math.min(NB - 1, m.b + ctx);
+    view = [B.s[a], B.e[b]];
+    focusMark = j;
+    renderReadout(); highlightRow(); draw();
+    const n = navList().indexOf(j);
+    try {
+      history.replaceState(null, "", `#kind=${navKind}${navCause ? "&cause=" + encodeURIComponent(navCause) : ""}&n=${n + 1}&ctx=${ctx}`);
+    } catch (e) { /* file:// pages may refuse */ }
+  }
+  let focusMark = -1;
+
+  function step(d) {
+    const list = navList();
+    if (!list.length) return;
+    if (navPos < 0) {   // start from the first event after the view's centre
+      const c = (view[0] + view[1]) / 2;
+      navPos = d > 0 ? list.findIndex((j) => marks[j].i > c) : list.length - 1 - [...list].reverse().findIndex((j) => marks[j].i < c);
+      if (navPos < 0 || navPos >= list.length) navPos = d > 0 ? 0 : list.length - 1;
+    } else navPos = (navPos + d + list.length) % list.length;
+    jumpTo(list[navPos]);
+  }
+
+  // ---------- geometry ----------
+  const G = { labelW: 170, axisH: 22, cpuH: 18, toolH: 14, evH: 16, gap: 12, panelH: 92, panelGap: 16, right: 14 };
+  let W = 800, H = 400, dpr = 1;
+  const hasTools = () => S && S.tools && S.tools.length > 0;
+  const yCpu = () => G.axisH;
+  const yTool = () => yCpu() + (S ? G.cpuH + 4 : 0);
+  const yEv = () => yTool() + (hasTools() ? G.toolH + 4 : 0);
+  const yPanels = () => (S ? yEv() + G.evH : G.axisH) + G.gap;
+  const panelY = (pi) => yPanels() + pi * (G.panelH + G.panelGap);
+  const plotX = (v) => G.labelW + (v - view[0]) / (view[1] - view[0]) * (W - G.labelW - G.right);
+  const valAt = (x) => view[0] + (x - G.labelW) / (W - G.labelW - G.right) * (view[1] - view[0]);
+
+  function resize() {
+    dpr = window.devicePixelRatio || 1;
+    W = mc.clientWidth;
+    G.labelW = W < 560 ? 92 : 170;
+    G.panelH = W < 560 ? 70 : 92;
+    H = panelY(selected.length) - G.panelGap + 26;
+    for (const [c, h] of [[mc, H], [ov, 44]]) {
+      c.style.height = h + "px"; c.width = Math.round(W * dpr); c.height = Math.round(h * dpr);
+    }
+    draw(); drawAligned();
+  }
+
+  function niceTicks(a, b, target) {
+    const span = b - a, raw = span / target, p = Math.pow(10, Math.floor(Math.log10(raw)));
+    const step = [1, 2, 5, 10].map((m) => m * p).find((s) => s >= raw) || 10 * p;
+    const out = []; for (let v = Math.ceil(a / step) * step; v <= b; v += step) out.push(v);
+    return out;
+  }
+
+  function clipText(c, s, w) {
+    if (c.measureText(s).width <= w) return s;
+    while (s.length > 1 && c.measureText(s + "…").width > w) s = s.slice(0, -1);
+    return s + "…";
+  }
+
+  const visibleBlocks = () => [blockOf(view[0]), blockOf(view[1] - 1)];
+
+  // ---------- drawing ----------
+  function draw() { drawMain(); drawOverview(); }
+
+  function drawPlot() {
+    const c = mc.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, H);
+    const x0 = G.labelW, x1 = W - G.right;
+    const [ka, kb] = visibleBlocks();
+    const blockPx = (x1 - x0) / Math.max(1, kb - ka + 1);
+
+    // x grid and labels
+    c.font = `11px ${colors.font}`; c.textBaseline = "middle"; c.textAlign = "center";
+    for (const t of niceTicks(view[0], view[1], Math.max(3, Math.floor((x1 - x0) / 120)))) {
+      const x = plotX(t);
+      c.fillStyle = colors.grid; c.fillRect(Math.round(x), G.axisH - 4, 1, H - G.axisH - 20);
+      c.fillStyle = colors.ink3; c.fillText(fmtI(t), x, 10);
+    }
+    // block boundaries once they are wide enough to tell apart
+    if (blockPx > 14) {
+      c.fillStyle = colors.grid;
+      for (let k = ka; k <= kb + 1 && k <= NB; k++) {
+        const x = plotX(k < NB ? B.s[k] : B.e[NB - 1]);
+        c.fillRect(Math.round(x), yPanels() - 4, 1, H - yPanels() - 18);
+      }
+    }
+
+    // row labels
+    c.textAlign = "right"; c.font = `600 11px ${colors.label}`; c.fillStyle = colors.ink2;
+    if (S) {
+      c.fillText("CPU", x0 - 8, yCpu() + G.cpuH / 2);
+      if (hasTools()) c.fillText("TOOL CALLS", x0 - 8, yTool() + G.toolH / 2);
+      c.fillText("EVENTS", x0 - 8, yEv() + G.evH / 2);
+    }
+
+    c.save(); c.beginPath(); c.rect(x0, 0, x1 - x0, H); c.clip();
+    if (S) { drawCpu(c); drawTools(c); drawEventRow(c); }
+
+    // focus band on the block of the current event
+    if (focusMark >= 0) {
+      const m = marks[focusMark];
+      c.fillStyle = colors.focus; c.globalAlpha = 0.10;
+      c.fillRect(plotX(B.s[m.b]), yPanels() - 6, Math.max(2, plotX(B.e[m.b]) - plotX(B.s[m.b])), H - yPanels() - 14);
+      c.globalAlpha = 1;
+    }
+
+    selected.forEach((key, pi) => drawPanel(c, M.find((m) => m.key === key), panelY(pi), ka, kb, blockPx));
+
+    // event lines through the panels
+    if (S) {
+      const yt = yPanels() - 6, yb = H - 20;
+      for (const m of marks) {
+        if (m.i < view[0] || m.i > view[1] || !lines.has(kindOf(m.k))) continue;
+        const x = Math.round(plotX(m.i)) + 0.5;
+        c.strokeStyle = evColor(m.k); c.globalAlpha = m.k === "switch_thread" || m.k === "switch_kernel" ? 0.35 : 0.6;
+        c.lineWidth = 1; c.beginPath(); c.moveTo(x, yt); c.lineTo(x, yb); c.stroke();
+      }
+      c.globalAlpha = 1;
+      if (focusMark >= 0) {
+        const x = Math.round(plotX(marks[focusMark].i)) + 0.5;
+        c.strokeStyle = colors.focus; c.lineWidth = 2; c.beginPath(); c.moveTo(x, yCpu()); c.lineTo(x, H - 20); c.stroke();
+      }
+    }
+    // hover crosshair
+    if (hoverX !== null) {
+      c.fillStyle = colors.ink2; c.globalAlpha = 0.5; c.fillRect(Math.round(hoverX), G.axisH, 1, H - G.axisH - 20); c.globalAlpha = 1;
+    }
+    c.restore();
+
+    // panel labels
+    selected.forEach((key, pi) => {
+      const m = M.find((x) => x.key === key), y = panelY(pi);
+      c.textAlign = "right"; c.textBaseline = "top";
+      c.font = `600 12px ${colors.label}`; c.fillStyle = colors.ink;
+      c.fillText(clipText(c, m.label, G.labelW - 52), x0 - 44, y);
+      c.font = `11px ${colors.label}`; c.fillStyle = colors.ink3;
+      c.fillText(clipText(c, m.unit, G.labelW - 52), x0 - 44, y + 15);
+      c.font = `11px ${colors.font}`; c.fillStyle = colors.mean;
+      c.fillText("window " + fmtV(m, m.mean), x0 - 44, y + 30);
+    });
+    c.textBaseline = "middle";
+  }
+
+  function drawCpu(c) {
+    const s = S.segs, y = yCpu(), h = G.cpuH, x0 = G.labelW, x1 = W - G.right;
+    let lo = 0, hi = s.s.length;
+    while (lo < hi) { const m = (lo + hi) >> 1; if (s.e[m] < view[0]) lo = m + 1; else hi = m; }
+    let lastPx = -1;
+    for (let i = lo; i < s.s.length && s.s[i] <= view[1]; i++) {
+      let xa = Math.max(plotX(s.s[i]), x0 - 2), xb = Math.min(plotX(s.e[i]), x1 + 2);
+      if (xb - xa < 1) { const px = Math.floor(xa); if (px === lastPx) continue; lastPx = px; xb = xa + 1; }
+      c.fillStyle = colorOf(groupOf(S.procs[s.p[i]])); c.fillRect(xa, y, xb - xa, h);
+      if (s.u && s.u[i] != null) {
+        const n = s.e[i] - s.s[i], kf = n > 0 ? 1 - s.u[i] / n : 0;
+        if (kf > 0.01) { c.globalAlpha = 0.45; c.fillStyle = colors.ink; c.fillRect(xa, y + h * (1 - kf), xb - xa, h * kf); c.globalAlpha = 1; }
+      }
+      if (xb - xa > 60) {
+        c.save(); c.beginPath(); c.rect(xa, y, xb - xa, h); c.clip();
+        c.fillStyle = colors.panel; c.font = `500 10.5px ${colors.font}`; c.textAlign = "left";
+        c.fillText(S.procs[s.p[i]].name, xa + 4, y + h / 2); c.restore();
+      }
+    }
+  }
+
+  function drawTools(c) {
+    if (!hasTools()) return;
+    const y = yTool() + 1, h = G.toolH - 2;
+    S.tools.forEach((t) => {
+      const a = t.running || t.pending, b = t.completed || t.error;
+      if (!a) return;
+      const xa = plotX(a.i), xb = plotX(b ? b.i : D.i1);
+      c.fillStyle = colors.toolcall; c.globalAlpha = t.running ? 1 : 0.4;
+      c.fillRect(xa, y, Math.max(2, xb - xa), h); c.globalAlpha = 1;
+      if (xb - xa > 50) {
+        c.save(); c.beginPath(); c.rect(xa, y, xb - xa, h); c.clip();
+        c.fillStyle = colors.panel; c.font = `500 10.5px ${colors.font}`; c.textAlign = "left";
+        c.fillText(t.tool, xa + 4, y + h / 2); c.restore();
+      }
+    });
+  }
+
+  function drawEventRow(c) {
+    const y = yEv(), h = G.evH;
+    for (let j = 0; j < marks.length; j++) {
+      const m = marks[j];
+      if (m.i < view[0] || m.i > view[1]) continue;
+      const x = plotX(m.i), k = m.k;
+      c.fillStyle = evColor(k);
+      if (k === "switch_process") c.fillRect(x - 1, y + 2, 2, h - 4);
+      else if (k === "switch_thread" || k === "switch_kernel") c.fillRect(x - 0.5, y + h / 2, 1, h / 2 - 2);
+      else if (k === "exec") { c.beginPath(); c.moveTo(x - 4, y + 1); c.lineTo(x + 4, y + 1); c.lineTo(x, y + 8); c.closePath(); c.fill(); }
+      else if (k.startsWith("fork")) { c.beginPath(); c.arc(x, y + h - 5, 3, 0, 7); c.fill(); }
+      else if (k === "exit") { c.fillRect(x - 3, y + 3, 6, 2); c.fillRect(x - 1, y + 3, 2, h - 6); }
+      else { c.beginPath(); c.moveTo(x, y + 1); c.lineTo(x + 4, y + h / 2); c.lineTo(x, y + h - 1); c.lineTo(x - 4, y + h / 2); c.closePath(); c.fill(); }
+    }
+  }
+
+  function yScale(m, ka, kb) {
+    let mx = 0; const vis = [];
+    for (let k = ka; k <= kb; k++) { const v = m.v[k]; if (v !== null) { vis.push(v); if (v > mx) mx = v; } }
+    if (clip && vis.length > 20) {
+      vis.sort((a, b) => a - b);
+      mx = Math.min(mx, vis[Math.floor(0.98 * (vis.length - 1))] * 1.15);
+    }
+    mx = Math.max(mx, m.mean * 1.1, 1e-9);
+    const t = niceTicks(0, mx, 2);
+    return { max: Math.max(mx, t[t.length - 1] || mx), ticks: t };
+  }
+
+  function drawPanel(c, m, y, ka, kb, blockPx) {
+    const h = G.panelH, x0 = G.labelW, x1 = W - G.right;
+    const sc = yScale(m, ka, kb), Y = (v) => y + h - Math.min(1, v / sc.max) * h;
+    // baseline and y grid
+    c.fillStyle = colors.rule; c.fillRect(x0, y + h, x1 - x0, 1);
+    c.font = `10.5px ${colors.font}`; c.textAlign = "right"; c.textBaseline = "middle";
+    for (const t of sc.ticks) {
+      if (t <= 0) continue;
+      const yy = Math.round(Y(t)) + 0.5;
+      c.strokeStyle = colors.grid; c.lineWidth = 1; c.setLineDash([2, 3]);
+      c.beginPath(); c.moveTo(x0, yy); c.lineTo(x1, yy); c.stroke(); c.setLineDash([]);
+    }
+
+    // schedule shading behind the bars
+    if (overlay === "shade" && S) {
+      c.globalAlpha = 0.16;
+      for (let k = ka; k <= kb; k++) {
+        if (!dominant[k]) continue;
+        const xa = plotX(B.s[k]), xb = plotX(B.e[k]);
+        c.fillStyle = colorOf(dominant[k]);
+        c.fillRect(xa, y, Math.max(1, xb - xa), h);
+      }
+      c.globalAlpha = 1;
+    }
+
+    const barColor = (k) => overlay === "color" && dominant[k] ? colorOf(dominant[k]) : colors.bar;
+    if (blockPx >= 2) {
+      const gap = blockPx > 6 ? 1 : 0;
+      for (let k = ka; k <= kb; k++) {
+        const v = m.v[k]; if (v === null) continue;
+        const xa = plotX(B.s[k]) + gap, xb = plotX(B.e[k]);
+        c.fillStyle = barColor(k);
+        const yy = Y(v); c.fillRect(xa, yy, Math.max(1, xb - xa), y + h - yy);
+        if (v > sc.max) { c.fillStyle = colors.ink; c.fillRect(xa, y, Math.max(1, xb - xa), 2); }
+      }
+    } else {
+      // several blocks per pixel column: mean solid, max faint
+      let col = null, sum = 0, n = 0, mx = 0, cnt = {};
+      const flush = () => {
+        if (col === null || !n) return;
+        let rc = colors.bar;
+        if (overlay === "color") { let best = null; for (const g in cnt) if (!best || cnt[g] > cnt[best]) best = g; rc = best ? colorOf(best) : colors.bar; }
+        c.fillStyle = rc; c.globalAlpha = 0.3; c.fillRect(col, Y(mx), 1, y + h - Y(mx));
+        c.globalAlpha = 1; c.fillRect(col, Y(sum / n), 1, y + h - Y(sum / n));
+        if (mx > sc.max) { c.fillStyle = colors.ink; c.fillRect(col, y, 1, 2); }
+      };
+      for (let k = ka; k <= kb; k++) {
+        const v = m.v[k]; if (v === null) continue;
+        const px = Math.floor(plotX(B.s[k]));
+        if (px !== col) { flush(); col = px; sum = 0; n = 0; mx = 0; cnt = {}; }
+        sum += v; n++; if (v > mx) mx = v;
+        if (dominant[k]) cnt[dominant[k]] = (cnt[dominant[k]] || 0) + 1;
+      }
+      flush();
+    }
+
+    // window mean
+    const ym = Math.round(Y(m.mean)) + 0.5;
+    c.strokeStyle = colors.mean; c.lineWidth = 1.25; c.setLineDash([5, 4]);
+    c.beginPath(); c.moveTo(x0, ym); c.lineTo(x1, ym); c.stroke(); c.setLineDash([]);
+
+    yTickLabels.push({ y, sc, m, Y });
+  }
+
+  // y tick labels go in the label column, outside the plot clip
+  let yTickLabels = [];
+  function drawMain() {
+    yTickLabels = [];
+    drawPlot();
+    const c = mc.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.font = `10.5px ${colors.font}`; c.textAlign = "right"; c.textBaseline = "middle"; c.fillStyle = colors.ink3;
+    for (const { sc, m, Y } of yTickLabels) {
+      for (const t of sc.ticks) c.fillText(fmtV(m, t), G.labelW - 6, Y(t));
+    }
+  }
+
+  function drawOverview() {
+    const c = ov.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0);
+    c.clearRect(0, 0, W, 44);
+    const x0 = G.labelW, x1 = W - G.right, X = (v) => x0 + (v - D.i0) / (D.i1 - D.i0) * (x1 - x0);
+    const m = M.find((x) => x.key === (selected[0] || "ipc")) || ipcM;
+    const top = Math.min(m.max, m.p99 * 1.2) || 1;
+    c.fillStyle = colors.bar; c.globalAlpha = 0.6;
+    let col = -1, mx = 0;
+    for (let k = 0; k <= NB; k++) {
+      const px = k < NB ? Math.floor(X(B.s[k])) : -2;
+      if (px !== col) { if (col >= 0) { const hh = Math.min(1, mx / top) * 34; c.fillRect(col, 40 - hh, 1, hh); } col = px; mx = 0; }
+      if (k < NB && m.v[k] !== null) mx = Math.max(mx, m.v[k]);
+    }
+    c.globalAlpha = 1;
+    c.textAlign = "right"; c.textBaseline = "middle"; c.font = `600 11px ${colors.label}`; c.fillStyle = colors.ink2;
+    c.fillText(clipText(c, m.label.toUpperCase(), G.labelW - 14), x0 - 8, 22);
+    const a = X(view[0]), b = X(view[1]);
+    c.fillStyle = colors.focus; c.globalAlpha = 0.14; c.fillRect(a, 2, Math.max(2, b - a), 40); c.globalAlpha = 1;
+    c.strokeStyle = colors.focus; c.lineWidth = 1.5; c.strokeRect(a, 2, Math.max(2, b - a), 40);
+  }
+
+  // ---------- aligned averages ----------
+  function alignedEvents() {
+    const list = navList();
+    const blocks = [...new Set(list.map((j) => marks[j].b))].sort((a, b) => a - b);
+    if (!$("al-iso").checked) return blocks;
+    return blocks.filter((b, i) => (i === 0 || b - blocks[i - 1] > ctx) && (i === blocks.length - 1 || blocks[i + 1] - b > ctx));
+  }
+
+  let alGeo = null;
+  function drawAligned() {
+    const box = ac.parentElement;
+    const w = ac.clientWidth || box.clientWidth;
+    const evb = S ? alignedEvents() : [];
+    const label = navKind ? KIND_LABEL[navKind] + (navCause ? ` (${navCause})` : "") : "";
+    $("al-title").textContent = S && label ? `Around events: ${label}, ±${ctx} blocks` : "Around events";
+    $("al-n").textContent = S ? `${evb.length} event blocks · offset 0 is the block holding the event · bars are means, whiskers the 25th–75th percentile, dashed the window mean` : "No task trace in this run.";
+    const cols = Math.max(1, Math.min(selected.length, Math.floor(w / 300)));
+    const rows = Math.ceil(selected.length / cols) || 1;
+    const cellW = w / cols, cellH = 160;
+    const h = S && evb.length ? rows * cellH + 8 : 40;
+    ac.style.height = h + "px"; ac.width = Math.round(w * dpr); ac.height = Math.round(h * dpr);
+    const c = ac.getContext("2d");
+    c.setTransform(dpr, 0, 0, dpr, 0, 0); c.clearRect(0, 0, w, h);
+    alGeo = { cols, cellW, cellH, cells: [] };
+    if (!S || !evb.length) {
+      c.fillStyle = colors.ink3; c.font = `13px ${colors.font}`; c.textAlign = "left"; c.textBaseline = "middle";
+      c.fillText(S ? "No events of this kind in the window." : "", 16, 20);
+      return;
+    }
+    const offs = []; for (let o = -ctx; o <= ctx; o++) offs.push(o);
+    selected.forEach((key, i) => {
+      const m = M.find((x) => x.key === key);
+      const stats = offs.map((o) => {
+        const xs = [];
+        for (const b of evb) { const k = b + o; if (k >= 0 && k < NB && m.v[k] !== null) xs.push(m.v[k]); }
+        xs.sort((a, b) => a - b);
+        const q = (p) => xs.length ? xs[Math.min(xs.length - 1, Math.floor(p * (xs.length - 1) + 0.5))] : null;
+        return { o, n: xs.length, mean: xs.length ? xs.reduce((a, b) => a + b, 0) / xs.length : null, p25: q(0.25), p75: q(0.75) };
+      });
+      const cx = (i % cols) * cellW, cy = Math.floor(i / cols) * cellH + 4;
+      const px0 = cx + 52, px1 = cx + cellW - 14, py0 = cy + 36, py1 = cy + cellH - 26;
+      let mx = m.mean * 1.15;
+      stats.forEach((s) => { if (s.p75 !== null) mx = Math.max(mx, s.p75, s.mean); });
+      const t = niceTicks(0, mx || 1, 2); mx = Math.max(mx, t[t.length - 1] || mx) || 1;
+      const Y = (v) => py1 - Math.min(1, v / mx) * (py1 - py0);
+      const bw = (px1 - px0) / offs.length;
+      c.textBaseline = "alphabetic"; c.textAlign = "left";
+      c.font = `600 12px ${colors.label}`; c.fillStyle = colors.ink; c.fillText(m.label, cx + 12, cy + 12);
+      const s0 = stats[ctx];
+      if (s0.mean !== null && m.mean) {
+        const d = s0.mean / m.mean - 1;
+        c.font = `11px ${colors.font}`; c.fillStyle = Math.abs(d) > 0.1 ? colors.focus : colors.ink3; c.textAlign = "left";
+        c.fillText(`at event ${fmtV(m, s0.mean)} (${d >= 0 ? "+" : ""}${(d * 100).toFixed(0)}% vs window)`, cx + 12, cy + 26);
+      }
+      c.textAlign = "right"; c.textBaseline = "middle"; c.font = `10.5px ${colors.font}`; c.fillStyle = colors.ink3;
+      for (const tv of t) {
+        const yy = Math.round(Y(tv)) + 0.5;
+        c.fillText(fmtV(m, tv), px0 - 6, yy);
+        if (tv > 0) { c.strokeStyle = colors.grid; c.setLineDash([2, 3]); c.beginPath(); c.moveTo(px0, yy); c.lineTo(px1, yy); c.stroke(); c.setLineDash([]); }
+      }
+      c.fillStyle = colors.rule; c.fillRect(px0, py1, px1 - px0, 1);
+      stats.forEach((s, j) => {
+        if (s.mean === null) return;
+        const xa = px0 + j * bw + (bw > 6 ? 1 : 0), ww = Math.max(1, bw - (bw > 6 ? 2 : 0));
+        c.fillStyle = s.o === 0 ? colors.focus : colors.bar;
+        c.fillRect(xa, Y(s.mean), ww, py1 - Y(s.mean));
+        if (s.p25 !== null && bw > 4) {
+          const xm = Math.round(xa + ww / 2) + 0.5;
+          c.strokeStyle = colors.ink2; c.lineWidth = 1;
+          c.beginPath(); c.moveTo(xm, Y(s.p25)); c.lineTo(xm, Y(s.p75)); c.stroke();
+          c.beginPath(); c.moveTo(xm - 2, Y(s.p75)); c.lineTo(xm + 2, Y(s.p75)); c.moveTo(xm - 2, Y(s.p25)); c.lineTo(xm + 2, Y(s.p25)); c.stroke();
+        }
+      });
+      const ym = Math.round(Y(m.mean)) + 0.5;
+      c.strokeStyle = colors.mean; c.lineWidth = 1.25; c.setLineDash([5, 4]);
+      c.beginPath(); c.moveTo(px0, ym); c.lineTo(px1, ym); c.stroke(); c.setLineDash([]);
+      c.fillStyle = colors.ink3; c.textAlign = "center"; c.textBaseline = "top"; c.font = `10.5px ${colors.font}`;
+      const lab = new Set([-ctx, 0, ctx, -Math.round(ctx / 2), Math.round(ctx / 2)]);
+      stats.forEach((s, j) => { if (lab.has(s.o)) c.fillText(s.o > 0 ? "+" + s.o : String(s.o), px0 + (j + 0.5) * bw, py1 + 4); });
+      alGeo.cells.push({ m, stats, px0, px1, py0, py1, bw, cx, cy });
+    });
+  }
+
+  // ---------- events table ----------
+  function renderTable() {
+    if (!S) { $("ev-title").textContent = "Events"; $("t-ev").innerHTML = `<tr><td class="empty">No task trace in this run.</td></tr>`; return; }
+    const list = navList();
+    $("ev-title").textContent = navKind ? `Events: ${KIND_LABEL[navKind]}${navCause ? " (" + navCause + ")" : ""} · ${list.length}` : "Events: none in the window";
+    const cap = 1500;
+    $("t-ev").innerHTML = `<tr><th>#</th><th>Instruction</th><th>Block</th>${ipcM ? "<th>Block IPC</th><th>vs window</th>" : ""}<th>Event</th></tr>` +
+      list.slice(0, cap).map((j, n) => {
+        const m = marks[j], v = ipcM ? ipcM.v[m.b] : null;
+        const d = v !== null && ipcM ? v / ipcM.mean - 1 : null;
+        return `<tr data-n="${n}"><td class="n">${n + 1}</td><td class="n">${fmtI(m.i)}</td><td class="n">${m.b}</td>` +
+          (ipcM ? `<td class="n">${v === null ? "–" : v.toFixed(2)}</td><td class="n">${d === null ? "–" : (d >= 0 ? "+" : "") + (d * 100).toFixed(0) + "%"}</td>` : "") +
+          `<td class="c">${m.cause ? esc(m.cause) + " · " : ""}${esc(m.text)}</td></tr>`;
+      }).join("") + (list.length > cap ? `<tr><td colspan="6" class="empty">${list.length - cap} more not listed</td></tr>` : "");
+    $("t-ev").querySelectorAll("tr[data-n]").forEach((tr) => tr.addEventListener("click", () => {
+      navPos = +tr.dataset.n; jumpTo(navList()[navPos]);
+      mc.scrollIntoView({ block: "nearest", behavior: "smooth" });
+    }));
+    highlightRow();
+  }
+  function highlightRow() {
+    $("t-ev").querySelectorAll("tr.cur").forEach((r) => r.classList.remove("cur"));
+    const r = $("t-ev").querySelector(`tr[data-n="${navPos}"]`);
+    if (r) r.classList.add("cur");
+  }
+
+  // ---------- tooltips ----------
+  let hoverX = null;
+  function showTip(html, ev) {
+    tip.innerHTML = html; tip.hidden = false;
+    const r = tip.getBoundingClientRect();
+    let x = ev.clientX + 14, y = ev.clientY + 14;
+    if (x + r.width > innerWidth - 8) x = ev.clientX - r.width - 14;
+    if (y + r.height > innerHeight - 8) y = Math.max(8, ev.clientY - r.height - 14);
+    tip.style.left = x + "px"; tip.style.top = y + "px";
+  }
+  const hideTip = () => { tip.hidden = true; };
+
+  function nearestMark(x, kinds) {
+    let best = -1, bd = 6;
+    for (let j = 0; j < marks.length; j++) {
+      const m = marks[j];
+      if (kinds && !kinds.has(kindOf(m.k))) continue;
+      if (m.i < view[0] || m.i > view[1]) continue;
+      const d = Math.abs(plotX(m.i) - x);
+      if (d < bd) { bd = d; best = j; }
+    }
+    return best;
+  }
+
+  function blockTip(k) {
+    const rows = selected.map((key) => {
+      const m = M.find((x) => x.key === key), v = m.v[k];
+      const d = v !== null && m.mean ? v / m.mean - 1 : null;
+      return `<tr><td>${esc(m.label)}</td><td class="n">${fmtV(m, v)}</td><td class="n dim">${d === null ? "" : (d >= 0 ? "+" : "") + (d * 100).toFixed(0) + "%"}</td></tr>`;
+    }).join("");
+    const sh = groups.map((g) => [g, shares[g][k]]).filter(([, v]) => v > 0.005).sort((a, b) => b[1] - a[1]);
+    const ran = sh.length ? `<div class="m">${sh.map(([g, v]) => `<i class="sw" style="background:var(--${groupColor[g]});width:9px;height:9px"></i> ${esc(g)} ${pct(v)}`).join(" · ")}</div>` : "";
+    const evs = blockEvents[k];
+    const evl = evs.length ? `<div class="m">${evs.slice(0, 6).map((j) => esc(KIND_LABEL[marks[j].k] + ": " + marks[j].text)).join("<br>")}${evs.length > 6 ? `<br>… ${evs.length - 6} more` : ""}</div>` : "";
+    return `<b>Block ${k}</b> <span class="m">${fmtI(B.s[k])}–${fmtI(B.e[k])} · ${B.cyc[k].toLocaleString()} cycles</span><table>${rows}</table>${ran}${evl}`;
+  }
+
+  // ---------- interaction ----------
+  let drag = null;
+  function zoomAt(f, cx) {
+    const v = valAt(cx), minSpan = (D.i1 - D.i0) / NB * 3;
+    let a = v - (v - view[0]) * f, b = v + (view[1] - v) * f;
+    if (b - a < minSpan) { const m = (a + b) / 2; a = m - minSpan / 2; b = m + minSpan / 2; }
+    setView(a, b);
+  }
+  function setView(a, b) {
+    const span = Math.min(b - a, D.i1 - D.i0);
+    a = Math.max(D.i0, Math.min(a, D.i1 - span)); view = [a, a + span]; draw();
+  }
+
+  mc.addEventListener("wheel", (e) => {
+    e.preventDefault();
+    const r = mc.getBoundingClientRect();
+    zoomAt(Math.exp(e.deltaY * 0.0015), e.clientX - r.left);
+  }, { passive: false });
+  mc.addEventListener("pointerdown", (e) => {
+    const r = mc.getBoundingClientRect();
+    drag = { x: e.clientX, v: view.slice(), moved: false, px: e.clientX - r.left, py: e.clientY - r.top };
+    mc.setPointerCapture(e.pointerId);
+  });
+  mc.addEventListener("pointermove", (e) => {
+    const r = mc.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    if (drag) {
+      const dx = e.clientX - drag.x;
+      if (Math.abs(dx) > 3) { drag.moved = true; mc.classList.add("dragging"); hideTip(); }
+      if (drag.moved) {
+        const per = (drag.v[1] - drag.v[0]) / (W - G.labelW - G.right);
+        setView(drag.v[0] - dx * per, drag.v[1] - dx * per);
+      }
+      return;
+    }
+    if (x < G.labelW || x > W - G.right) { hoverX = null; hideTip(); draw(); return; }
+    hoverX = x;
+    if (S && y >= yCpu() && y < yPanels() - 4) {
+      if (y >= yEv()) {
+        const j = nearestMark(x);
+        if (j >= 0) { const m = marks[j]; showTip(`<b>${esc(KIND_LABEL[m.k])}</b> <span class="m">${fmtI(m.i)} · block ${m.b}</span><div class="m">${m.cause ? esc(m.cause) + "<br>" : ""}${esc(m.text)}</div>`, e); draw(); return; }
+      } else if (y < yTool()) {
+        const v = valAt(x), s = S.segs;
+        let lo = 0, hi = s.s.length; while (lo < hi) { const mm = (lo + hi) >> 1; if (s.e[mm] <= v) lo = mm + 1; else hi = mm; }
+        if (lo < s.s.length && s.s[lo] <= v) {
+          const p = S.procs[s.p[lo]], n = s.e[lo] - s.s[lo];
+          showTip(`<b>${esc(p.name)}</b> <span class="m">(${p.tgid}) · ${esc(p.kind === "user" ? p.place : p.kind)}</span><div class="m">${p.lineage ? esc(p.lineage) + "<br>" : ""}${fmtI(s.s[lo])}–${fmtI(s.e[lo])} · ${fmtI(n)} insts${s.u && s.u[lo] != null ? ` · kernel mode ${pct(1 - s.u[lo] / Math.max(1, n))}` : ""}</div>`, e);
+          draw(); return;
+        }
+      } else if (hasTools()) {
+        const v = valAt(x), t = S.tools.find((t) => { const a = t.running || t.pending, b = t.completed || t.error; return a && a.i <= v && (b ? b.i : D.i1) >= v; });
+        if (t) { showTip(`<b>${esc(t.tool)}</b><div class="m">${esc(t.input || "")}<br>${["pending", "running", "completed", "error"].filter((s) => t[s]).map((s) => `${s} ${fmtI(t[s].i)}`).join(" · ")}</div>`, e); draw(); return; }
+      }
+    }
+    const v = valAt(x);
+    if (v >= D.i0 && v < D.i1 && y >= yPanels() - 4) showTip(blockTip(blockOf(v)), e); else hideTip();
+    draw();
+  });
+  mc.addEventListener("pointerup", (e) => {
+    const was = drag; drag = null; mc.classList.remove("dragging");
+    if (was && !was.moved && S && was.py >= yCpu() && was.py < yPanels() - 4) {
+      const j = nearestMark(was.px);
+      if (j >= 0) {
+        if (marks[j].k !== navKind) { navKind = marks[j].k; navCause = ""; renderNav(); renderTable(); }
+        const list = navList(); navPos = list.indexOf(j);
+        if (navPos < 0) { navCause = ""; renderNav(); navPos = navList().indexOf(j); renderTable(); }
+        jumpTo(j); drawAligned();
+      }
+    }
+  });
+  mc.addEventListener("pointerleave", () => { hoverX = null; hideTip(); draw(); });
+  mc.addEventListener("dblclick", () => setView(D.i0, D.i1));
+
+  // overview brush
+  let ovDrag = null;
+  const ovVal = (e) => { const r = ov.getBoundingClientRect(), x0 = G.labelW, x1 = W - G.right; return D.i0 + (e.clientX - r.left - x0) / (x1 - x0) * (D.i1 - D.i0); };
+  ov.addEventListener("pointerdown", (e) => { ovDrag = ovVal(e); ov.setPointerCapture(e.pointerId); });
+  ov.addEventListener("pointermove", (e) => {
+    if (ovDrag === null) return;
+    const v = ovVal(e), minSpan = (D.i1 - D.i0) / NB * 3;
+    let a = Math.min(ovDrag, v), b = Math.max(ovDrag, v);
+    if (b - a < minSpan) { const m = (a + b) / 2; a = m - minSpan / 2; b = m + minSpan / 2; }
+    setView(a, b);
+  });
+  ov.addEventListener("pointerup", (e) => {
+    if (ovDrag !== null && Math.abs(ovVal(e) - ovDrag) < (D.i1 - D.i0) / 400) {
+      const span = view[1] - view[0]; setView(ovDrag - span / 2, ovDrag + span / 2);
+    }
+    ovDrag = null;
+  });
+
+  const press = (ids, on) => ids.forEach((id) => $(id).setAttribute("aria-pressed", id === on));
+  [["o-off", "off"], ["o-shade", "shade"], ["o-color", "color"]].forEach(([id, v]) => $(id).addEventListener("click", () => { overlay = v; press(["o-off", "o-shade", "o-color"], id); draw(); }));
+  [["g-process", "process"], ["g-tree", "tree"], ["g-place", "place"]].forEach(([id, by]) => $(id).addEventListener("click", () => {
+    groupBy = by; press(["g-process", "g-tree", "g-place"], id); computeGroups(); renderLegend(); draw();
+  }));
+  $("y-clip").addEventListener("click", () => { clip = true; press(["y-clip", "y-fit"], "y-clip"); draw(); });
+  $("y-fit").addEventListener("click", () => { clip = false; press(["y-clip", "y-fit"], "y-fit"); draw(); });
+  $("z-in").addEventListener("click", () => zoomAt(0.5, (G.labelW + W - G.right) / 2));
+  $("z-out").addEventListener("click", () => zoomAt(2, (G.labelW + W - G.right) / 2));
+  $("z-reset").addEventListener("click", () => { focusMark = -1; setView(D.i0, D.i1); });
+  $("n-kind").addEventListener("change", (e) => { navKind = e.target.value; navCause = ""; navPos = -1; focusMark = -1; renderNav(); renderTable(); drawAligned(); draw(); });
+  $("n-cause").addEventListener("change", (e) => { navCause = e.target.value; navPos = -1; focusMark = -1; renderReadout(); renderTable(); drawAligned(); draw(); });
+  $("n-prev").addEventListener("click", () => step(-1));
+  $("n-next").addEventListener("click", () => step(1));
+  $("n-ctx").addEventListener("change", (e) => {
+    ctx = Math.max(1, Math.min(200, Math.round(+e.target.value) || 10)); e.target.value = ctx;
+    if (focusMark >= 0) jumpTo(focusMark);
+    drawAligned();
+  });
+  $("al-iso").addEventListener("change", drawAligned);
+  document.addEventListener("keydown", (e) => {
+    if (e.target.closest && e.target.closest("input, select, textarea")) return;
+    if (e.key === "ArrowRight" || e.key === "j") { step(1); e.preventDefault(); }
+    else if (e.key === "ArrowLeft" || e.key === "k") { step(-1); e.preventDefault(); }
+    else if (e.key === "Escape") { focusMark = -1; setView(D.i0, D.i1); }
+  });
+
+  ac.addEventListener("pointermove", (e) => {
+    if (!alGeo) return;
+    const r = ac.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+    const cell = alGeo.cells.find((c) => x >= c.px0 && x < c.px1 && y >= c.cy && y < c.cy + alGeo.cellH);
+    if (!cell) { hideTip(); return; }
+    const s = cell.stats[Math.min(cell.stats.length - 1, Math.max(0, Math.floor((x - cell.px0) / cell.bw)))];
+    if (!s || s.mean === null) { hideTip(); return; }
+    showTip(`<b>${esc(cell.m.label)}</b> <span class="m">offset ${s.o > 0 ? "+" : ""}${s.o} block${Math.abs(s.o) === 1 ? "" : "s"}</span><table>` +
+      `<tr><td>mean</td><td class="n">${fmtV(cell.m, s.mean)}</td></tr><tr><td>25th–75th</td><td class="n">${fmtV(cell.m, s.p25)} – ${fmtV(cell.m, s.p75)}</td></tr>` +
+      `<tr><td>window</td><td class="n">${fmtV(cell.m, cell.m.mean)}</td></tr><tr><td>events</td><td class="n">${s.n}</td></tr></table>`, e);
+  });
+  ac.addEventListener("pointerleave", hideTip);
+
+  // ---------- boot ----------
+  readColors();
+  computeGroups();
+  renderSummary(); renderPicker(); renderEventToggles(); renderNav(); renderTable();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); drawAligned(); });
+  window.addEventListener("resize", resize);
+  resize();
+  // Deep link: #kind=switch_process[&cause=...]&n=5[&ctx=10] opens on the
+  // n-th event of that kind (1-based).
+  const h = new URLSearchParams(location.hash.slice(1));
+  if (S && h.get("kind") && present.includes(h.get("kind"))) {
+    navKind = h.get("kind"); navCause = h.get("cause") || "";
+    ctx = Math.max(1, Math.min(200, +h.get("ctx") || ctx)); $("n-ctx").value = ctx;
+    renderNav(); renderTable(); drawAligned();
+    const list = navList(), n = Math.max(1, +h.get("n") || 1) - 1;
+    if (list.length) { navPos = Math.min(n, list.length - 1); jumpTo(list[navPos]); }
+  }
+})();
+</script>
