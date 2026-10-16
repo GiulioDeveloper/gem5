@@ -133,8 +133,9 @@ Without `--task-trace`, `virt_run.py` behaves exactly as before.
 
 ### 4.4 Helper scripts
 
-`run_scripts/tasktrace/` (untracked, next to `run_agent.sh`) wraps the
-common runs; each writes to `runs/tasktrace/<stamp>-<task>-<kind>/`. Run
+`run_scripts/tasktrace/` (next to `run_agent.sh`) wraps the common runs;
+each writes to `runs/tasktrace/<stamp>-<task>-<kind>/` (`OUTDIR=<dir>`
+overrides it for the two window scripts). Run
 them from the repository root; `<task>` is a checkpoint name without the
 `agentic-` prefix.
 
@@ -144,6 +145,7 @@ them from the repository root; `<task>` is a checkpoint name without the
 | `o3-window.sh TASK SETTLE WARMUP DETAILED INTERVAL [virt_run args]` | a detailed window with stats intervals (4.2), stats without descriptions |
 | `o3-pair.sh [task] [warmup] [detailed]` | the no-perturbation check: the same window with and without the tracer, diffing `stats.txt` (section 9). `PAIR_ON_ARGS=` runs the plain configuration twice, a determinism check |
 | `spec-window.sh BENCH SETTLE WARMUP DETAILED INTERVAL [TAG] [fs_run args]` | a traced detailed window of a SPEC CPU 2026 checkpoint (4.6) |
+| `sweep.sh [BASE]` | a detailed window of every local checkpoint, SPEC and agentic (8.3); `PAR`, `SETTLE`, `WARM`, `IVL`, `SPEC_DET`, `AGENTIC_DET`, `ONLY="<name> ..."`, `PY`, `EXTRA` (flags for every run) and `BASELINE` (sweep to compare with) in the environment |
 | `landing-all.sh [insts] [parallel]` | the landing check over every local checkpoint (section 9), summarized by `landing_summary.py`; `TASKS="<task> ..."` limits the tasks |
 
 ### 4.5 Choosing where to put an O3 window
@@ -344,6 +346,35 @@ there.
 - Splitting the detailed region into stats intervals does not change its
   timing either (same total IPC).
 
+### 5.6 Why not an existing gem5 feature
+
+The requirements: tick and instruction stamps, task names, no effect on
+what is measured, and no recapture of the existing checkpoints. Each
+option was checked against the source on this branch.
+
+| option | why it does not fit |
+|---|---|
+| `enable_context_switch_stats_dump` (`ArmFsWorkload.py`, `arch/arm/linux/fs_workload.cc`) | Hooks `__switch_to` at the link address from the kernel symbol table (no KASLR slide); with an empty restored table, start-up panics (`dumpStats not created!`). Takes struct offsets from kernel data symbols (`task_struct_pid`, ...) that only a gem5-patched kernel defines; without them `threadinfo.hh` warns once and returns 0, so every pid reads as 0. Reads through `TranslatingPortProxy` (5.2). Records the incoming task only. Dumps and resets all stats at every switch: 15 switches in 0.83M instructions in the Exec window, so tens of thousands of dumps per 5G instructions, cutting across the interval dumps. |
+| `Exec` debug flags, `ExecSymbol` (`cpu/exetrace.cc`) | One line per instruction, ~94 bytes each (78 MB for 828,936 lines), so ~470 GB per 5G instructions. No task identity. Symbol names come from `debugSymbolTable` at link addresses, so they are wrong under KASLR. On O3 it prints the fetch tick. Used as a cross-check of the counters (5.4). |
+| `function_trace` (BaseCPU param, `cpu/base.cc`) | Same link-address symbol table, and silent if it is empty. No arguments, no task identity; records every function change. |
+| Probe points: `RetiredInstsPC`, `PcCountTracker` (`cpu/probes/`) | A PC and nothing else, so the slide, offsets and memory reads are still needed. A callback per committed instruction. `PcCountTracker` exits to Python on each hit. |
+| Remote GDB stub (`base/remote_gdb.cc`) | Stops the simulation at every breakpoint; reads through `TranslatingPortProxy`. |
+| m5ops in the guest | Guest change and recapture of all 132 checkpoints. Adds instructions to the measured stream. Cannot mark kernel scheduling without patching the kernel. |
+| ftrace / `perf sched` / eBPF in the guest | Their cost (more kernel work at every switch) lands in the measurement. Needs recapture. Stamps guest clock time, not ticks or instructions. |
+| Logs from the QEMU capture | Describe the QEMU run. After restore the guest follows simulated time; even atomic and O3 runs of one checkpoint can place an event a few hundred million instructions apart (section 12). |
+
+**Recapturing with `nokaslr`** would only simplify `deriveSlide()` (about
+50 lines, already checked against `provenance.json`), not remove it: the
+page walk still needs the physical address of `swapper_pg_dir`, which comes
+from the same computation. Task names, paths, argv and write payloads are
+still in guest memory, and the gem5 hook above would still need a patched
+kernel.
+
+The cost of the chosen design is code that knows one kernel's internals:
+gdb-derived offsets, a 4 KiB-only stage-1 walk, and hooks chosen around
+6.8.12's inlining. A new kernel means re-running `kernel_layout.py` and
+re-checking the hooks (section 11).
+
 ## 6. The trace file: `tasktrace.jsonl`
 
 One JSON object per line, flushed per line so a crashed run keeps its trace.
@@ -374,7 +405,7 @@ JavaScript lose 64-bit integers.
 |---|---|
 | `start` | `kaslr_slide` (first line) |
 | `snapshot` | `tasks` (every process and thread alive at the restore), `count` (second line) |
-| `switch` | `prev`, `next` (tasks), `same_mm` (true for a switch between threads of one process), `sched_insts`, `sched_ticks` (scheduler cost, 5.4; absent if the switch was not preceded by a `__schedule` seen after the restore) |
+| `switch` | `prev`, `next` (tasks), `same_mm` (true when `prev` and `next` share an address space: `prev.mm` is not NULL and equals `next.mm`; not the same as "same process", see 7.1), `sched_insts`, `sched_ticks` (scheduler cost, 5.4; absent if the switch was not preceded by a `__schedule` seen after the restore) |
 | `fork` | `parent`, `child`; `child.tgid == parent.tgid` means a new thread |
 | `exec` | `task` (with its new name); `path`, `argv` when the execve call was seen after the restore |
 | `rename` | `task` (with its new name) |
@@ -446,6 +477,28 @@ and `summary.md` reports its mean absolute difference from gem5's own
 `switch_process`, `switch_kernel`, `fork_thread`, `fork_process`, `exec`,
 `exit`, `rename`, `write`, `read`, `fence` (a `cgroup.procs` write),
 `tool_start`, `tool_end`.
+
+**Thread, process and kernel switches.** A switch is `switch_kernel` when
+either side is a kernel thread or the idle task. Otherwise it is
+`switch_thread` when `prev` and `next` have the same `tgid` (two threads of
+one process) and `switch_process` when they do not. The tracer's `same_mm`
+is not used for this, because the address space and the process differ in
+two cases:
+
+- a thread of an exiting process switching to a sibling thread: same
+  `tgid`, but `prev.mm` is already NULL (`exit_mm`), so `same_mm` is false.
+  In the traces so far these are mostly the Go threads of exiting
+  `docker inspect` processes. Counted as thread switches;
+- a parent switching to a child made with `vfork` or `CLONE_VM`
+  (CPython's `subprocess`, Bun's `spawn`), which borrows the parent's `mm`
+  until it execs: different `tgid`, `same_mm` true. Counted as process
+  switches; the child carries its parent's name until the exec, so the
+  cause reads e.g. `python3 -> python3`.
+
+Analyses made before 2026-10-15 used `same_mm`; about 5% of the agentic
+process switches were then counted as thread switches, mostly the first
+case (research log, decision 18). `same_mm` remains in the trace as the
+address-space signal: a vfork hand-off keeps the address space.
 
 ### 7.2 Process labels
 
@@ -550,7 +603,7 @@ ran, so a snapshot `git` that OpenCode starts during a call appears too.
 - **CPU view:** what matters is every change of execution context,
   whoever causes it. `switches.csv` counts context switches by cause, by
   process name: `within <process>` for a switch between threads of one
-  process, `<process> -> <process>` otherwise, with `kernel` and `idle` for
+  process (same `tgid`, 7.1), `<process> -> <process>` otherwise, with `kernel` and `idle` for
   kernel threads and the idle task (e.g. `opencode -> docker`,
   `docker -> kernel`). In the traces so far, most switches are inside
   `opencode` (its JIT, I/O pool and HTTP threads) or inside the `docker`
@@ -670,6 +723,82 @@ When blocks are narrower than two pixels, a pixel column shows their mean
 (solid) and maximum (faint); *Clip outliers* caps the y axis near the 98th
 percentile of the visible blocks (a capped bar has a dark top), *Fit all*
 shows everything.
+
+### 8.3 Across checkpoints: `sweep.sh`, `sweep_summary.py`, `sweep_compare.py`
+
+```sh
+nohup run_scripts/tasktrace/sweep.sh > runs/sweep.log 2>&1 &
+```
+
+runs every SPEC CPU 2026 checkpoint (`spec-window.sh`, 200M detailed
+instructions) and every agentic task (`o3-window.sh`, 400M), each after 1
+atomic instruction and 20M of warm-up, in 200K-instruction stats blocks with
+the tracer, 12 at a time (about 3.2 GB each), into
+`runs/sweep/<stamp>/{spec,agentic}/<name>/`. A run is complete when every
+detailed block was dumped; it is then analysed by the three tools of
+sections 7–8 and marked `done`, otherwise marked `failed` with the block
+count. `progress.log` lists finished runs and `sweep.conf` the parameters
+and commit. Running `sweep.sh <same BASE>` again skips the `done` runs and
+restarts the others.
+
+At the end it runs `sweep_summary.py <BASE>`, also usable on any set of
+window runs (`sweep_summary.py runs/tasktrace/*o3window*`). Per run it
+takes, over the detailed window:
+
+- each metric's **window value** from the summed stats, as `window.html`
+  computes it (IPC, user-mode share, fetch rate; L1I and iTLB misses,
+  I-cache stall cycles; conditional and BTB-miss mispredicts, squashed per
+  committed; L1D, L2 and dTLB misses, page walks, L1D miss latency; ROB, IQ
+  and LSQ full);
+- each metric's **coefficient of variation** over the window's blocks
+  (population std / mean of the block values);
+- **context switches** by kind from the trace: count, rate per million
+  instructions, and the CV of the per-block count.
+
+It writes `summary/sweep.csv` (one row per run), `summary/sweep.html`
+(a violin per suite for each metric, one point per checkpoint, switchable
+between window value and CV, linear or log scale; hovering a point
+highlights that checkpoint in every panel), and, when the interpreter has
+matplotlib (`PY=runs/venv/bin/python`, or `--pdf`), `violins.pdf/.png`
+and `violins_cv.pdf/.png`. On this host the system Python has no
+matplotlib; `runs/venv` was made with `python3 -m venv --without-pip
+runs/venv && pip --python runs/venv/bin/python install matplotlib`.
+
+CV is unstable when a metric's mean is close to zero: a window with two
+context switches, or `729.abc_r`'s L1I MPKI of 0.006, gives CVs above 10.
+Read those panels with the window values beside them.
+
+**Configuration sweeps.** `EXTRA` adds flags to every run (they go to
+`fs_run.py` and `virt_run.py`, so any of their options works, e.g. the
+ablation switches `--disable-fdp`, `--disable-l1d-prefetch`,
+`--disable-l2-prefetch`):
+
+```sh
+EXTRA=--disable-fdp BASELINE=runs/sweep/20261014-110051 PAR=10 \
+    nohup run_scripts/tasktrace/sweep.sh runs/sweep/<stamp>-nofdp \
+    > runs/sweep-nofdp.log 2>&1 &
+```
+
+The flags are recorded in `sweep.conf` (`extra ...`), and resuming a sweep
+with different flags is refused. Restores are deterministic, so the same
+checkpoint and window settings give the same instruction window in both
+sweeps and the runs can be compared pair by pair. With `BASELINE` set the
+sweep ends with
+
+```sh
+sweep_compare.py A B [--label-a TEXT] [--label-b TEXT] [--pdf]
+```
+
+(A the baseline), which can also be run by hand on any two sweeps. It pairs
+runs by suite and checkpoint, reads each side's `summary/sweep.view.json`
+(computing it if missing), and writes into `B/compare-<A name>/`
+`compare.csv` (A, B, B − A and B / A − 1 of every metric, per checkpoint)
+and `compare.html`: the same violins, of the relative change, the
+difference (percentage points for % metrics) or either sweep's values,
+with the median IPC change per suite. `--pdf` adds
+`violins_change.pdf/.png` and `violins_diff.pdf/.png`. Window settings
+that differ between the two `sweep.conf`, checkpoints in only one sweep and
+pairs with different window lengths are printed and listed on the page.
 
 ## 9. Validation you can repeat
 

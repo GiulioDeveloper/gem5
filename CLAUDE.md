@@ -6,9 +6,9 @@ gem5 is a modular, event-driven computer-system architecture simulator. The C++ 
 simulated hardware; Python drives configuration and the simulation loop (the gem5 binary embeds a
 CPython interpreter). Understanding the **Python↔C++ boundary** is the key to working here.
 
-## This fork: the Garfield project
+## This fork: the Garfield project and Exploration of CPU Architecture for Agentic Workloads
 
-This is a private research fork (branch `rbdev`). The active research effort is **Garfield** —
+This is a private research fork (branch `rbdev` and 'gfdev'). The active research effort is **Garfield** —
 exploring whether accurately-speculated (noncritical) instructions can be executed *lazily* on a
 cheap in-order backend, freeing the scarce out-of-order resources of a Neoverse V2 core for the
 instructions that actually need them. Before any design work, the idea is gated on a "ghost
@@ -16,6 +16,13 @@ execution" **headroom study**. **Read [`docs/garfield/README.md`](docs/garfield/
 goal, the core hypothesis, the headroom methodology (assume *predicted = correct*), the three-stage
 plan (branches → memory renaming → value prediction), and the pitfalls — before touching any
 Garfield-related code.
+
+The 'gfdev'  branch builds on this and starts exploring and profiling agentic workloads on gem5.
+The first step was creating a compact tracing and visualization tool explained in docs/agentic/task-tracing-guide.md.
+Whenever you change something in the tracing infra, remember to update the documentation and research log accordingly.
+Don't give what is written there as hard truth, details may be missing or be incorrect, feel free to double check if something is odd
+and prompt the user. When changing the task-tracing-guide.md, also prompt the user if they want to update also
+the related artifacts and how.
 
 ## Building
 
@@ -47,34 +54,6 @@ scons build/RISCV/gem5.debug            # RISC-V, debug build
 - IDE intellisense: `scons build/X86/compile_commands.json` generates `compile_commands.json`.
 - Out-of-tree source: the `EXTRAS=/path1:/path2` variable pulls external dirs (with their own
   `SConscript`/`Kconfig`) into the build without modifying the tree.
-
-### Host build environment (Anaconda)
-
-**Only relevant on hosts that build with the Anaconda base env active** (the original dev host and
-the cluster). Anaconda collides with the system dev libraries there, and `build-gem5.sh` pins the
-toolchain to Anaconda consistently. Hosts without Anaconda (no `~/anaconda3`) just run `scons`
-directly; `build-gem5.sh` detects this and falls back to the system toolchain. The underlying
-issues and their committed fixes (useful if the toolchain ever changes or a build breaks):
-
-- **Embedded Python** — gem5 links Anaconda's `libpython3.13.so.1.0`, which lives only in
-  `~/anaconda3/lib` and is built without an rpath. It must be on the loader path at *build* time
-  (configure links a test binary). `SConstruct`'s `config_embedded_python()` now embeds an **rpath**
-  to that dir, so the binary *runs* without `LD_LIBRARY_PATH` — important for Slurm batch shells,
-  which don't source `~/.bashrc`. The co-located libprotobuf/abseil are covered by the same rpath.
-- **protobuf** — use Anaconda's `protoc` (5.29.3) **and** its headers/lib together (`PROTOC` +
-  `PKG_CONFIG_PATH`). Do **not** use the system protobuf: a stale 2019 protobuf **3.3.0** under
-  `/usr/local` (headers, libs, `.pc`, and `/usr/local/bin/protoc`) shadows the apt 3.21.12 headers,
-  because `/usr/local/include` precedes `/usr/include` and apt's `.pc` adds no `-I`.
-- **HDF5** — disabled by default in `src/base/stats/SConsopts`. Anaconda's `libhdf5_cpp` is on the
-  link line (via `-L~/anaconda3/lib`) and shadows the system one that `hdf5.cc` compiled against →
-  undefined-symbol link errors. It's an optional stats format; set `GEM5_ENABLE_HDF5=1` to re-enable
-  where a consistent HDF5 exists.
-- **scons two-pass** — after `--config=force`, the first pass can compile everything and exit 0
-  *without linking* `gem5.opt`; a second pass links it. `build-gem5.sh` runs the second pass for you.
-
-**On the cluster**, rebuild with `ANACONDA=/cluster/path/anaconda3 ./build-gem5.sh` — the rpath is
-recomputed at build time, so the binary runs there with no env setup. Don't copy the binary between
-hosts (rpath + glibc/libstdc++ skew); rebuild instead.
 
 ## Testing
 

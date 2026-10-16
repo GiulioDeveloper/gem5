@@ -474,6 +474,29 @@ of being counted as kernel. Reading `current` at the restore would remove
 the `not recorded` slice (guide 12); that is a tracer change and is not
 done.
 
+### 18. Thread and process switches by tgid, not by address space (2026-10-15)
+
+The analysis called a user-to-user switch a thread switch when the
+tracer's `same_mm` was true (`prev.mm` not NULL and equal to `next.mm`).
+That is the address space, not the process, and the two differ in two
+cases, both found by comparing `same_mm` with `prev.tgid == next.tgid`:
+
+- **Exiting threads.** A thread of an exiting process drops its `mm` in
+  `exit_mm()` before its last switch, so a switch to a sibling thread has
+  `same_mm` false and was counted as a process switch (`docker -> docker`).
+  Almost all are the Go threads of exiting `docker inspect` processes,
+  plus `git`.
+- **vfork children.** A child made with `vfork`/`CLONE_VM` (CPython's
+  `subprocess`, Bun's `spawn`) shares its parent's `mm` until it execs, so
+  the parent-to-child hand-off had `same_mm` true and was counted as a
+  thread switch (`within python3`, `within opencode`). Each one is
+  followed by the child's `fork` and `exec` events.
+
+Thread switch now means same `tgid` (`trace_analysis.same_process`),
+for the event kinds and the switch causes alike. `same_mm` stays in the
+trace: it says whether the address space was kept, which a vfork hand-off
+does. No rerun is needed: every task record already has its `tgid`.
+
 ## Validation
 
 ### 2026-10-08 — first run, gin-2121 cpt.0, atomic, 20M instructions
@@ -860,3 +883,111 @@ steps from 0.34 to 0.50 (block means) at 64.8M instructions and stays
 there: a program phase change. A metric shift near an event is not
 evidence of the event's effect without such a check.
 
+
+### 2026-10-14: gem5's own tracing features, rechecked
+
+Each built-in option was rechecked against the source before writing it
+up (guide 5.6). Two details matter beyond "it does not fit":
+
+- `enable_context_switch_stats_dump` does not fail loudly on a stock
+  kernel. `linux::ThreadInfo::get_data` (`threadinfo.hh`) warns once when
+  `task_struct_pid` and the other gem5-patch symbols are missing and
+  returns 0, so the task file would show pid 0 for every switch. With an
+  empty restored symbol table it panics at start-up instead.
+- The remote GDB stub reads guest memory through `TranslatingPortProxy`
+  (`base/remote_gdb.cc`), so it perturbs the TLB like the first tracer
+  did; it is not a side-effect-free way to inspect a run either.
+
+Recapturing with `nokaslr` was also weighed: it would shrink
+`deriveSlide()` but not remove it, because the same computation gives
+`swapper_pg_dir`'s physical address for the page walk.
+
+
+### 2026-10-14: first full sweep, SPEC CPU 2026 against agentic
+
+`run_scripts/tasktrace/sweep.sh` over all 53 local checkpoints (26 SPEC
+SimPoints, 200M detailed; 27 agentic tasks, 400M detailed; 20M warm-up,
+200K-instruction blocks, FDP and all prefetchers on). 53/53 complete, 3 h
+15 min at 10–12 runs in parallel; nushell-13831 peaked at 21 GB. Output
+and violins in `runs/sweep/20261014-110051/summary/`. One window per
+checkpoint, not a whole-checkpoint average.
+
+| metric (window value, median) | SPEC | agentic |
+|---|---|---|
+| IPC | 1.52 [1.04–2.07] | 0.99 [0.85–1.14] |
+| user-mode share | 100% | 81% [72–85%] |
+| L1I / iTLB MPKI | 0.01 / 0.15 | 1.74 / 37 |
+| BTB-miss / conditional mispredicts PKI | 0.005 / 0.81 | 1.13 / 4.2 |
+| L1D miss latency (cycles) | 54 | 112 |
+| context switches per M insts | 0 | 1.6 |
+| FDP accuracy / L1I coverage | 0.21 / 0.96 | 0.30 / 0.79 |
+
+- The front end separates the suites: L1I, iTLB and BTB misses are
+  two orders of magnitude higher on agentic, with little overlap (gcc
+  is the only SPEC run near the agentic iTLB range).
+- SPEC spreads across checkpoints (IPC 0.47 cactus to 3.17 marian);
+  agentic is tight across checkpoints but less stable inside a window
+  (median IPC CV over blocks 0.36 against 0.12; fetch rate 0.29 against
+  0.09).
+- CVs of near-zero means (SPEC L1I, BTB, switches) are not meaningful.
+- Coverage is FDP-useful / (FDP-useful + L1I demand misses).
+- Correction (same day): the first report of this table gave SPEC IPC
+  1.45 [1.02–1.99], conditional mispredicts 0.73 and L1D miss latency 52;
+  the values above are recomputed from `summary/sweep.csv`.
+- The agentic iTLB figure is mostly FDP's own translations; see the next
+  entry.
+
+
+### 2026-10-14: FDP off, compared checkpoint by checkpoint
+
+The same 53 windows with `EXTRA=--disable-fdp` (decoupled front end and
+the L1I FDP prefetcher off; the L1I tagged prefetcher stays), in
+`runs/sweep/20261014-154546-nofdp`, 3 h at 10 in parallel, 53/53
+complete. `sweep_compare.py` pairs the runs by checkpoint (all windows
+of equal length); output in `compare-20261014-110051/`. Change is FDP off
+against FDP on, median [quartiles]:
+
+| metric | SPEC | agentic |
+|---|---|---|
+| IPC | −0.2% [−4.0, 0.0] | −2.8% [−4.3, −1.6] |
+| fetch rate | −0.2% | −3.7% |
+| L1I MPKI | +104% (0.010 → 0.022) | +132% (1.74 → 4.03) |
+| I-cache stall cycles | +0.9% | +54% |
+| iTLB MPKI | −85% (0.16 → 0.02) | −92% (37 → 2.9) |
+| L2 MPKI | −0.7% | −23% (7.7 → 5.7) |
+| BTB-miss mispredicts | +1.7% | +6.6% |
+
+- FDP is worth 2.9% IPC on the median agentic window (−2.6% gson and
+  lombok to +11.7% micropython) and nothing on most SPEC windows; the
+  SPEC gains are the large-code runs (cpython +23.6%, gem5 +20.7%, llvm
+  +7.8%).
+- About 92% of the agentic iTLB misses of the FDP-on sweep disappear
+  with FDP off: the prefetcher translates its targets through the same
+  iTLB, so they are mostly prefetch lookups, not demand fetch. Without FDP the
+  agentic iTLB MPKI is 2.9, still about 140× SPEC's. Likewise a quarter of
+  the agentic L2 misses are FDP prefetch traffic. Front-end miss figures
+  from FDP-on runs have to be read with this in mind.
+- Even with FDP the agentic L1I miss rate is 1.7 MPKI and I-cache stall
+  cycles are 22% of cycles: FDP recovers about half of the misses.
+
+### 2026-10-15: both sweeps reanalysed with thread switches by tgid
+
+Decision 18 applied to every run of `runs/sweep/20261014-110051` and
+`runs/sweep/20261014-154546-nofdp` (`trace_analysis`, `trace_view`,
+`window_view` per run, then `sweep_summary.py` on both and
+`sweep_compare.py`); no gem5 rerun. Over the 27 agentic windows of the
+FDP-on sweep (15,441 user-to-user switches), 320 switches of exiting
+threads (276 `docker`, 42 `git`) moved from process to thread, and 95
+vfork hand-offs (53 `opencode`, 38 `python3`, 3 `go.real`) from thread to
+process: process switches 4,547 → 4,322 (−4.9%), thread switches
+10,894 → 11,119. The FDP-off sweep moves the same way (321 and 97).
+Median agentic process switches per M instructions: 0.37 → 0.37 (FDP
+on), 0.39 → 0.37 (FDP off); thread switches 0.86 → 0.88 and 0.93 → 0.96.
+SPEC is unchanged (two process switches in all 26 windows).
+
+Only the `switch_process` and `switch_thread` columns of `sweep.csv` and
+`compare.csv` changed; every other metric, total switches included, is
+identical, so the two tables above stand. The per-cause counts and the
+around-event figures of the 2026-10-14 example windows (redis, jq) were
+computed under the old rule; for redis, `within docker` becomes 300
+(was 290) and `within opencode` 154 (was 156).

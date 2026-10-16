@@ -1,0 +1,326 @@
+<title>Sweep Violins</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: summary strip, mode controls, one violin panel per metric grouped
+   as in window_view.html (SPEC beside agentic, one point per checkpoint),
+   then the per-checkpoint table. Colours match window_view.html. */
+:root {
+  --bg: #f4f6f7; --panel: #fdfdfd; --ink: #13171b; --ink-2: #4a535c;
+  --ink-3: #85909a; --rule: #dfe3e7; --grid: #e9ecef; --focus: #2a78d6;
+  --spec: #2a78d6; --agentic: #eb6834; --median: #13171b;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+    --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+    --spec: #3987e5; --agentic: #d95926; --median: #eef1f3;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+  --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+  --spec: #3987e5; --agentic: #d95926; --median: #eef1f3;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 14px; line-height: 1.45; padding-inline: 16px;
+  padding-block: 20px 40px; margin: 0;
+}
+.wrap { max-width: 1400px; margin-inline: auto; display: grid; gap: 16px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--font-label); font-weight: 600; font-size: 22px; margin: 0; }
+.sub { color: var(--ink-2); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+h2 {
+  font-family: var(--font-label); font-weight: 600; font-size: 13px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 8px 0 0;
+}
+.strip { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.kv { display: grid; gap: 2px; }
+.kv .k { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.kv .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.seg { display: inline-flex; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.seg button {
+  font: 500 13px var(--font-body); color: var(--ink); background: none; border: 0;
+  padding: 6px 12px; cursor: pointer; border-right: 1px solid var(--rule); min-height: 32px;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:disabled { color: var(--ink-3); background: none; cursor: default; }
+.seg button:focus-visible, input:focus-visible, th:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.legend { display: flex; gap: 14px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+input[type="search"] {
+  font: 13px var(--font-data); color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; min-height: 32px; width: 220px; max-width: 100%;
+}
+.hint { color: var(--ink-3); font-size: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(250px, 1fr)); gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 10px 4px; min-width: 0; }
+.panel .t { font-family: var(--font-label); font-weight: 600; font-size: 13px; }
+.panel .u { color: var(--ink-3); font-size: 11px; font-family: var(--font-data); }
+.panel .med { color: var(--ink-2); font-size: 11px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--font-data); font-size: 10px; fill: var(--ink-3); }
+.pt { stroke: var(--panel); stroke-width: 0.8; cursor: pointer; }
+.pt.hi { stroke: var(--ink); stroke-width: 2; r: 5; }
+.pt.dim { opacity: 0.18; }
+.tableWrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { padding: 5px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { font-family: var(--font-label); font-weight: 600; color: var(--ink-2); cursor: pointer; position: sticky; top: 0; background: var(--panel); }
+th:first-child, td:first-child, th:nth-child(2), td:nth-child(2) { text-align: left; }
+td { font-family: var(--font-data); }
+tr.hi td { background: color-mix(in srgb, var(--focus) 12%, transparent); }
+tbody tr { cursor: pointer; }
+#tip {
+  position: fixed; pointer-events: none; background: var(--ink); color: var(--panel);
+  font: 12px var(--font-data); padding: 6px 8px; border-radius: 6px; display: none; z-index: 5; max-width: 320px;
+}
+footer { color: var(--ink-3); font-size: 12px; }
+</style>
+<div class="wrap">
+  <header>
+    <h1 id="h1">Sweep violins</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+  <div class="strip" id="strip"></div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Quantity" id="modes"></div>
+    <div class="seg" role="group" aria-label="Scale">
+      <button id="s-lin" aria-pressed="true">Linear</button>
+      <button id="s-log" aria-pressed="false">Log</button>
+    </div>
+    <input type="search" id="find" placeholder="Find a checkpoint" aria-label="Find a checkpoint">
+    <div class="legend"><span><span class="sw" style="background:var(--spec)"></span>SPEC CPU 2026</span><span><span class="sw" style="background:var(--agentic)"></span>agentic</span></div>
+  </div>
+  <div class="hint" id="notes" hidden></div>
+  <div class="hint">One point per checkpoint. Hover a point to see the checkpoint and highlight it in every panel; click to keep the highlight. Violins are kernel density estimates cut at the data range; the line is the median, the box the 25th–75th percentile.</div>
+  <div id="panels"></div>
+  <h2 id="tbl-title">Checkpoints</h2>
+  <div class="tableWrap"><table id="tbl"></table></div>
+  <footer>Generated by <code>python3 configs/garfield/arm/sweep_summary.py</code>. The window value of a metric is computed from the stats summed over the window's blocks (as in <code>window.html</code>), so window IPC is not the mean of block IPCs. CV is the population standard deviation over the window's stats blocks divided by their mean; for context switches it is taken over the per-block switch counts. Log scale leaves out zero and negative values. In a comparison of two sweeps (<code>sweep_compare.py</code>), runs are paired by checkpoint; the change is B / A − 1 and the difference B − A, of the window values, in percentage points for metrics given in %; log scale applies only to the A and B views.</footer>
+</div>
+<div id="tip"></div>
+<script id="data" type="application/json">__SWEEP_DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const SUITES = ["spec", "agentic"], SUITE_LABEL = { spec: "SPEC", agentic: "agentic" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const CMP = !!D.compare;
+const MODES = CMP
+  ? [["rel", "Change, B against A"], ["diff", "Difference, B − A"], ["a", "A: " + D.a.label], ["b", "B: " + D.b.label]]
+  : [["value", "Window value"], ["cv", "Variation inside the window (CV)"]];
+const SUFFIX = { value: "", cv: "_cv", rel: "_rel", diff: "_diff", a: "_a", b: "_b" };
+const STORE = CMP ? "sweep-compare-view" : "sweep-view";
+let mode = MODES[0][0], logScale = false, pinned = null, hover = null, sortKey = "name", sortDir = 1;
+try { const s = JSON.parse(localStorage.getItem(STORE) || "{}"); if (MODES.some((x) => x[0] === s.mode)) mode = s.mode; logScale = !!s.log; } catch (e) {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ mode, log: logScale })); } catch (e) {} };
+
+// Log scale only where values are positive quantities.
+const useLog = () => logScale && mode !== "rel" && mode !== "diff";
+const isPct = (m) => ["value", "a", "b", "diff"].includes(mode) && m.unit.startsWith("%");
+const sign = (v) => v > 0 ? "+" : "";
+function fmt(v, m) {
+  if (v == null || !isFinite(v)) return "—";
+  if (Math.abs(v) < 1e-12) v = 0;
+  if (m && (mode === "rel" || mode === "diff") && v === 0) return "0";
+  if (m && mode === "rel") return sign(v) + (v * 100).toFixed(Math.abs(v) < 0.1 ? 1 : 0) + "%";
+  if (m && mode === "diff" && isPct(m)) return sign(v) + (v * 100).toPrecision(3) + " pp";
+  if (m && isPct(m)) return (v * 100).toPrecision(3) + "%";
+  if (m && mode === "diff") return sign(v) + fmtNum(v);
+  return fmtNum(v);
+}
+function fmtNum(v) {
+  const a = Math.abs(v);
+  if (a >= 1000) return v.toLocaleString("en", { maximumFractionDigits: 0 });
+  return a >= 100 ? v.toFixed(0) : v.toPrecision(3);
+}
+const keyOf = (m) => m.key + SUFFIX[mode];
+const valsOf = (m, s) => D.runs.filter((r) => r.suite === s && r[keyOf(m)] != null && (!useLog() || r[keyOf(m)] > 0)).map((r) => ({ r, v: r[keyOf(m)] }));
+function unitOf(m) {
+  if (mode === "cv") return "CV over blocks";
+  if (mode === "rel") return "relative change, B against A";
+  if (mode === "diff") return "B − A, " + (m.unit.startsWith("%") ? "percentage points" : m.unit);
+  return m.unit;
+}
+function quantile(xs, q) { const a = [...xs].sort((x, y) => x - y); if (!a.length) return NaN; const p = (a.length - 1) * q, i = Math.floor(p); return a[i] + (a[Math.min(i + 1, a.length - 1)] - a[i]) * (p - i); }
+
+function kde(xs, lo, hi, n = 64) {
+  // Gaussian KDE with Silverman's bandwidth, evaluated on [lo, hi].
+  const N = xs.length, mean = xs.reduce((a, b) => a + b, 0) / N;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, N - 1));
+  const iqr = quantile(xs, 0.75) - quantile(xs, 0.25);
+  let h = 0.9 * Math.min(sd, iqr > 0 ? iqr / 1.34 : sd) * Math.pow(N, -0.2);
+  if (!(h > 0)) h = (Math.abs(mean) || 1) * 0.05;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = lo + (hi - lo) * i / (n - 1);
+    let d = 0; for (const v of xs) d += Math.exp(-0.5 * ((x - v) / h) ** 2);
+    out.push([x, d]);
+  }
+  return out;
+}
+
+function niceTicks(lo, hi, count = 4) {
+  const span = hi - lo || Math.abs(hi) || 1, step0 = span / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= step0) || mag * 10;
+  const t = []; for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) t.push(+v.toPrecision(12));
+  return t;
+}
+
+function panel(m) {
+  const W = 260, H = 210, L = 44, R = 8, T = 8, B = 30;
+  const per = SUITES.map((s) => valsOf(m, s));
+  const all = per.flat().map((p) => p.v);
+  const div = document.createElement("div"); div.className = "panel";
+  const meds = SUITES.map((s, i) => per[i].length ? `${SUITE_LABEL[s]} ${fmt(quantile(per[i].map((p) => p.v), 0.5), m)}` : "").filter(Boolean).join(" · ");
+  div.innerHTML = `<div class="t">${esc(m.label)}</div><div class="u">${esc(unitOf(m))}</div><div class="med">median ${meds || "—"}</div>`;
+  if (!all.length) { div.insertAdjacentHTML("beforeend", `<div class="hint" style="padding:30px 0">no data</div>`); return div; }
+  const lg = useLog(), signed = mode === "rel" || mode === "diff";
+  const tf = lg ? Math.log10 : (x) => x, itf = lg ? (x) => Math.pow(10, x) : (x) => x;
+  let lo = Math.min(...all.map(tf)), hi = Math.max(...all.map(tf));
+  if (!lg) { lo = Math.min(lo, 0); hi = Math.max(hi, 0); }
+  if (hi === lo) { hi += 0.5; lo -= lg || signed ? 0.5 : 0; }
+  const pad = (hi - lo) * 0.04; lo -= lg || signed ? pad : 0; hi += pad;
+  const y = (v) => T + (H - T - B) * (1 - (tf(v) - lo) / (hi - lo));
+  const cx = (i) => L + (W - L - R) * (i + 0.5) / SUITES.length, half = (W - L - R) / SUITES.length * 0.42;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(m.label)} by suite">`;
+  const ticks = lg ? niceTicks(lo, hi).filter((t) => Number.isInteger(t)).concat(hi - lo < 1 ? niceTicks(lo, hi) : []) : niceTicks(lo, hi);
+  for (const t of [...new Set(ticks)]) {
+    const v = itf(t), yy = y(v); if (yy < T - 1 || yy > H - B + 1) continue;
+    s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${signed && t === 0 ? "var(--ink-3)" : "var(--grid)"}"/><text x="${L - 5}" y="${yy + 3}" text-anchor="end">${esc(fmt(v, m))}</text>`;
+  }
+  SUITES.forEach((su, i) => {
+    const xs = per[i].map((p) => tf(p.v)), c = cx(i), col = `var(--${su})`;
+    s += `<text x="${c}" y="${H - 12}" text-anchor="middle" style="fill:var(--ink-2)">${SUITE_LABEL[su]}</text><text x="${c}" y="${H - 1}" text-anchor="middle">n=${xs.length}</text>`;
+    if (xs.length > 1) {
+      const k = kde(xs, Math.min(...xs), Math.max(...xs)), dmax = Math.max(...k.map((p) => p[1])) || 1;
+      const pts = k.map(([x, d]) => [c + half * d / dmax, y(itf(x))]);
+      const path = pts.map((p, j) => `${j ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("") +
+        pts.slice().reverse().map((p) => `L${(2 * c - p[0]).toFixed(1)},${p[1].toFixed(1)}`).join("") + "Z";
+      s += `<path d="${path}" fill="${col}" fill-opacity="0.18" stroke="${col}" stroke-opacity="0.6"/>`;
+      const q1 = quantile(xs, 0.25), q3 = quantile(xs, 0.75), md = quantile(xs, 0.5);
+      s += `<rect x="${c - 4}" y="${y(itf(q3))}" width="8" height="${Math.max(1, y(itf(q1)) - y(itf(q3)))}" fill="none" stroke="var(--ink-2)" stroke-width="1"/>`;
+      s += `<line x1="${c - half * 0.55}" x2="${c + half * 0.55}" y1="${y(itf(md))}" y2="${y(itf(md))}" stroke="var(--median)" stroke-width="1.6"/>`;
+    }
+    per[i].forEach((p, j) => {
+      const jx = c + half * 0.55 * Math.sin(j * 2.399963);
+      s += `<circle class="pt" cx="${jx.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="3" fill="${col}" data-name="${esc(p.r.name)}" data-v="${esc(fmt(p.v, m))}" data-m="${esc(m.label)}"/>`;
+    });
+  });
+  div.insertAdjacentHTML("beforeend", s + "</svg>");
+  return div;
+}
+
+function drawPanels() {
+  const host = $("panels"); host.innerHTML = "";
+  const groups = [...new Set(D.metrics.map((m) => m.group))];
+  for (const g of groups) {
+    host.insertAdjacentHTML("beforeend", `<h2>${esc(g)}</h2>`);
+    const grid = document.createElement("div"); grid.className = "grid"; grid.style.marginTop = "8px";
+    D.metrics.filter((m) => m.group === g).forEach((m) => grid.appendChild(panel(m)));
+    host.appendChild(grid);
+  }
+  highlight();
+}
+
+function highlight() {
+  const name = hover || pinned, q = $("find").value.trim().toLowerCase();
+  document.querySelectorAll(".pt").forEach((c) => {
+    const n = c.dataset.name;
+    c.classList.toggle("hi", n === name);
+    c.classList.toggle("dim", !!q && !n.toLowerCase().includes(q));
+  });
+  document.querySelectorAll("#tbl tbody tr").forEach((tr) => tr.classList.toggle("hi", tr.dataset.name === name));
+}
+
+function drawTable() {
+  const cols = [{ k: "suite", l: "Suite" }, { k: "name", l: "Checkpoint" }]
+    .concat(D.metrics.map((m) => ({ k: keyOf(m), l: m.label, m })));
+  if (mode === "value" && D.runs.some((r) => r.switches_n != null)) cols.push({ k: "switches_n", l: "Switches (count)" });
+  const q = $("find").value.trim().toLowerCase();
+  const rows = D.runs.filter((r) => !q || r.name.toLowerCase().includes(q)).sort((a, b) => {
+    const x = a[sortKey], y = b[sortKey];
+    if (x == null) return 1; if (y == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y) : x - y) * sortDir;
+  });
+  $("tbl").innerHTML = `<thead><tr>${cols.map((c) => `<th tabindex="0" data-k="${c.k}">${esc(c.l)}${sortKey === c.k ? (sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map((r) => `<tr data-name="${esc(r.name)}">${cols.map((c) => `<td>${c.m ? fmt(r[c.k], c.m) : c.k === "suite" ? SUITE_LABEL[r.suite] : esc(r[c.k] ?? "—")}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  const what = { value: "window values", cv: "CV over blocks", rel: "change, B against A", diff: "difference, B − A", a: "A, " + (CMP && D.a.label), b: "B, " + (CMP && D.b.label) }[mode];
+  $("tbl-title").textContent = `Checkpoints · ${what} · ${rows.length}`;
+  highlight();
+}
+
+function drawStrip() {
+  const n = (s) => D.runs.filter((r) => r.suite === s).length;
+  if (CMP) return drawCompareStrip(n);
+  const med = (s, k) => quantile(D.runs.filter((r) => r.suite === s && r[k] != null).map((r) => r[k]), 0.5);
+  const ipc = D.metrics.find((m) => m.key === "ipc");
+  const items = [["Checkpoints", `${n("spec")} SPEC · ${n("agentic")} agentic`]];
+  if (ipc) items.push(["Median IPC", `${fmt(med("spec", "ipc"))} / ${fmt(med("agentic", "ipc"))}`]);
+  if (D.runs.some((r) => r.switches != null)) items.push(["Median switches / M insts", `${fmt(med("spec", "switches"))} / ${fmt(med("agentic", "switches"))}`]);
+  const ins = D.runs.map((r) => r.insts);
+  items.push(["Window", `${fmt(Math.min(...ins) / 1e6)}–${fmt(Math.max(...ins) / 1e6)}M insts`]);
+  $("strip").innerHTML = items.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+  $("sub").textContent = D.name;
+}
+
+function drawCompareStrip(n) {
+  const med = (s, k) => quantile(D.runs.filter((r) => r.suite === s && r[k] != null).map((r) => r[k]), 0.5);
+  const pct = (v) => isFinite(v) ? sign(v) + (v * 100).toFixed(1) + "%" : "—";
+  const items = [["A (baseline)", esc(D.a.label)], ["B", esc(D.b.label)], ["Pairs", `${n("spec")} SPEC · ${n("agentic")} agentic`]];
+  if (D.metrics.some((m) => m.key === "ipc")) items.push(["Median IPC change", `${pct(med("spec", "ipc_rel"))} / ${pct(med("agentic", "ipc_rel"))}`]);
+  $("strip").innerHTML = items.map(([k, v]) => `<div class="kv"><span class="k">${k}</span><span class="v">${v}</span></div>`).join("");
+  $("sub").textContent = `A ${D.a.dir} · B ${D.b.dir}`;
+  $("h1").textContent = "Sweep comparison";
+  document.title = "Sweep Comparison";
+  if (D.notes && D.notes.length) { $("notes").hidden = false; $("notes").innerHTML = "Check: " + D.notes.map(esc).join(" · "); }
+}
+
+$("modes").innerHTML = MODES.map(([k, l]) => `<button data-mode="${k}" aria-pressed="false">${esc(l)}</button>`).join("");
+function setMode(m) {
+  mode = m;
+  document.querySelectorAll("#modes button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === m));
+  const noLog = mode === "rel" || mode === "diff";
+  $("s-lin").disabled = $("s-log").disabled = noLog;
+  save(); drawPanels(); drawTable();
+}
+function setScale(l) { logScale = l; $("s-lin").setAttribute("aria-pressed", !l); $("s-log").setAttribute("aria-pressed", l); save(); drawPanels(); }
+$("modes").onclick = (e) => { const b = e.target.closest("button"); if (b) setMode(b.dataset.mode); };
+$("s-lin").onclick = () => setScale(false); $("s-log").onclick = () => setScale(true);
+$("find").oninput = () => { highlight(); drawTable(); };
+
+const tip = $("tip");
+$("panels").addEventListener("mousemove", (e) => {
+  const c = e.target.closest(".pt");
+  if (!c) { if (hover) { hover = null; highlight(); } tip.style.display = "none"; return; }
+  if (hover !== c.dataset.name) { hover = c.dataset.name; highlight(); }
+  tip.innerHTML = `<b>${esc(c.dataset.name)}</b><br>${esc(c.dataset.m)}: ${esc(c.dataset.v)}`;
+  tip.style.display = "block";
+  const x = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8);
+  tip.style.left = x + "px"; tip.style.top = (e.clientY + 12) + "px";
+});
+$("panels").addEventListener("mouseleave", () => { hover = null; tip.style.display = "none"; highlight(); });
+$("panels").addEventListener("click", (e) => { const c = e.target.closest(".pt"); pinned = c && pinned !== c.dataset.name ? c.dataset.name : null; highlight(); });
+$("tbl").addEventListener("click", (e) => {
+  const th = e.target.closest("th");
+  if (th) { const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : (k === "name" || k === "suite" ? 1 : -1); sortKey = k; drawTable(); return; }
+  const tr = e.target.closest("tbody tr"); if (tr) { pinned = pinned === tr.dataset.name ? null : tr.dataset.name; highlight(); }
+});
+$("tbl").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("th")) e.target.click(); });
+
+drawStrip();
+setScale(logScale);
+setMode(mode);
+</script>

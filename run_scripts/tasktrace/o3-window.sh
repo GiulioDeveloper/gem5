@@ -4,12 +4,13 @@
 # the atomic core, warm up, then simulate DETAILED instructions on O3 in
 # INTERVAL-instruction stats blocks.
 # usage: run_scripts/tasktrace/o3-window.sh TASK SETTLE WARMUP DETAILED INTERVAL [extra virt_run args]
+# OUTDIR=<dir> overrides the output directory.
 set -o pipefail
 TASK=$1 SETTLE=$2 WARM=$3 DET=$4 IVL=$5
 shift 5
 AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
 CPT=$(ls -d "$AGENTIC/checkpoints/agentic-$TASK"/cpt.* | head -1)
-OUTDIR=runs/tasktrace/$(date +%Y%m%d-%H%M%S)-$TASK-o3window
+OUTDIR=${OUTDIR:-runs/tasktrace/$(date +%Y%m%d-%H%M%S)-$TASK-o3window}
 mkdir -p "$OUTDIR"
 echo "Output dir: $OUTDIR"
 ./build/ARM/gem5.opt --outdir="$OUTDIR" "--stats-file=stats.txt?desc=False" \

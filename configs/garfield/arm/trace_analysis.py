@@ -346,6 +346,15 @@ def pctl(xs, q):
     return xs[min(len(xs) - 1, int(q * len(xs)))] if xs else float("nan")
 
 
+def same_process(e):
+    """A switch between two threads of one process (same tgid). Not the
+    tracer's same_mm, which is about the address space: a vfork child
+    shares its parent's mm until it execs, and a thread that is exiting
+    has already dropped its mm."""
+    p, n = e["prev"] or {}, e["next"] or {}
+    return p.get("tgid") is not None and p.get("tgid") == n.get("tgid")
+
+
 def event_kinds(e, tree=None):
     """The analysis kinds an event counts as."""
     ev = e["event"]
@@ -357,7 +366,7 @@ def event_kinds(e, tree=None):
             kern = p.get("kernel_thread") or n.get("kernel_thread")
         if kern:
             return ["switch_kernel"]
-        return ["switch_thread" if e["same_mm"] else "switch_process"]
+        return ["switch_thread" if same_process(e) else "switch_process"]
     if ev == "fork":
         c, p = e["child"] or {}, e["parent"] or {}
         return ["fork_thread" if c.get("tgid") == p.get("tgid")
@@ -376,7 +385,7 @@ def switch_cause(e, tree):
     if not p or not n:
         return "unknown"
     a, b = tree.group(p), tree.group(n)
-    if e["same_mm"]:
+    if same_process(e):
         return f"within {a}"
     return f"{a} -> {b}"
 
