@@ -3,7 +3,7 @@
 """Analyse a --task-trace run of virt_run.py or fs_run.py (host Python,
 stdlib only).
 
-    python3 configs/garfield/arm/trace_analysis.py <outdir> [--window K]
+    python3 analysis_scripts/tasktrace/trace_analysis.py <outdir> [--window K]
 
 Reads <outdir>/tasktrace.jsonl and, when the run used
 --stats-interval-insts, <outdir>/intervals.csv and the per-interval blocks of
@@ -140,7 +140,9 @@ def user_per_block(stats):
 
 class Tree:
     """Process names, parentage and container of every task in the trace,
-    from the start-up snapshot and every task record."""
+    from the start-up snapshot and every task record. Building it also
+    marks the switches that end a kernel-thread or idle run in another
+    process than the one it interrupted (see mark_crossings)."""
 
     def __init__(self, events):
         self.parent = {}
@@ -164,6 +166,7 @@ class Tree:
             self._note(NOT_RECORDED)
         self.host_ns = self.ns.get(1)
         self._place, self._root = {}, {}
+        mark_crossings(events, self)
 
     def _note(self, t):
         tgid = t["tgid"]
@@ -355,8 +358,38 @@ def same_process(e):
     return p.get("tgid") is not None and p.get("tgid") == n.get("tgid")
 
 
+def mark_crossings(events, tree):
+    """Set e["via"] on each switch from a kernel thread or the idle task to
+    a user task of another process than the last user task that ran: the
+    user task the kernel run interrupted. Such a run does not change the
+    address space (a kernel thread borrows the previous task's mm, lazy
+    TLB), so the change of process happens at this switch, and it counts as
+    a process switch as well as a kernel-thread switch. A kernel run that
+    returns to the same process is not a process switch."""
+    left = None
+    for e in events:
+        if e["event"] != "switch":
+            continue
+        e.pop("via", None)
+        p, n = e["prev"], e["next"]
+        if not p or not n:
+            left = None
+            continue
+        pk, nk = tree.kind(p) == "user", tree.kind(n) == "user"
+        if pk and not nk:
+            left = p
+        elif not pk and nk:
+            if left and left["tgid"] != n["tgid"]:
+                e["via"] = left
+            left = None
+        elif pk and nk:
+            left = None
+
+
 def event_kinds(e, tree=None):
-    """The analysis kinds an event counts as."""
+    """The analysis kinds an event counts as. A switch that ends a kernel
+    run in another process (mark_crossings) is both a kernel-thread and a
+    process switch."""
     ev = e["event"]
     if ev == "switch":
         p, n = e["prev"] or {}, e["next"] or {}
@@ -365,7 +398,8 @@ def event_kinds(e, tree=None):
         else:
             kern = p.get("kernel_thread") or n.get("kernel_thread")
         if kern:
-            return ["switch_kernel"]
+            return (["switch_kernel", "switch_process"] if e.get("via")
+                    else ["switch_kernel"])
         return ["switch_thread" if same_process(e) else "switch_process"]
     if ev == "fork":
         c, p = e["child"] or {}, e["parent"] or {}
@@ -377,13 +411,19 @@ def event_kinds(e, tree=None):
     return []
 
 
-def switch_cause(e, tree):
+def switch_cause(e, tree, kind=None):
     """Who switched to whom, by process name ('kernel' and 'idle' for
     kernel threads and the idle task): 'within opencode' for a switch
-    between threads of one process, else e.g. 'opencode -> docker'."""
+    between threads of one process, else e.g. 'opencode -> docker'. For
+    kind 'switch_process' of a switch that ends a kernel run in another
+    process: the process before the kernel run, e.g. 'opencode -> cc1plus
+    (via kernel)'."""
     p, n = e["prev"], e["next"]
     if not p or not n:
         return "unknown"
+    if kind == "switch_process" and e.get("via"):
+        via = "idle" if tree.kind(p) == "idle" else "kernel"
+        return f"{tree.group(e['via'])} -> {tree.group(n)} (via {via})"
     a, b = tree.group(p), tree.group(n)
     if same_process(e):
         return f"within {a}"
@@ -895,6 +935,12 @@ def main():
              "| event | count | per M insts | per ms |", "|---|---|---|---|"]
     for k, v in sorted(kinds.items()):
         lines.append(f"| {k} | {v} | {v / minsts:.2f} | {v / ms:.3f} |")
+    crossings = sum(1 for e in events if e.get("via"))
+    if crossings:
+        lines += ["", f"switch_process includes {crossings} switches that "
+                  "end a kernel-thread or idle run in another process than "
+                  "the one it interrupted; they are also counted as "
+                  "switch_kernel."]
     tot = i1 - i0 or 1
     if has_user:
         tu = sum(group_user["process"].values())

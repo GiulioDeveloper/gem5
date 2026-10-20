@@ -4,7 +4,7 @@
 set -o pipefail
 B=${1:-777.zstd_r}; INV=${2:-0}; SP=${3:-1}
 WARM=${4:-10000000}; DET=${5:-50000000}
-R=$PWD/gem5-ckpts/fs_ckpts/spec26
+R=${CKPTS:-/home/snapshots/gem5-ckpts}/fs_ckpts/spec26
 export GEM5_RESOURCE_DIR=$R/restore_resources
 OUTDIR=runs/$(date +%Y%m%d-%H%M%S)-spec-$B-$INV-$SP
 mkdir -p "$OUTDIR"; echo "Output dir: $OUTDIR"

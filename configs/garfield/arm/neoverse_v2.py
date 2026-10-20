@@ -282,6 +282,13 @@ class NeoverseV2_BTB(SimpleBTB):
     )
 
 
+# Limit-study BTB (--infinite-btb): unbounded, ASID-separated. The
+# checkpointed guest kernel runs with KPTI, which gives each process an
+# ASID pair differing in bit 0, so bit 0 is ignored.
+class NeoverseV2_InfiniteBTB(InfiniteBTB):
+    ignoreAsidLsb = True
+
+
 # TAGE Branch Predictor
 class NeoverseV2_BP(BranchPredictor):
     conditionalBranchPred = TAGE_SC_L_64KB()
@@ -308,6 +315,17 @@ class NeoverseMMU(ArmMMU):
     l2_shared = ArmTLB(
         entry_type="unified", size=2048, assoc=8, partial_levels=["L2"]
     )
+
+
+# Limit-study L2 TLB (--infinite-tlb): 1M entries, 16-way, so capacity and
+# conflict misses vanish. It is the stock ArmTLB, so every TLBI is still
+# applied exactly. L2 hits cost no time in this config, so only compulsory
+# and post-invalidation misses still walk. See docs/garfield/infinite-tlb.md.
+class NeoverseV2_InfiniteL2TLB(ArmTLB):
+    entry_type = "unified"
+    size = 1 << 20
+    assoc = 16
+    partial_levels = ["L2"]
 
 
 class NeoverseV2(ArmO3CPU):

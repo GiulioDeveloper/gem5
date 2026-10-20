@@ -7,7 +7,7 @@
 set -o pipefail
 BENCH=$1 SETTLE=$2 WARM=$3 DET=$4 IVL=$5 TAG=${6:-o3window}
 shift 6 2>/dev/null || shift $#
-SPEC=./gem5-ckpts/fs_ckpts/spec26
+SPEC=${CKPTS:-/home/snapshots/gem5-ckpts}/fs_ckpts/spec26
 CPT=$(ls -d "$SPEC/ckpts/$BENCH"/*/cpt.* | head -1)
 INV=$(basename "$(dirname "$CPT")")
 export GEM5_RESOURCE_DIR=$(realpath "$SPEC/restore_resources")

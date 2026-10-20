@@ -1,6 +1,7 @@
 """Compare each traced restore's first switch with its landing label.
 
-usage: python3 run_scripts/tasktrace/landing_summary.py <landing-run dir> <checkpoints>
+usage: python3 analysis_scripts/tasktrace/landing_summary.py \
+           <landing-run dir> <checkpoints>
 """
 
 import json

@@ -59,9 +59,16 @@ the checkpoint files it produced.
 | `configs/garfield/arm/task_trace.py` | `--task-trace*` flags; builds the tracer and attaches it to the board |
 | `configs/garfield/arm/virt_run.py` | the restore script for the agentic (QEMU-virt) checkpoints; also `--stats-interval-insts` and `--tail-insts` |
 | `configs/garfield/arm/fs_run.py` | the restore script for the SPEC CPU 2026 SimPoint checkpoints (VExpress); also `--stats-interval-insts` and `--task-trace` |
-| `configs/garfield/arm/trace_analysis.py` | host-side analysis (stdlib only) |
-| `configs/garfield/arm/trace_view.py`, `trace_view.html` | interactive schedule viewer generator and template |
-| `configs/garfield/arm/window_view.py`, `window_view.html` | detailed-window metrics viewer generator and template |
+| `analysis_scripts/tasktrace/trace_analysis.py` | host-side analysis (stdlib only) |
+| `analysis_scripts/tasktrace/trace_view.py`, `trace_view.html` | interactive schedule viewer generator and template |
+| `analysis_scripts/tasktrace/window_view.py`, `window_view.html` | detailed-window metrics viewer generator and template |
+| `analysis_scripts/tasktrace/sweep_summary.py`, `sweep_compare.py`, `sweep_view.html` | cross-checkpoint summary and comparison of sweeps (8.3) |
+| `analysis_scripts/tasktrace/landing_summary.py` | summary of the landing check (section 9) |
+
+The gem5 side (`configs/garfield/arm/`) runs inside the simulator; the
+analysis side (`analysis_scripts/tasktrace/`, host Python, stdlib only
+apart from matplotlib for the optional PDFs) reads finished runs. It
+mirrors `run_scripts/tasktrace/`, which holds the run helpers (4.4).
 
 ## 3. Prerequisites
 
@@ -69,18 +76,21 @@ the checkpoint files it produced.
 - **`gdb` on the host.** `kernel_layout.py` uses it to read the vmlinux's
   debug info (an x86 gdb reads the aarch64 vmlinux fine).
 - **The guest's own vmlinux,** with symbols and debug info: for the agentic
-  checkpoints, `gem5-ckpts/rpoint_ckpts/agentic/kernel/arm64-linux-kernel-6.8.12-1.0.0`.
+  checkpoints, `/home/snapshots/gem5-ckpts/rpoint_ckpts/agentic/kernel/arm64-linux-kernel-6.8.12-1.0.0`.
   It must be the exact kernel the guest booted; it is already what
   `--kernel` points at.
 - **Host Python 3** for the analysis scripts (no third-party packages).
 
 ## 4. Running a traced restore
 
-All commands run from the repository root. The variables below are used
-throughout:
+All commands run from the repository root. The checkpoints live outside
+the repository, in `/home/snapshots/gem5-ckpts` (`fs_ckpts/` for SPEC,
+`rpoint_ckpts/` for the agentic tasks); every script under `run_scripts/`
+takes that root from `CKPTS`, so `CKPTS=/other/copy` points them at another
+copy. The variables below are used throughout:
 
 ```sh
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 TASK=<task>          # a checkpoint directory name without the agentic- prefix
 CPT=$AGENTIC/checkpoints/agentic-$TASK/cpt.0
 COMMON="--disk-img $AGENTIC/images/rpoint-ubuntu-24.04-v21.img \
@@ -133,6 +143,8 @@ Without `--task-trace`, `virt_run.py` behaves exactly as before.
 
 ### 4.4 Helper scripts
 
+`run_scripts/README.md` and `analysis_scripts/README.md` list every
+run and analysis script with its purpose and when to use it.
 `run_scripts/tasktrace/` (next to `run_agent.sh`) wraps the common runs;
 each writes to `runs/tasktrace/<stamp>-<task>-<kind>/` (`OUTDIR=<dir>`
 overrides it for the two window scripts). Run
@@ -146,7 +158,8 @@ them from the repository root; `<task>` is a checkpoint name without the
 | `o3-pair.sh [task] [warmup] [detailed]` | the no-perturbation check: the same window with and without the tracer, diffing `stats.txt` (section 9). `PAIR_ON_ARGS=` runs the plain configuration twice, a determinism check |
 | `spec-window.sh BENCH SETTLE WARMUP DETAILED INTERVAL [TAG] [fs_run args]` | a traced detailed window of a SPEC CPU 2026 checkpoint (4.6) |
 | `sweep.sh [BASE]` | a detailed window of every local checkpoint, SPEC and agentic (8.3); `PAR`, `SETTLE`, `WARM`, `IVL`, `SPEC_DET`, `AGENTIC_DET`, `ONLY="<name> ..."`, `PY`, `EXTRA` (flags for every run) and `BASELINE` (sweep to compare with) in the environment |
-| `landing-all.sh [insts] [parallel]` | the landing check over every local checkpoint (section 9), summarized by `landing_summary.py`; `TASKS="<task> ..."` limits the tasks |
+| `smart_sweep.sh [BASE]` | `sweep.sh` with memory-aware launching, for several sweeps at once (8.3); also `RESERVE_GB`, `STAGGER`, `LOCK` |
+| `landing-all.sh [insts] [parallel]` | the landing check over every local checkpoint (section 9), summarized by `analysis_scripts/tasktrace/landing_summary.py`; `TASKS="<task> ..."` limits the tasks |
 
 ### 4.5 Choosing where to put an O3 window
 
@@ -180,12 +193,12 @@ instruction count used by the trace.
 ### 4.6 SPEC CPU 2026 checkpoints
 
 `fs_run.py` restores the SPEC SimPoint checkpoints (one per benchmark under
-`gem5-ckpts/fs_ckpts/spec26/ckpts/<bench>/`) and takes the same
+`/home/snapshots/gem5-ckpts/fs_ckpts/spec26/ckpts/<bench>/`) and takes the same
 `--task-trace*` and `--stats-interval-insts` flags. Its kernel resource is
 the same vmlinux as the agentic guests' (same md5), so the tracer finds its
 hooks unchanged. `fs_run.py` resolves the kernel through
 `GEM5_RESOURCE_DIR`, which `spec-window.sh` points at
-`gem5-ckpts/fs_ckpts/spec26/restore_resources`:
+`/home/snapshots/gem5-ckpts/fs_ckpts/spec26/restore_resources`:
 
 ```sh
 run_scripts/tasktrace/spec-window.sh 714.cpython_r 1 20000000 200000000 200000
@@ -429,7 +442,7 @@ Examples:
 ## 7. Analysis: `trace_analysis.py`
 
 ```sh
-python3 configs/garfield/arm/trace_analysis.py <outdir> [--window K]
+python3 analysis_scripts/tasktrace/trace_analysis.py <outdir> [--window K]
 ```
 
 Writes `<outdir>/analysis/` and prints `summary.md`.
@@ -481,7 +494,23 @@ and `summary.md` reports its mean absolute difference from gem5's own
 **Thread, process and kernel switches.** A switch is `switch_kernel` when
 either side is a kernel thread or the idle task. Otherwise it is
 `switch_thread` when `prev` and `next` have the same `tgid` (two threads of
-one process) and `switch_process` when they do not. The tracer's `same_mm`
+one process) and `switch_process` when they do not.
+
+A switch from a kernel thread or the idle task to a user task of another
+process than the user task the kernel run interrupted (`opencode ->
+rcu_preempt -> cc1plus`) is both a `switch_kernel` and a
+`switch_process`. A kernel thread borrows the previous task's address space
+(lazy TLB), so the process, and the address space, change at that second
+switch. The analysis marks such switches with `via` (the interrupted user
+task, `mark_crossings` in `trace_analysis.py`); their process-switch cause
+reads `opencode -> cc1plus (via kernel)` (`via idle` when the idle task
+ran last), and `summary.md` says how many there are. A kernel run that
+returns to the same process is not a process switch. Per-kind counts can
+therefore add up to more than the number of switches. `switches.csv` stays
+one row per switch record, by its own cause (`kernel -> cc1plus`).
+Analyses made before 2026-10-16 counted these only as kernel-thread
+switches; in the 27 agentic traces of the first sweep they add 9% to the
+process switches. The tracer's `same_mm`
 is not used for this, because the address space and the process differ in
 two cases:
 
@@ -620,7 +649,7 @@ sum of misses over sum of instructions for MPKI) rather than averaging the
 ratios, which over-weights short or unusual intervals. In Python:
 
 ```python
-import sys; sys.path.insert(0, "configs/garfield/arm")
+import sys; sys.path.insert(0, "analysis_scripts/tasktrace")
 import trace_analysis as ta
 blocks = ta.load_blocks(Path(outdir))   # raw counts per interval
 ```
@@ -633,7 +662,7 @@ treats a missing stat as 0.
 ### 8.1 Schedule timeline: `trace_view.py`
 
 ```sh
-python3 configs/garfield/arm/trace_view.py <outdir> [-o out.html] [--fragment]
+python3 analysis_scripts/tasktrace/trace_view.py <outdir> [-o out.html] [--fragment]
 ```
 
 Writes `<outdir>/analysis/schedule.view.json` (compact view model) and a
@@ -672,7 +701,7 @@ agree. *Open view.json* accepts only files made by the current
 ### 8.2 Metrics over a detailed window: `window_view.py`
 
 ```sh
-python3 configs/garfield/arm/window_view.py <outdir> [-o out.html] \
+python3 analysis_scripts/tasktrace/window_view.py <outdir> [-o out.html] \
     [--metric KEY=STAT[/insts|/cycles]] [--fragment]
 ```
 
@@ -687,8 +716,10 @@ the core behaves around scheduling points.
   issue rate), front end (L1I and iTLB MPKI, BTB misses, I-cache stall
   cycles, FTQ full, decode blocked), bad speculation (conditional and all
   mispredicts, BTB-miss mispredicts, squashed per committed, fetch
-  squashing, memory-order violations), memory (L1D, L2, dTLB MPKI, page
-  walks, L1D/L1I miss latency in cycles) and back end (rename blocked, ROB,
+  squashing, memory-order violations), memory (L1D, L2, dTLB MPKI, page-walk
+  requests, completed page walks in total and split into data and
+  instruction walks, L1D/L1I miss latency in cycles) and back end (rename
+  blocked, ROB,
   IQ, LSQ and register full, LQ/SQ occupancy). Garfield counters (ghost,
   MRN, VP shares) and the top-down Level 1 fractions appear when the build
   has them; a metric that is zero throughout is listed but not plotted.
@@ -748,10 +779,20 @@ takes, over the detailed window:
 - each metric's **window value** from the summed stats, as `window.html`
   computes it (IPC, user-mode share, fetch rate; L1I and iTLB misses,
   I-cache stall cycles; conditional and BTB-miss mispredicts, squashed per
-  committed; L1D, L2 and dTLB misses, page walks, L1D miss latency; ROB, IQ
-  and LSQ full);
+  committed; L1D, L2 and dTLB misses, page-walk requests, completed page
+  walks (total, data, instruction), L1D miss latency; ROB, IQ and LSQ
+  full);
 - each metric's **coefficient of variation** over the window's blocks
   (population std / mean of the block values);
+- **Page-walk requests vs. completed walks.** `walks_pki` counts every
+  request to the walker (`mmu.walker.walks`), including requests squashed
+  before a walk started (wrong path) and requests merged into a walk already
+  in flight for the same page. The completed walks
+  (`mmu.walker.requestOrigin_Completed::{Data,Inst}`) are the walks that
+  actually ran: about a quarter of the requests in the agentic windows
+  (fmt-3901: 2.64 requests, 0.68 completed, of which 0.58 data and 0.09
+  instruction walks per 1000 instructions). The `walks_pki` key is kept for
+  compatibility with existing pages;
 - **context switches** by kind from the trace: count, rate per million
   instructions, and the CV of the per-block count.
 
@@ -799,6 +840,97 @@ with the median IPC change per suite. `--pdf` adds
 `violins_change.pdf/.png` and `violins_diff.pdf/.png`. Window settings
 that differ between the two `sweep.conf`, checkpoints in only one sweep and
 pairs with different window lengths are printed and listed on the page.
+
+**Several sweeps at once: `smart_sweep.sh`.** A run holds the guest memory
+its checkpoint has in use, which varies a lot: about 3 GB for most agentic
+tasks, 5.7 GB for babel-15649, and about 10 GB for docusaurus-9897 and
+nushell-13831, whose memory images are 3.7 GB compressed against
+0.5–1.1 GB for the others. The run reaches that within about 30 s of its
+restore. Sweeps started together walk the checkpoints in the same order,
+so the same heavy task restores several times at once. Three `sweep.sh`
+with `PAR=4` reached 58.5 GB within two minutes, and systemd-oomd killed
+the whole terminal scope, sweeps and shell included.
+`smart_sweep.sh` takes the same arguments and environment, and writes the
+same outputs, resume behaviour and comparisons. It differs only in how runs
+are started. Every launch, across all smart sweeps sharing `LOCK` (default
+`/tmp/gem5-smart-sweep-$UID.lock`), proceeds as follows:
+
+1. It takes the lock.
+2. It waits until
+   `MemAvailable − (memory still to come from running runs) ≥ need + RESERVE_GB`
+   (default 8 GB).
+3. It starts the run and registers its gem5 process and expected peak in
+   `STATE` (default `/tmp/gem5-smart-sweep-$UID.d/`).
+4. It holds the lock `STAGGER` seconds (default 60) while the restore ramps
+   up.
+
+A run's **need** (its expected peak) is the task's peak RSS measured in an
+earlier run, +15% and 0.5 GB, taken from `PEAKS` (default
+`runs/sweep/mem_peaks.tsv`, one `<checkpoint> <MB>` line per task, the
+maximum over runs). For a task never measured it is a conservative estimate
+from the compressed memory images: 2 GB + 6× the size of the checkpoint's
+`*.pmem`. The compressed size alone is a poor predictor. docusaurus-9897
+and nushell-13831 both have 3.7 GB of images but hold 10.7 GB and more than
+21 GB. The **memory still to come** is, over the registered runs, the sum
+of expected peak minus current RSS, so a run that is still ramping up keeps
+its share reserved. While a run goes its gem5 peak RSS (`VmHWM`) is sampled
+(every 5 s during the stagger, then every 30 s) and written to `PEAKS`
+every 5 minutes and at the end. Later launches of the same task, in any
+sweep, use the measured value. Each launch is logged to `BASE/launch.log`
+with its need, where it came from (measured or estimated), the available
+memory, the memory still to come and the time waited. `PAR` stays the upper
+bound per sweep:
+
+```sh
+for v in "infbtb:--infinite-btb" "inftlb:--infinite-tlb"; do
+  PAR=4 EXTRA="${v#*:}" BASELINE=runs/sweep/<fdp> \
+    nohup run_scripts/tasktrace/smart_sweep.sh runs/sweep/<stamp>-${v%%:*} \
+    > runs/sweep/<stamp>-${v%%:*}.log 2>&1 < /dev/null &
+done
+```
+
+**Skipping the start of each window.** `sweep_summary.py --skip-insts N`
+(e.g. `100e6`) leaves out the blocks that start in each window's first N
+instructions, from the window values, the CVs and the context-switch
+counts alike, as if they had been extra warm-up. It needs no
+re-simulation, because the stats are already per block
+(`window_view.block_metrics(..., skip_insts)`). Write such summaries
+elsewhere with `-o`. `sweep_compare.py` accepts these summary directories
+(any directory holding a `sweep.view.json`) as well as sweep directories:
+
+```sh
+runs/venv/bin/python analysis_scripts/tasktrace/sweep_summary.py runs/sweep/<ts> \
+    --skip-insts 100e6 -o runs/sweep/<new>/<label> --pdf
+```
+
+SPEC windows are only 200M instructions, so a 100M skip halves them.
+
+**Three or more sweeps.** Pass more sweeps after the baseline:
+
+```sh
+runs/venv/bin/python analysis_scripts/tasktrace/sweep_compare.py \
+    runs/sweep/<fdp> runs/sweep/<nofdp> runs/sweep/<infbtb> ... \
+    --labels FDP no-FDP inf-BTB ... [-o OUT] [--pdf]
+```
+
+(up to 8; the first is the baseline A, the others are lettered B, C, … in
+order). Only checkpoints present in every sweep are compared; the others
+are listed as notes. The output goes to `OUT` (default
+`<A>/compare-multi/`):
+
+- `compare_multi.csv`: one row per checkpoint, with `<metric>:<label>` for
+  every sweep and `<metric>:<label>:rel` (change against A) for the others;
+- `compare_multi.html`: one panel per metric with SPEC on the left and
+  agentic on the right, one violin per sweep, each coloured and lettered
+  as in the legend. Views are the window values, the change against A
+  (checkpoint by checkpoint, B / A − 1) and the difference from A. The
+  strip gives the median IPC change of every sweep per suite. The table
+  shows one metric (picked in *Table metric*) for every sweep;
+- with `--pdf`, `violins_multi.pdf/.png` (values) and
+  `violins_multi_change.pdf/.png` (change against A).
+
+With exactly two sweeps the tool behaves as before (`compare.csv`,
+`compare.html`), byte for byte.
 
 ## 9. Validation you can repeat
 

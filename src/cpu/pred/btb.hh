@@ -52,6 +52,8 @@
 namespace gem5
 {
 
+class ThreadContext;
+
 namespace branch_prediction
 {
 
@@ -64,6 +66,11 @@ class BranchTargetBuffer : public ClockedObject
     BranchTargetBuffer(const Params &params);
 
     virtual void memInvalidate() override = 0;
+
+    /** Gives the BTB the thread context of hardware thread tid. Called
+     *  by CPU models that support it; BTBs that need architectural state
+     *  (e.g. the current ASID) override this. */
+    virtual void setThreadContext(ThreadID tid, ThreadContext *tc) {}
 
     /** Checks if a branch address is in the BTB. Intended as a quick check
      *  before calling lookup. Does not update statistics.

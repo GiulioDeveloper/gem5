@@ -145,6 +145,23 @@ class SimpleBTB(BranchTargetBuffer):
     )
 
 
+class InfiniteBTB(BranchTargetBuffer):
+    """Unbounded BTB for limit studies: no capacity or conflict misses,
+    full-width tags, user code separated by ASID, kernel code shared.
+    See docs/garfield/infinite-btb.md."""
+
+    type = "InfiniteBTB"
+    cxx_class = "gem5::branch_prediction::InfiniteBTB"
+    cxx_header = "cpu/pred/infinite_btb.hh"
+
+    ignoreAsidLsb = Param.Bool(
+        False,
+        "Ignore ASID bit 0. Set it when the guest OS pairs ASIDs for "
+        "user/kernel (Linux KPTI); without such pairing it merges two "
+        "unrelated address spaces.",
+    )
+
+
 class ConditionalPredictor(SimObject):
     type = "ConditionalPredictor"
     cxx_class = "gem5::branch_prediction::ConditionalPredictor"

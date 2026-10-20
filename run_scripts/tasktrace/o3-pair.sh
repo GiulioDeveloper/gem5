@@ -10,7 +10,7 @@ TASK=${1:-gin-2121}
 WARM=${2:-1000000}
 DET=${3:-5000000}
 
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 BASE=runs/tasktrace/$(date +%Y%m%d-%H%M%S)-$TASK-o3pair
 
 run() {

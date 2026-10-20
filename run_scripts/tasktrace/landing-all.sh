@@ -8,7 +8,7 @@
 #        re-summarizes a finished run; TASKS="gin-2121 ..." limits the tasks.
 INSTS=${1:-3000000}
 PAR=${2:-6}
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 BASE=${BASE:-runs/tasktrace/$(date +%Y%m%d-%H%M%S)-landing-all}
 mkdir -p "$BASE"
 
@@ -32,4 +32,4 @@ export BASE AGENTIC INSTS
     { [ -n "$TASKS" ] && printf "agentic-%s\n" $TASKS || ls "$AGENTIC/checkpoints"; } |
     xargs -P "$PAR" -I{} bash -c 'one {}'
 
-python3 run_scripts/tasktrace/landing_summary.py "$BASE" "$AGENTIC/checkpoints"
+python3 analysis_scripts/tasktrace/landing_summary.py "$BASE" "$AGENTIC/checkpoints"

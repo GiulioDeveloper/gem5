@@ -2,7 +2,7 @@
 
 """Interactive schedule view of a --task-trace run (host Python, stdlib).
 
-    python3 configs/garfield/arm/trace_view.py <outdir> [-o out.html]
+    python3 analysis_scripts/tasktrace/trace_view.py <outdir> [-o out.html]
 
 Turns <outdir>/tasktrace.jsonl into a compact view model (who ran on the
 CPU when, process lifecycle events, OpenCode tool calls) and writes

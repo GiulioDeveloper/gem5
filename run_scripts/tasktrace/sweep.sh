@@ -30,8 +30,8 @@ export IVL=${IVL:-200000} SPEC_DET=${SPEC_DET:-200000000}
 export AGENTIC_DET=${AGENTIC_DET:-400000000} BASE
 export EXTRA=${EXTRA:-}
 PY=${PY:-python3}
-SPEC=./gem5-ckpts/fs_ckpts/spec26/ckpts
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic/checkpoints
+SPEC=${CKPTS:-/home/snapshots/gem5-ckpts}/fs_ckpts/spec26/ckpts
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic/checkpoints
 mkdir -p "$BASE"
 if [ -f "$BASE/sweep.conf" ]; then
     prev=$(sed -n 's/^extra //p' "$BASE/sweep.conf")
@@ -86,7 +86,7 @@ one() {
         return 1
     fi
     for t in trace_analysis trace_view window_view; do
-        python3 configs/garfield/arm/$t.py "$out" >> "$out/analysis.log" 2>&1 \
+        python3 analysis_scripts/tasktrace/$t.py "$out" >> "$out/analysis.log" 2>&1 \
             || echo "$t failed" >> "$out/failed"
     done
     touch "$out/done"
@@ -99,7 +99,7 @@ printf '%s\n' "${jobs[@]}" | xargs -P "$PAR" -L 1 bash -c 'one $0 $1' \
     | tee -a "$BASE/progress.log"
 echo "finished $(date -Is)" >> "$BASE/sweep.conf"
 pdf=$("$PY" -c "import matplotlib" 2>/dev/null && echo --pdf)
-"$PY" configs/garfield/arm/sweep_summary.py "$BASE" $pdf
+"$PY" analysis_scripts/tasktrace/sweep_summary.py "$BASE" $pdf
 if [ -n "$BASELINE" ]; then
-    "$PY" configs/garfield/arm/sweep_compare.py "$BASELINE" "$BASE" $pdf
+    "$PY" analysis_scripts/tasktrace/sweep_compare.py "$BASELINE" "$BASE" $pdf
 fi

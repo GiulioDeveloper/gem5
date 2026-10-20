@@ -1,7 +1,7 @@
 set -o pipefail   # keep gem5's exit status through the tee
 
 CFG=./configs/garfield/arm/virt_run.py          # in the fork, not in gem5-infra
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic                     # this directory
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 IMG=$AGENTIC/images/rpoint-ubuntu-24.04-v21.img
 KERNEL=$AGENTIC/kernel/arm64-linux-kernel-6.8.12-1.0.0   # the vmlinux, NOT the -Image
 BOOTLOADER=$AGENTIC/bootloader/boot_v2_qemu_virt.arm64

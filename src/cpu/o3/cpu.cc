@@ -315,6 +315,11 @@ CPU::CPU(const BaseO3CPUParams &params)
 
         // Add the TC to the CPU's list of TC's.
         threadContexts.push_back(tc);
+
+        // Let the BTB read architectural state (e.g. the ASID).
+        if (params.branchPred) {
+            params.branchPred->setThreadContext(tid, tc);
+        }
     }
 
     // O3CPU always requires an interrupt controller.

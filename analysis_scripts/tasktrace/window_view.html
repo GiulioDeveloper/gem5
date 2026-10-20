@@ -208,7 +208,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     <div class="scroll"><table class="t" id="t-ev"></table></div>
   </section>
 
-  <footer>Generated from <code>stats.txt</code>, <code>intervals.csv</code> and <code>tasktrace.jsonl</code> by <code>python3 configs/garfield/arm/window_view.py &lt;outdir&gt;</code>. Each bar is one stats block; its width is the instructions it committed. The dashed line is the metric over the whole window, computed from the stats summed over all blocks (cycle-weighted for averages such as queue occupancy), so it is not the mean of the bars. When blocks are narrower than two pixels, a pixel column shows their mean (solid) and maximum (faint). The CPU strip shows who ran between two context switches, with the kernel-mode share of each slice as a darker lower band; who ran is grouped by process name, launch tree (the topmost ancestor below systemd on the host, or the container's top process) or where it ran, as in <code>trace_analysis.py</code>, and shading uses the group that ran most of each block. Around events: blocks are indexed relative to the block holding each event, and a block holding several events of the kind counts once.</footer>
+  <footer>Generated from <code>stats.txt</code>, <code>intervals.csv</code> and <code>tasktrace.jsonl</code> by <code>python3 analysis_scripts/tasktrace/window_view.py &lt;outdir&gt;</code>. Each bar is one stats block; its width is the instructions it committed. The dashed line is the metric over the whole window, computed from the stats summed over all blocks (cycle-weighted for averages such as queue occupancy), so it is not the mean of the bars. When blocks are narrower than two pixels, a pixel column shows their mean (solid) and maximum (faint). The CPU strip shows who ran between two context switches, with the kernel-mode share of each slice as a darker lower band; who ran is grouped by process name, launch tree (the topmost ancestor below systemd on the host, or the container's top process) or where it ran, as in <code>trace_analysis.py</code>, and shading uses the group that ran most of each block. Around events: blocks are indexed relative to the block holding each event, and a block holding several events of the kind counts once.</footer>
 </div>
 
 <div class="tip" id="tip" hidden></div>
@@ -386,7 +386,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     const groups = [...new Set(present.map(kindOf))];
     const label = (g) => g === "tool" ? "Tool calls" : KIND_LABEL[g];
     $("evlines").innerHTML = `<h2>Event lines</h2>` + groups.map((g) =>
-      `<button class="ev" data-g="${g}" aria-pressed="${lines.has(g)}"><i class="sw" style="background:var(--ev-${g})"></i>${esc(label(g))}</button>`).join("");
+      `<button class="ev" data-g="${g}" aria-pressed="${lines.has(g)}"><i class="sw" style="${g === "switch_kernel" ? "background:none;box-shadow:inset 0 0 0 1.5px var(--ev-" + g + ")" : "background:var(--ev-" + g + ")"}"></i>${esc(label(g))}</button>`).join("");
     $("evlines").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
       const g = b.dataset.g; lines.has(g) ? lines.delete(g) : lines.add(g);
       b.setAttribute("aria-pressed", lines.has(g)); draw();
@@ -536,8 +536,11 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
         if (m.i < view[0] || m.i > view[1] || !lines.has(kindOf(m.k))) continue;
         const x = Math.round(plotX(m.i)) + 0.5;
         c.strokeStyle = evColor(m.k); c.globalAlpha = m.k === "switch_thread" || m.k === "switch_kernel" ? 0.35 : 0.6;
+        // kernel-thread switches dashed, so they read apart from thread switches
+        c.setLineDash(m.k === "switch_kernel" ? [3, 3] : []);
         c.lineWidth = 1; c.beginPath(); c.moveTo(x, yt); c.lineTo(x, yb); c.stroke();
       }
+      c.setLineDash([]);
       c.globalAlpha = 1;
       if (focusMark >= 0) {
         const x = Math.round(plotX(marks[focusMark].i)) + 0.5;
@@ -610,7 +613,10 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
       const x = plotX(m.i), k = m.k;
       c.fillStyle = evColor(k);
       if (k === "switch_process") c.fillRect(x - 1, y + 2, 2, h - 4);
-      else if (k === "switch_thread" || k === "switch_kernel") c.fillRect(x - 0.5, y + h / 2, 1, h / 2 - 2);
+      // thread switch: a tick in the lower half; kernel-thread switch: a
+      // small hollow square in the upper half
+      else if (k === "switch_thread") c.fillRect(x - 0.5, y + h / 2, 1, h / 2 - 2);
+      else if (k === "switch_kernel") { c.strokeStyle = evColor(k); c.lineWidth = 1; c.strokeRect(x - 2, y + 2.5, 4, 4); }
       else if (k === "exec") { c.beginPath(); c.moveTo(x - 4, y + 1); c.lineTo(x + 4, y + 1); c.lineTo(x, y + 8); c.closePath(); c.fill(); }
       else if (k.startsWith("fork")) { c.beginPath(); c.arc(x, y + h - 5, 3, 0, 7); c.fill(); }
       else if (k === "exit") { c.fillRect(x - 3, y + 3, 6, 2); c.fillRect(x - 1, y + 3, 2, h - 6); }
@@ -914,7 +920,13 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     if (S && y >= yCpu() && y < yPanels() - 4) {
       if (y >= yEv()) {
         const j = nearestMark(x);
-        if (j >= 0) { const m = marks[j]; showTip(`<b>${esc(KIND_LABEL[m.k])}</b> <span class="m">${fmtI(m.i)} · block ${m.b}</span><div class="m">${m.cause ? esc(m.cause) + "<br>" : ""}${esc(m.text)}</div>`, e); draw(); return; }
+        if (j >= 0) {
+          // every mark at that position: a kernel run ending in another
+          // process is both a process and a kernel-thread switch
+          const at = marks.filter((m) => m.i === marks[j].i);
+          showTip(at.map((m) => `<b>${esc(KIND_LABEL[m.k])}</b> <span class="m">${fmtI(m.i)} · block ${m.b}</span><div class="m">${m.cause ? esc(m.cause) + "<br>" : ""}${esc(m.text)}</div>`).join(""), e);
+          draw(); return;
+        }
       } else if (y < yTool()) {
         const v = valAt(x), s = S.segs;
         let lo = 0, hi = s.s.length; while (lo < hi) { const mm = (lo + hi) >> 1; if (s.e[mm] <= v) lo = mm + 1; else hi = mm; }

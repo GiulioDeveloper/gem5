@@ -38,6 +38,8 @@
 #ifndef __ARCH_GENERIC_MMU_HH__
 #define __ARCH_GENERIC_MMU_HH__
 
+#include <cstdint>
+#include <optional>
 #include <set>
 
 #include "mem/request.hh"
@@ -126,6 +128,19 @@ class BaseMMU : public SimObject
                         Mode mode);
 
     virtual Addr getValidAddr(Addr vaddr, ThreadContext *tc, Mode mode);
+
+    /**
+     * The address-space identifier (ASID) this MMU would use to translate
+     * the current context's addresses, or nullopt if the ISA (or the
+     * current translation regime) has none. Must not change any MMU state
+     * or statistics: it is meant for structures outside the MMU, such as
+     * a BTB, that want to tag entries the way the TLB does.
+     */
+    virtual std::optional<uint64_t>
+    currentAsid(ThreadContext *tc)
+    {
+        return std::nullopt;
+    }
 
     class MMUTranslationGen : public TranslationGen
     {

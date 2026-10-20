@@ -2,7 +2,7 @@
 
 """Metrics view of a detailed window (host Python, stdlib).
 
-    python3 configs/garfield/arm/window_view.py <outdir> [-o out.html]
+    python3 analysis_scripts/tasktrace/window_view.py <outdir> [-o out.html]
         [--metric KEY=STAT[/insts|/cycles]] ...
 
 Reads the stats blocks of a run made with --stats-interval-insts
@@ -132,9 +132,23 @@ METRICS = [
     ("dtlb_mpki", "Memory", "dTLB misses", "PKI",
      "L1 data TLB misses per 1000 instructions",
      pki(CORE + "mmu.dtb.misses")),
-    ("walks_pki", "Memory", "Page walks", "PKI",
-     "Page-table walks per 1000 instructions",
+    ("walks_pki", "Memory", "Page-walk requests", "PKI",
+     "Requests to the page-table walker per 1000 instructions, including "
+     "ones squashed before a walk started and ones merged into a walk "
+     "already in flight",
      pki(CORE + "mmu.walker.walks")),
+    ("walks_done_pki", "Memory", "Completed page walks", "PKI",
+     "Page-table walks that ran to completion per 1000 instructions, data "
+     "and instruction side",
+     pki(CORE + "mmu.walker.requestOrigin_Completed::Data",
+         CORE + "mmu.walker.requestOrigin_Completed::Inst")),
+    ("walks_done_d_pki", "Memory", "Completed data walks", "PKI",
+     "Completed page-table walks for data accesses per 1000 instructions",
+     pki(CORE + "mmu.walker.requestOrigin_Completed::Data")),
+    ("walks_done_i_pki", "Memory", "Completed instruction walks", "PKI",
+     "Completed page-table walks for instruction fetch per 1000 "
+     "instructions",
+     pki(CORE + "mmu.walker.requestOrigin_Completed::Inst")),
     ("l1d_lat", "Memory", "L1D miss latency", "cycles",
      "Average L1D miss latency", miss_latency(L1D)),
     ("l1i_lat", "Memory", "L1I miss latency", "cycles",
@@ -231,7 +245,11 @@ def round4(x):
     return float(f"{x:.4g}")
 
 
-def block_metrics(outdir, extra):
+def block_metrics(outdir, extra, skip_insts=0):
+    """Per-block and whole-window metrics of a detailed window. With
+    skip_insts, the blocks that start in the window's first skip_insts
+    instructions are left out of everything, the window values included,
+    as if they had been part of the warm-up."""
     with open(outdir / "intervals.csv") as f:
         intervals = [{k: int(v) for k, v in r.items()}
                      for r in csv.DictReader(f)]
@@ -249,6 +267,9 @@ def block_metrics(outdir, extra):
              "cycles": d.get(CORE + "numCycles", 0), "stats": d}
         if b["insts"] > 0 and b["cycles"] > 0:
             blocks.append(b)
+    if skip_insts and blocks:
+        first = blocks[0]["s"]
+        blocks = [b for b in blocks if b["s"] >= first + skip_insts]
     seen = set().union(*(b["stats"] for b in blocks)) if blocks else set()
     for key, stat, label in TOPDOWN:
         full = sorted(n for n in seen if n.endswith("." + stat))
@@ -335,8 +356,17 @@ def schedule(outdir, lo, hi):
             p, n = e["prev"], e["next"]
             text = (f"{p['comm']} ({p['pid']}) → {n['comm']} ({n['pid']})"
                     if p and n else "switch")
-            marks.append({"k": kinds[0], "i": e["insts"], "text": text,
-                          "cause": ta.switch_cause(e, tree)})
+            # A kernel run ending in another process is also a process
+            # switch: one mark per kind, the process switch first so that
+            # it is the one hovering finds.
+            for k in sorted(kinds, key=lambda k: k != "switch_process"):
+                t = text
+                if k == "switch_process" and e.get("via"):
+                    v = e["via"]
+                    t = (f"{v['comm']} ({v['pid']}) → {n['comm']} "
+                         f"({n['pid']}) via {p['comm']} ({p['pid']})")
+                marks.append({"k": k, "i": e["insts"], "text": t,
+                              "cause": ta.switch_cause(e, tree, k)})
         elif ev in ("fork", "exec", "exit"):
             t = e.get("task") or e.get("child") or {}
             if ev == "exec":

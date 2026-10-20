@@ -378,6 +378,22 @@ MMU::getValidAddr(Addr vaddr, ThreadContext *tc, Mode mode)
     return purified_vaddr;
 }
 
+std::optional<uint64_t>
+MMU::currentAsid(ThreadContext *tc)
+{
+    // Compute into a local CachedState, not s1State, so the MMU's own
+    // cached translation state is untouched. Same derivation as the TLB:
+    // TTBR0/1 per TCR.A1, 8 or 16 bits per TCR.AS and haveLargeAsid64.
+    CachedState state(this, false);
+    state.updateMiscReg(tc, NormalTran);
+    // The EL2 and EL3 regimes have no ASID (updateMiscReg sets -1).
+    if (state.aarch64 && (state.currRegime == TranslationRegime::EL2 ||
+                          state.currRegime == TranslationRegime::EL3)) {
+        return std::nullopt;
+    }
+    return state.asid;
+}
+
 Fault
 MMU::checkPermissions(TlbEntry *te, const RequestPtr &req, Mode mode,
                       bool stage2)

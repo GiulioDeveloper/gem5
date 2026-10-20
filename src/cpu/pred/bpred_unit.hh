@@ -133,6 +133,13 @@ class BPredUnit : public SimObject
      * @param pc The PC to look up.
      * @return Whether the BTB contains the given PC.
      */
+    /** Forwards a hardware thread's context to the BTB. */
+    void
+    setThreadContext(ThreadID tid, ThreadContext *tc)
+    {
+        btb->setThreadContext(tid, tc);
+    }
+
     bool BTBValid(ThreadID tid, Addr pc)
     {
         return btb->valid(tid, pc);

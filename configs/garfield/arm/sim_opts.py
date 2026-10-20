@@ -55,6 +55,11 @@ from m5.objects import (
     VtageVP,
 )
 
+from garfield.arm.neoverse_v2 import (
+    NeoverseV2_InfiniteBTB,
+    NeoverseV2_InfiniteL2TLB,
+)
+
 from gem5.components.memory.single_channel import (
     DIMM_DDR5_4400,
     DIMM_DDR5_6400,
@@ -113,6 +118,18 @@ def add_common_args(
         "--disable-fdp",
         action="store_true",
         help="Disable the decoupled front-end + L1I FDP prefetcher.",
+    )
+    prefetch.add_argument(
+        "--infinite-btb",
+        action="store_true",
+        help="Replace the BTB with an unbounded, ASID-separated one "
+        "(limit study; docs/garfield/infinite-btb.md).",
+    )
+    prefetch.add_argument(
+        "--infinite-tlb",
+        action="store_true",
+        help="Replace the shared L2 TLB with a 1M-entry one (limit "
+        "study; docs/garfield/infinite-tlb.md).",
     )
     prefetch.add_argument(
         "--disable-l1d-prefetch",
@@ -416,6 +433,10 @@ def apply_core_knobs(cpu, args):
     """Apply the shared per-core knobs to one ArmO3CPU (Neoverse V2)."""
     if args.disable_fdp:
         cpu.decoupledFrontEnd = False
+    if args.infinite_btb:
+        cpu.branchPred.btb = NeoverseV2_InfiniteBTB()
+    if args.infinite_tlb:
+        cpu.mmu.l2_shared = NeoverseV2_InfiniteL2TLB()
     cpu.progress_interval = args.progress_interval
     cpu.ghostExec = args.ghost_exec
     mrn = make_mrn(args)
@@ -465,7 +486,9 @@ def describe(args):
         f"  caches   : L1I/L1D 64KiB, L2 2MiB | "
         f"FDP={'off' if args.disable_fdp else 'on'}, "
         f"L1Dpf={'off' if args.disable_l1d_prefetch else 'on'}, "
-        f"L2pf={'off' if args.disable_l2_prefetch else 'on'}",
+        f"L2pf={'off' if args.disable_l2_prefetch else 'on'}, "
+        f"BTB={'infinite' if args.infinite_btb else 'neoverse-v2'}, "
+        f"L2TLB={'1M' if args.infinite_tlb else '2K'}",
         f"  dram     : {args.mem_type} @ {args.mem_size}",
         f"  mrn      : "
         f"{_mrn_banner(args)}"

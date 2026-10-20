@@ -8,7 +8,7 @@ TASK=${1:-gin-2121}
 MAX=${2:-20000000}
 shift 2 2>/dev/null
 
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 OUTDIR=runs/tasktrace/$(date +%Y%m%d-%H%M%S)-$TASK-atomic
 mkdir -p "$OUTDIR"
 echo "Output dir: $OUTDIR"

@@ -142,7 +142,7 @@ string), never `fatal`.
 | `src/arch/arm/SConscript` | registers the source, SimObject and the `TaskTracer` debug flag |
 | `configs/garfield/arm/task_trace.py` | `--task-trace*` flags; reads the slide and layout, attaches the tracer to the board |
 | `configs/garfield/arm/virt_run.py` | calls `task_trace.add_args` / `task_trace.attach`; `--stats-interval-insts`, `--tail-insts` (decision 9) |
-| `configs/garfield/arm/trace_analysis.py` | host-side analysis of a traced run (decision 10) |
+| `analysis_scripts/tasktrace/trace_analysis.py` | host-side analysis of a traced run (decision 10) |
 | `run_scripts/tasktrace/*` (untracked) | run helpers: `atomic.sh` (atomic-only traced restore), `o3-window.sh` (fast-forward + detailed window with stats intervals), `o3-pair.sh` (no-perturbation check), `landing-all.sh` + `landing_summary.py` (landing check over every checkpoint). Outputs go to `runs/tasktrace/<stamp>-<task>-<kind>/` |
 
 `virt_run.py` behaves exactly as before unless `--task-trace` is given.
@@ -253,7 +253,7 @@ cost about 160 MB per checkpoint; 250k–1M blocks are cheaper.
 
 ### 10. Analysis script (M3)
 
-`configs/garfield/arm/trace_analysis.py <outdir>` (host Python, stdlib only;
+`analysis_scripts/tasktrace/trace_analysis.py <outdir>` (host Python, stdlib only;
 this host has no pandas or matplotlib) writes `<outdir>/analysis/`:
 
 - `processes.csv`: per process: names over its life (e.g. `python3|docker`,
@@ -309,7 +309,7 @@ own text log (`opencode.log`).
 
 ### 12. Interactive schedule view
 
-`configs/garfield/arm/trace_view.py <outdir>` turns a trace into a compact
+`analysis_scripts/tasktrace/trace_view.py <outdir>` turns a trace into a compact
 view model (`analysis/schedule.view.json`: running segments with both
 instruction and tick bounds, processes with roles and exec command lines,
 fork/exec/exit/rename marks, tool calls) and writes a self-contained
@@ -497,6 +497,163 @@ for the event kinds and the switch causes alike. `same_mm` stays in the
 trace: it says whether the address space was kept, which a vfork hand-off
 does. No rerun is needed: every task record already has its `tgid`.
 
+### 19. A process change through a kernel thread is a process switch (2026-10-16)
+
+In fmt-3901 at 231.07M, `opencode (1222) -> rcu_preempt (16)` then,
+4,098 instructions later, `rcu_preempt -> cc1plus (4595)`: two
+kernel-thread switches, and no process switch, although the CPU went from
+one process to another. In the window page these showed as faint ticks
+indistinguishable from thread switches. A kernel thread (and the idle
+task) borrows the previous task's address space (lazy TLB), so the
+address space changes at the second switch.
+
+A switch from a kernel thread or the idle task to a user task of another
+process than the user task the kernel run interrupted now counts as both
+`switch_kernel` and `switch_process` (`trace_analysis.mark_crossings`
+sets `via` on it; cause `opencode -> cc1plus (via kernel)`). A kernel run
+returning to the same process stays a kernel-thread switch only. Over the
+27 agentic traces of the first sweep this adds 420 process switches to
+4,638 (+9%); fmt-3901's window goes from 80 to 90; SPEC is unchanged (no
+such switch). The sweep's median agentic rate goes from 0.37 to 0.40 process
+switches per M instructions. All analyses of both sweeps, their summaries
+and the comparison were regenerated. In the window page kernel-thread
+switches are now drawn as a small hollow square with dashed event lines,
+apart from thread-switch ticks, and the tooltip lists every mark at a
+position.
+
+### 20. Comparing three or more sweeps (2026-10-16)
+
+The infinite-BTB / infinite-TLB study needs five configurations side by
+side (FDP, no-FDP, infinite BTB, infinite L2 TLB, both).
+`sweep_compare.py` now takes `A B C …` (up to 8, the first the baseline)
+and writes `compare_multi.csv/.view.json/.html` (and with `--pdf`
+`violins_multi*.pdf/.png`). Two sweeps take the old code path unchanged:
+the regenerated fmt-3901 pair comparison's `compare.csv` and
+`compare.view.json` are byte-identical, so `sweep.sh`'s `BASELINE` step
+and the existing pages are unaffected. In the page each panel groups the
+violins by suite and then by sweep. Colours are the dataviz reference
+categorical palette in fixed order (light and dark steps). The palette
+validator could not be run, as there is no `node` on this host. Each
+violin carries its sweep's letter, so identity does not rely on colour
+alone. Checked by rendering a 3-sweep comparison (FDP, no-FDP, FDP again)
+headless in Firefox and as PDF.
+
+Seen in that test: without FDP, agentic iTLB MPKI drops from 37 to 2.9
+(median), while L1I MPKI rises from 1.7 to 4.0. Most of the iTLB misses
+counted with FDP are the FDP prefetcher's own translations. A prefetch
+translation that misses is counted as a TLB miss and then dropped
+(`PrefetchTLBMiss`, no walk or fill, `src/arch/arm/mmu.cc:1723`); see the
+2026-10-14 FDP-off entry below. So iTLB MPKI across FDP and no-FDP runs is
+not the same demand-miss rate; page walks are the demand-side metric.
+
+**Addendum 2026-10-20: skipping the start of each window.**
+`sweep_summary.py --skip-insts N` (through
+`window_view.block_metrics(..., skip_insts)`) drops the blocks in each
+window's first N instructions before anything is summed, so existing sweeps
+can be re-analysed with more effective warm-up. `sweep_compare.py` now also
+reads summary directories made with `-o`. Used for
+`runs/sweep/20261020-skip100M/` (research log 2026-10-16-infinite-btb.md).
+
+### 21. Memory-aware sweeps: `smart_sweep.sh` (2026-10-19)
+
+Three `sweep.sh` (infinite BTB, infinite L2 TLB, both; `PAR=4` each) were
+killed three times by memory exhaustion: Fri 21:20, and twice on Mon
+2026-10-19 within two minutes of a resume. systemd-oomd killed the whole
+scope each time, including the terminal pane and a Claude session. The
+journal shows `tmux-spawn-….scope: systemd-oomd killed 58 process(es)`,
+with a 58.5 GB peak, plus kernel OOM kills of pipewire/wireplumber.
+
+Measured, one at a time:
+- A run holds its checkpoint's in-use guest memory, flat from about 30 s
+  after the restore: fastlane 2.8 GB, carbon 3.0, fmt-3901 3.2, core 3.8,
+  babel 5.7, docusaurus 10.2. The infinite BTB/TLB add about 0.2 GB.
+- The per-run analyses peak at 1.1 GB for a few seconds.
+
+docusaurus-9897 and nushell-13831 have 3.7 GB of compressed memory images,
+against 0.5–1.1 GB for every other agentic task. The sweeps walk the
+checkpoints in the same order, so a resume restored docusaurus three times
+at once. Reproducing the exact 12 launches of a resume in a scope capped
+at 45 GB gave 38 GB after 20 s and an OOM kill before 30 s. The 2026-10-14
+sweep never hit this: each task ran once, mixed with lighter SPEC jobs.
+
+`smart_sweep.sh` (a copy of `sweep.sh`, which is kept unchanged) gates every
+launch on `MemAvailable` ≥ estimated need + `RESERVE_GB`, under a lock
+shared by concurrent smart sweeps, and holds the lock `STAGGER` seconds
+after each launch. The need is 2 GB + 3× the compressed `*.pmem` size,
+which over-estimates every measured case except babel; the reserve covers
+that. Tested with two concurrent smart sweeps on tiny windows (launches
+serialized and spaced; all runs completed and analysed) and with an
+impossible reserve (it waits, launches nothing, and frees the lock when
+stopped). Guide §8.3.
+
+**Same day, 15:15: the first version was not enough.** It estimated a run's
+need as 2 GB + 3× the compressed `*.pmem` size and only checked
+`MemAvailable` at launch. It launched nushell-13831 (estimated 14 GB, 20 GB
+free). Two minutes later, still restoring, nushell held 20.9 GB, memory ran
+out and oomd killed the sweeps again. nushell's images are as large as
+docusaurus' (3.7 GB compressed) but expand to twice the memory, so the
+compressed size does not predict the need. The script now (guide §8.3):
+- uses a conservative estimate (2 GB + 6× the compressed size) only for
+  tasks never measured;
+- otherwise uses the task's measured peak RSS (+15%, +0.5 GB) from
+  `runs/sweep/mem_peaks.tsv`, which every run updates by sampling its gem5
+  `VmHWM`;
+- subtracts from `MemAvailable` the memory still to come from runs that
+  have not yet reached their expected peak (registered in `STATE`);
+- keeps a larger default reserve (8 GB).
+
+`mem_peaks.tsv` was seeded with RSS readings of the runs in progress at
+12:12 and 15:14 (lower bounds, not peaks), leaving nushell on the estimate.
+Tested on tiny windows: runs register and deregister, peaks are recorded,
+and a second launch of a measured task uses the measured value. The three sweeps then
+completed (53/53 each, no failures). nushell peaked at 22.2 GB; its later
+copies waited 29–39 minutes for room and never ran together. One fix
+afterwards: the need was computed once, before queueing for the lock, so a
+launch that queued before another copy of its task had recorded a peak
+kept the estimate. It is now looked up on every check.
+
+### 22. Completed page walks as plottable metrics (2026-10-20)
+
+The only walk metric was `walks_pki` from `mmu.walker.walks`, which counts
+**requests** to the walker: requests squashed before a walk started and
+requests merged into a walk already in flight count too. In the agentic
+windows only about a quarter of them become walks. This made page walks
+look like a bigger problem than they are, and it hid the result of the
+infinite-L2-TLB study: walk requests −44%, but completed walks −76%.
+`window_view.METRICS` (and so the window pages, sweep summaries and
+comparisons) now has, in the memory group:
+- "Page-walk requests" (`walks_pki`, the old metric, relabelled; key kept);
+- "Completed page walks" (`walks_done_pki`,
+  `requestOrigin_Completed::Data + ::Inst`);
+- "Completed data walks" (`walks_done_d_pki`) and "Completed instruction
+  walks" (`walks_done_i_pki`).
+
+On fmt-3901: 2.64 requests against 0.68 completed walks per 1000
+instructions, of which 0.58 are data walks and 0.09 instruction walks. So
+despite the high iTLB MPKI (inflated by dropped FDP prefetch translations,
+decision 20), the walks that happen are mostly for data. The summaries of
+the 2026-10-14 and 2026-10-16 sweeps and the five-way comparison were
+regenerated. `trace_analysis.py`'s `blocks.csv` still has only the request
+count (`walks_pki`). It was left unchanged because of uncommitted edits
+from another session in that file.
+
+### 23. Analysis scripts in `analysis_scripts/`, checkpoints outside the tree (2026-10-20)
+
+The host-side analysis tools (`trace_analysis.py`, `trace_view.py`,
+`window_view.py`, `sweep_summary.py`, `sweep_compare.py`, their HTML
+templates, and `landing_summary.py`) moved from `configs/garfield/arm/`
+and `run_scripts/tasktrace/` to `analysis_scripts/tasktrace/`, mirroring
+`run_scripts/tasktrace/`. `configs/garfield/arm/` keeps only what runs
+inside gem5 (`virt_run.py`, `fs_run.py`, `task_trace.py`,
+`kernel_layout.py`, the core and cache configs). The tools import each
+other from their own directory, so they moved together; the sweep scripts
+call them at the new path. Paths elsewhere in this log were updated.
+
+The checkpoints moved to `/home/snapshots/gem5-ckpts`; the run scripts take
+that root from `CKPTS` (default `/home/snapshots/gem5-ckpts`). Run
+directories from earlier sweeps record the old `./gem5-ckpts/...` paths in
+`run.log` and `config.ini`, which is history, not a reference to follow.
+
 ## Validation
 
 ### 2026-10-08 — first run, gin-2121 cpt.0, atomic, 20M instructions
@@ -592,7 +749,7 @@ overstate the cost of TLB misses.
 ### 2026-10-08 — landing check on all 27 local checkpoints
 
 `run_scripts/tasktrace/landing-all.sh` restores the first local checkpoint of every
-task on the atomic core with the tracer, and `run_scripts/tasktrace/landing_summary.py`
+task on the atomic core with the tracer, and `analysis_scripts/tasktrace/landing_summary.py`
 compares the first switch's outgoing task and the derived slide with the
 checkpoint's landing label (3M instructions each; 40M for the seven that had
 not switched yet, all inside compilers, linkers or JIT code).

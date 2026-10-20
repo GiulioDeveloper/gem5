@@ -3,8 +3,9 @@
 metric over the checkpoints of each suite.
 
 Usage:
-    python3 configs/garfield/arm/sweep_summary.py runs/sweep/<ts> [--pdf]
-    python3 configs/garfield/arm/sweep_summary.py runs/tasktrace/*o3window*
+    python3 analysis_scripts/tasktrace/sweep_summary.py runs/sweep/<ts> [--pdf]
+    python3 analysis_scripts/tasktrace/sweep_summary.py \
+        runs/tasktrace/*o3window*
 
 Each path is a run directory (one with intervals.csv) or a directory
 holding run directories, as run_scripts/tasktrace/sweep.sh lays them out
@@ -47,7 +48,8 @@ PLACEHOLDER = "__SWEEP_DATA__"
 KEYS = ("ipc", "user_share", "fetch_rate",
         "l1i_mpki", "itlb_mpki", "icache_stall",
         "br_mpki", "btb_mispred_pki", "squashed",
-        "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "l1d_lat",
+        "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
+        "walks_done_d_pki", "walks_done_i_pki", "l1d_lat",
         "rob_full", "iq_full", "lsq_full")
 SWITCHES = (("switches", "Context switches", None),
             ("switch_process", "Process switches", "switch_process"),
@@ -91,8 +93,8 @@ def cv(vals):
     return math.sqrt(var) / abs(mean)
 
 
-def summarize(suite, name, d):
-    blocks, metrics, _ = wv.block_metrics(d, [])
+def summarize(suite, name, d, skip_insts=0):
+    blocks, metrics, _ = wv.block_metrics(d, [], skip_insts)
     if not blocks:
         return None, None
     by = {m["key"]: m for m in metrics}
@@ -115,7 +117,10 @@ def summarize(suite, name, d):
                 continue
             b = bisect.bisect_right(starts, e["insts"]) - 1
             per_block["switches"][b] += 1
-            per_block[ta.event_kinds(e, tree)[0]][b] += 1
+            # a kernel run ending in another process is both a
+            # kernel-thread and a process switch
+            for k in ta.event_kinds(e, tree):
+                per_block[k][b] += 1
         for k, _, _ in SWITCHES:
             n = sum(per_block[k])
             row[k + "_n"] = n
@@ -184,14 +189,14 @@ def write_pdfs(rows, defs, out, views):
         plt.close(fig)
 
 
-def collect(paths):
+def collect(paths, skip_insts=0):
     """(rows, metric definitions) over the run directories under paths."""
     runs = run_dirs(paths)
     if not runs:
         raise SystemExit("no run directories with intervals.csv found")
     rows, defs = [], {}
     for suite, name, d in runs:
-        row, mdefs = summarize(suite, name, d)
+        row, mdefs = summarize(suite, name, d, skip_insts)
         if row is None:
             print(f"skip {d}: no stats blocks", file=sys.stderr)
             continue
@@ -229,9 +234,12 @@ def main():
                     help="output directory (default <first path>/summary)")
     ap.add_argument("--pdf", action="store_true",
                     help="also write violins*.pdf/.png (needs matplotlib)")
+    ap.add_argument("--skip-insts", type=float, default=0,
+                    help="leave out each window's first N instructions "
+                    "(blocks starting there), as extra warm-up; e.g. 100e6")
     args = ap.parse_args()
     out = args.out or args.paths[0] / "summary"
-    rows, metric_defs = collect(args.paths)
+    rows, metric_defs = collect(args.paths, int(args.skip_insts))
     out.mkdir(parents=True, exist_ok=True)
     cols = ["suite", "name", "insts", "blocks"]
     for dfn in metric_defs:
@@ -243,7 +251,9 @@ def main():
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(sorted(rows, key=lambda r: (r["suite"], r["name"])))
-    model = {"version": 1, "name": str(args.paths[0]),
+    model = {"version": 1, "name": str(args.paths[0])
+             + (f" (first {args.skip_insts / 1e6:g}M instructions of each "
+                "window skipped)" if args.skip_insts else ""),
              "metrics": metric_defs, "runs": rows}
     write_page(model, out, "sweep")
     if args.pdf:

@@ -8,7 +8,7 @@
 set -o pipefail
 TASK=$1 SETTLE=$2 WARM=$3 DET=$4 IVL=$5
 shift 5
-AGENTIC=./gem5-ckpts/rpoint_ckpts/agentic
+AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
 CPT=$(ls -d "$AGENTIC/checkpoints/agentic-$TASK"/cpt.* | head -1)
 OUTDIR=${OUTDIR:-runs/tasktrace/$(date +%Y%m%d-%H%M%S)-$TASK-o3window}
 mkdir -p "$OUTDIR"

@@ -40,6 +40,9 @@
 
 #include "cpu/pred/simple_btb.hh"
 
+#include <algorithm>
+#include <vector>
+
 #include "base/intmath.hh"
 #include "base/trace.hh"
 #include "debug/BTB.hh"
@@ -117,7 +120,21 @@ SimpleBTB::update(ThreadID tid, Addr instPC,
 {
     stats.updates[type]++;
 
+    // findVictim() invalidates the victim it returns, so note first which
+    // entries of the set hold another branch: replacing one of those is
+    // a real eviction.
+    std::vector<BTBEntry *> others;
+    for (BTBEntry *entry : btb.getPossibleEntries({instPC, tid})) {
+        if (entry->isValid() && !entry->match({instPC, tid})) {
+            others.push_back(entry);
+        }
+    }
+
     BTBEntry *victim = btb.findVictim({instPC, tid});
+
+    if (std::find(others.begin(), others.end(), victim) != others.end()) {
+        stats.evictions++;
+    }
 
     btb.insertEntry({instPC, tid}, victim);
     victim->update(target, inst);

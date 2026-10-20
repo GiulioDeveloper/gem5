@@ -251,6 +251,8 @@ class MMU : public BaseMMU
 
     Addr getValidAddr(Addr vaddr, ThreadContext *tc, Mode mode) override;
 
+    std::optional<uint64_t> currentAsid(ThreadContext *tc) override;
+
     Fault translateComplete(const RequestPtr &req, ThreadContext *tc,
             Translation *translation, Mode mode, ArmTranslationType tran_type,
             bool call_from_s2);
