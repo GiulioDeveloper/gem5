@@ -320,7 +320,8 @@ class NeoverseMMU(ArmMMU):
 # Limit-study L2 TLB (--infinite-tlb): 1M entries, 16-way, so capacity and
 # conflict misses vanish. It is the stock ArmTLB, so every TLBI is still
 # applied exactly. L2 hits cost no time in this config, so only compulsory
-# and post-invalidation misses still walk. See docs/garfield/infinite-tlb.md.
+# and post-invalidation misses still walk. See
+# docs/wiki/hardware/infinite-l2-tlb.md.
 class NeoverseV2_InfiniteL2TLB(ArmTLB):
     entry_type = "unified"
     size = 1 << 20

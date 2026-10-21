@@ -46,7 +46,8 @@ namespace o3
  *    granularity) the same way, written only by stores and probed only by
  *    loads at address resolution.
  *
- * See docs/superpowers/specs/2026-07-25-mrn-valuefile-rendezvous-design.md
+ * See docs/legacy-log/superpowers/specs/
+ * 2026-07-25-mrn-valuefile-rendezvous-design.md
  * §3-§5 for the full structure and dataflow rationale.
  */
 

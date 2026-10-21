@@ -123,13 +123,13 @@ def add_common_args(
         "--infinite-btb",
         action="store_true",
         help="Replace the BTB with an unbounded, ASID-separated one "
-        "(limit study; docs/garfield/infinite-btb.md).",
+        "(limit study; docs/wiki/hardware/infinite-btb-model.md).",
     )
     prefetch.add_argument(
         "--infinite-tlb",
         action="store_true",
         help="Replace the shared L2 TLB with a 1M-entry one (limit "
-        "study; docs/garfield/infinite-tlb.md).",
+        "study; docs/wiki/hardware/infinite-l2-tlb.md).",
     )
     prefetch.add_argument(
         "--disable-l1d-prefetch",

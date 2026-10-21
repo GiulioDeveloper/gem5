@@ -17,7 +17,7 @@ namespace o3
 /**
  * Memory-hierarchy level that served a load, feeding the E/E'/E_u
  * exponent formulas' NOTLLCMISS/NOTL2MISS/NOTL1MISS/FASTINST terms
- * (design doc docs/superpowers/specs/2026-08-04-evtage-design.md,
+ * (design doc docs/legacy-log/superpowers/specs/2026-08-04-evtage-design.md,
  * "Latency-classifier mapping"). Meaningless when
  * EVtageClassifier::isLoad is false.
  */
@@ -216,7 +216,7 @@ enum class EVtageTrainOutcome
 
 /**
  * The params-free E-VTAGE core (EVES Stage 1, design doc
- * docs/superpowers/specs/2026-08-04-evtage-design.md): a FORK of
+ * docs/legacy-log/superpowers/specs/2026-08-04-evtage-design.md): a FORK of
  * VtageTables (not a subclass -- the update policy diverges too far),
  * sharing only the fold/history conventions in vp_history.hh. VT0 is
  * now a tagged, 2-way skewed component (S5); the confidence gate is a

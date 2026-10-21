@@ -9,7 +9,7 @@
 # within a few minutes of the restore. Sweeps launched together walk the checkpoints in the same order, so
 # the same heavy task restores several times at once; 12 restores at once
 # went past 45 GB in under 30 s and systemd-oomd killed the whole terminal
-# (2026-10-19; tracer research log, decision 21).
+# (2026-10-19; docs/wiki/pitfalls/sweep-memory-exhaustion.md).
 #
 # How: every launch, across all smart sweeps sharing LOCK, takes the lock,
 # waits until there is room for the run, starts it, and holds the lock

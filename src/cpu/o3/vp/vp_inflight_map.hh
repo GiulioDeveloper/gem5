@@ -14,8 +14,8 @@ namespace o3
 /**
  * Exact per-key in-flight occurrence counts for value predictors that
  * extrapolate over speculative same-PC occurrences (design doc
- * docs/superpowers/specs/2026-08-14-estride-design.md, the in-flight
- * counter subsystem): an exact replacement for CVP-1 EVES's 256-deep
+ * docs/legacy-log/superpowers/specs/2026-08-14-estride-design.md, the
+ * in-flight counter subsystem): an exact replacement for CVP-1 EVES's 256-deep
  * ring scan, which double-counts past 256 in flight and can match
  * stale slots. Keys are folded vpKey values (vp_key.hh). Erases on
  * zero so size() tracks only keys with live occurrences. Panics on

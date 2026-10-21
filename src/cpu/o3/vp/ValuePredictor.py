@@ -163,7 +163,7 @@ class EVtageVP(BaseValuePredictor):
 
 class EvesVP(BaseValuePredictor):
     """The composed EVES predictor: E-VTAGE + E-Stride (design doc
-    docs/superpowers/specs/2026-08-14-estride-design.md), arbitrated
+    docs/legacy-log/superpowers/specs/2026-08-14-estride-design.md), arbitrated
     per the CVP-1 source's write-order mechanism. The E-VTAGE-side
     params below are a DELIBERATE duplicate of EVtageVP's own params
     (same names, defaults, help text) rather than a shared mixin --

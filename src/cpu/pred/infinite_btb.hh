@@ -7,7 +7,7 @@
  * An unbounded BTB for limit studies: it never evicts, keeps full-width
  * tags and separates address spaces by ASID, so the only misses left are
  * the first taken occurrence of each branch. See
- * docs/garfield/infinite-btb.md.
+ * docs/wiki/hardware/infinite-btb-model.md.
  */
 
 #ifndef __CPU_PRED_INFINITE_BTB_HH__

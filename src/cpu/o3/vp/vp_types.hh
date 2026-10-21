@@ -15,8 +15,9 @@ namespace o3
 /**
  * Everything predictImpl()/trainImpl() need to look an entry up: the
  * (PC, micro-PC) pair the framework already folds via vp_key.hh, plus
- * the fetch-time history snapshot (docs/superpowers/specs/2026-08-03-
- * vtage-design.md, "Framework API Changes"). LVP ignores hist and
+ * the fetch-time history snapshot
+ * (docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
+ * "Framework API Changes"). LVP ignores hist and
  * folds pc/upc through vpKey() unchanged; VTAGE-class predictors fold
  * pc/upc with hist.{ghr,path} instead.
  */
@@ -25,7 +26,7 @@ struct VpLookupContext
     Addr pc;
     MicroPC upc;
     VpHistSnapshot hist;
-    /** The instruction's thread (design doc docs/superpowers/specs/
+    /** The instruction's thread (design doc docs/legacy-log/superpowers/specs/
      *  2026-08-04-evtage-design.md, S6's per-thread burst-guard
      *  counter). LVP/plain VTAGE ignore it -- same pattern as hist. */
     ThreadID tid = 0;
@@ -47,7 +48,7 @@ struct VpPredictResult
 
 /**
  * Coarse instruction-class dispatch for classifier-driven predictors
- * (E-VTAGE; design doc docs/superpowers/specs/2026-08-04-evtage-
+ * (E-VTAGE; design doc docs/legacy-log/superpowers/specs/2026-08-04-evtage-
  * design.md, "Class dispatch"), mirroring the shape of CVP-1 EVES's
  * own InstClass enum (Seznec, CVP-1 2018 submission source) at the
  * granularity our port can actually distinguish. Direct calls/

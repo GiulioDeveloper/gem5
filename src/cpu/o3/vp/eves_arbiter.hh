@@ -11,7 +11,7 @@ namespace o3
 {
 
 /**
- * EVES component arbitration (design doc docs/superpowers/specs/
+ * EVES component arbitration (design doc docs/legacy-log/superpowers/specs/
  * 2026-08-14-estride-design.md, "Arbitration and token"): pure
  * function over POD inputs so every flag/mode combination is directly
  * GTest-able. Reproduces the CVP-1 source's write-order mechanism
@@ -19,7 +19,7 @@ namespace o3
  * cc:136-144): with overwriteRequiresConfidence false (the
  * source-verbatim mode, opt-in since the 190-checkpoint A/B showed
  * confidence-gating wins by +3.6% -- the composition report,
- * docs/research-log/VP/2026-08-15-eves-estride-composition.md), a
+ * docs/legacy-log/research-log/VP/2026-08-15-eves-estride-composition.md), a
  * VTAGE tag hit outside the blackout overwrites the stride value
  * even below VTAGE confidence -- delivery still requires a component
  * flag (stride or VTAGE confident), matching the source's

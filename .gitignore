@@ -40,3 +40,6 @@ configs/dram/lowp_sweep.cfg
 typings
 .DS_Store
 /runs/
+
+# Obsidian per-user workspace state (the vault is docs/)
+/docs/.obsidian/workspace*.json

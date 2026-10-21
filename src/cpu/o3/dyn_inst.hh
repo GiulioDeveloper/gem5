@@ -668,7 +668,7 @@ class DynInst : public ExecContext, public RefCounted
     }
 
     /** Garfield VP: the {ghr, path} history snapshot stamped at fetch
-     *  (docs/superpowers/specs/2026-08-03-vtage-design.md, "History
+     *  (docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md, "History
      *  Subsystem"). Only meaningful for history-aware predictors
      *  (BaseValuePredictor::usesHistory()); LVP never reads it. */
     const VpHistSnapshot &

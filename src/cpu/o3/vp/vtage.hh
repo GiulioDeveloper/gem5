@@ -22,7 +22,7 @@ namespace o3
  * 2014) -- indexes values by PC *and* global branch/path history, so
  * values that change in correlation with control flow become
  * predictable instead of merely suppressed (see
- * docs/superpowers/specs/2026-08-03-vtage-design.md). A thin
+ * docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md). A thin
  * SimObject wrapper over the params-free VtageTables
  * (vtage_tables.hh), plus per-component/FPC stats. trainsAtCommit()
  * and usesHistory() are both true -- see base.hh/the design doc's

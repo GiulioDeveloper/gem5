@@ -13,7 +13,7 @@ namespace o3
 /**
  * VTAGE-class predictors' only speculative state: a global
  * branch-direction history register and a path-history register
- * (design doc docs/superpowers/specs/2026-08-03-vtage-design.md,
+ * (design doc docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
  * "History Subsystem"). Maintained by the framework at fetch and
  * snapshotted onto every DynInst; params-free so it sits alongside
  * VtageTables and can be unit-tested without any SimObject/params
@@ -25,7 +25,7 @@ struct VpHistSnapshot
      *  ghr0 bit 0 is the newest shifted-in direction, ghr0 bit 63
      *  carries into ghr1 bit 0 (history bits 64..127) -- 128 is
      *  VTAGE's longest configurable history length
-     *  (docs/superpowers/specs/2026-08-03-vtage-design.md,
+     *  (docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
      *  "Data Structures"). */
     uint64_t ghr0 = 0;
     /** History bits 64..127 (bit i of ghr1 = history bit 64 + i). */

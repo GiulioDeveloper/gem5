@@ -23,8 +23,9 @@ namespace o3
  * Garfield VP: the E-VTAGE value predictor (Seznec, CVP-1 2018 EVES) --
  * an iso-storage-geometry A/B of plain VTAGE's per-transition FPC
  * update policy against EVES's per-class, per-value, per-serve-level
- * probabilistic policy (design doc docs/superpowers/specs/2026-08-04-
- * evtage-design.md). A thin SimObject wrapper over the params-free
+ * probabilistic policy (design doc
+ * docs/legacy-log/superpowers/specs/2026-08-04-evtage-design.md). A thin
+ * SimObject wrapper over the params-free
  * EVtageTables (evtage_tables.hh) -- same structural pattern
  * as VtageVP (vtage.hh), plus classifier-context translation and the
  * expanded stat surface the design doc's "Statistics" section calls

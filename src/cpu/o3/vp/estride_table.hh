@@ -16,7 +16,8 @@ namespace o3
 /**
  * The stride-alloc class an instruction classifies into, feeding
  * EStrideTable::train()'s allocation ladder (design doc
- * docs/superpowers/specs/2026-08-14-estride-design.md, S3.4; Seznec's
+ * docs/legacy-log/superpowers/specs/2026-08-14-estride-design.md, S3.4;
+ * Seznec's
  * CVP-1 2018 EVES submission source (cvp8KB/mypredictor.cc), the
  * `allocationDraw` switch at cc:166-197). IndirectCall and Undef fall
  * under `Never` (absent from the source's switch -- unlike E-VTAGE's
@@ -172,9 +173,10 @@ enum class EStrideTrainOutcome
 
 /**
  * The params-free E-Stride table core (the stride-prediction component
- * of the composed EVES predictor, design doc docs/superpowers/specs/
- * 2026-08-14-estride-design.md, S3): a verbatim transcription of
- * Seznec's CVP-1 2018 EVES submission source (cvp8KB/mypredictor.cc)'s
+ * of the composed EVES predictor, design doc
+ * docs/legacy-log/superpowers/specs/2026-08-14-estride-design.md, S3):
+ * a verbatim transcription of Seznec's CVP-1 2018 EVES submission
+ * source (cvp8KB/mypredictor.cc)'s
  * stride predictor -- 3-way skewed-associative, 48 entries total,
  * zero-initialized with NO valid bit (a key whose way-0 tag hashes to
  * 0 tag-hits a virgin entry and trains via the first-occurrence arm

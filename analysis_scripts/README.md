@@ -10,8 +10,9 @@ each other from that folder, so keep them together.
 
 ## Task traces and stats blocks (`tasktrace/`)
 
-Details, file formats and caveats: `docs/agentic/task-tracing-guide.md`
-(sections 7, 8 and 9).
+Details, file formats and caveats are in the wiki:
+`docs/wiki/infrastructure/` (`trace-analysis.md`, `viewers.md`,
+`sweeps.md`) and `docs/wiki/methodology/validation-checks.md`.
 
 | script | reads | writes | purpose |
 |---|---|---|---|

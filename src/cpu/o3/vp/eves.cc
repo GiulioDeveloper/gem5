@@ -19,7 +19,7 @@ namespace
 
 /** VpClassifierInfo::memSrcLevel -> EVtageMemLevel; verbatim copy of
  *  evtage.cc's anonymous-namespace helper of the same name (design doc
- *  docs/superpowers/specs/2026-08-04-evtage-design.md, "Latency-
+ *  docs/legacy-log/superpowers/specs/2026-08-04-evtage-design.md, "Latency-
  *  classifier mapping"). Duplicated rather than shared because
  *  evtage.cc's anonymous namespace is file-local. */
 EVtageMemLevel

@@ -23,7 +23,7 @@ namespace o3
  * Garfield VP: EVES, the composed value predictor (Seznec, CVP-1 2018
  * EVES submission) -- E-VTAGE (evtage_tables.hh) and E-Stride
  * (estride_table.hh) arbitrated per the CVP-1 source's write-order
- * mechanism (design doc docs/superpowers/specs/2026-08-14-estride-
+ * mechanism (design doc docs/legacy-log/superpowers/specs/2026-08-14-estride-
  * design.md, "Arbitration and token"): E-Stride predicts first, then
  * an E-VTAGE tag hit outside the post-misprediction blackout
  * overwrites the value even below E-VTAGE confidence -- delivery

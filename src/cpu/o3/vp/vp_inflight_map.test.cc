@@ -31,7 +31,8 @@ TEST(VpInflightMap, IncrementDecrementRoundTrip)
 
 TEST(VpInflightMap, InterleavedRenameCommitSquashZeroSum)
 {
-    // Design doc docs/superpowers/specs/2026-08-14-estride-design.md,
+    // Design doc
+    // docs/legacy-log/superpowers/specs/2026-08-14-estride-design.md,
     // S4's zero-sum sequences: interleave two keys through
     // rename(+)/commit(-)/squash(-) orders, including a same-key
     // burst, and end drained.

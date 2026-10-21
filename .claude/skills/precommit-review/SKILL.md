@@ -55,7 +55,8 @@ else. Flag, in code / comments / identifiers / param help / stat descriptions:
 
 Not flagged (these ARE standard / defined in-repo): documented project acronyms
 whose definition lives in the tree (e.g. `MRN` = memory-rename predictor,
-defined in `docs/garfield/`), established architecture terms (ROB, LSQ, rename,
+defined in the wiki under `docs/wiki/`, or for Garfield terms in
+`docs/legacy-log/garfield/`), established architecture terms (ROB, LSQ, rename,
 physreg, squash), and public API identifiers whose names are already shipped
 (param values, enum spellings) — for those, flag only the *explanatory comment*
 if it leans on conversational terms, and note the API rename as a separate

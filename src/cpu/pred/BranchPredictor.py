@@ -148,7 +148,7 @@ class SimpleBTB(BranchTargetBuffer):
 class InfiniteBTB(BranchTargetBuffer):
     """Unbounded BTB for limit studies: no capacity or conflict misses,
     full-width tags, user code separated by ASID, kernel code shared.
-    See docs/garfield/infinite-btb.md."""
+    See docs/wiki/hardware/infinite-btb-model.md."""
 
     type = "InfiniteBTB"
     cxx_class = "gem5::branch_prediction::InfiniteBTB"

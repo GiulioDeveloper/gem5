@@ -25,8 +25,8 @@ unchanged (e.g. `--disable-fdp`, `--infinite-btb`, `--infinite-tlb`).
 
 ## Traced runs (`tasktrace/`)
 
-The task-tracing guide (`docs/agentic/task-tracing-guide.md`, 4.4 and 8.3)
-describes these in detail.
+The wiki describes these in detail: `docs/wiki/infrastructure/`
+(`running-a-traced-window.md`, `sweeps.md`, `run-and-analysis-scripts.md`).
 
 | script | purpose | when to use |
 |---|---|---|
@@ -39,5 +39,5 @@ describes these in detail.
 | `landing-all.sh [insts] [parallel]` | restores every local checkpoint briefly on the atomic core with the tracer and checks the first switch and KASLR slide against the checkpoint's landing label (summarized by `analysis_scripts/tasktrace/landing_summary.py`) | when checkpoints are added or regenerated, or the tracer's slide or task reading changes |
 
 Comparing configurations: run a sweep with `EXTRA="<flags>"` and
-`BASELINE=<earlier sweep>`; see the guide's section 8.3. There is no
+`BASELINE=<earlier sweep>`; see `docs/wiki/infrastructure/sweeps.md`. There is no
 per-feature comparison script.

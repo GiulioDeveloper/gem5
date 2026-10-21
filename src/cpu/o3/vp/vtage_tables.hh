@@ -19,7 +19,7 @@ namespace o3
  * machinery, so the core logic can be built and unit-tested in
  * isolation (the pattern proven by LvpTable). Defaults are the
  * HPCA'14 evaluated configuration (Perais & Seznec, HPCA-20 2014;
- * docs/superpowers/specs/2026-08-03-vtage-design.md,
+ * docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
  * "Configuration").
  */
 struct VtageConfig
@@ -125,7 +125,7 @@ struct VtageProviderPeek
  * allocate-on-mispredict with u-bit aging. Folds are computed
  * on-demand from the {ghr, path} snapshot (no per-component folded
  * history state to checkpoint/restore -- see
- * docs/superpowers/specs/2026-08-03-vtage-design.md, "Data
+ * docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md, "Data
  * Structures"; the fold/index/tag arithmetic mirrors gem5's TAGE,
  * src/cpu/pred/tage_base.{hh,cc}).
  */
@@ -248,7 +248,7 @@ class VtageTables
     /** Mirrors gem5 TAGE's FoldedHistory::update() (tage_base.hh),
      *  replayed `origLength` times from a zeroed register: the
      *  fold-on-demand adaptation
-     *  docs/superpowers/specs/2026-08-03-vtage-design.md calls for.
+     *  docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md calls for.
      *  Folds ghr[0:origLength) (bit 0 = newest; bits 64..127 read
      *  from ghr1 via histBit(), vp_history.hh) into compLength bits.
      *  Because this replay always starts from an all-zero register

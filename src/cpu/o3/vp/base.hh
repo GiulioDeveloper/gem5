@@ -27,7 +27,7 @@ namespace o3
 
 /**
  * Garfield VP: algorithm-agnostic value-predictor base (design doc
- * docs/superpowers/specs/2026-08-02-vp-framework-design.md).
+ * docs/legacy-log/superpowers/specs/2026-08-02-vp-framework-design.md).
  *
  * The pipeline contract has three operations plus one reserved hook:
  *  - predict() at rename (after renameDestRegs, and only for
@@ -101,7 +101,8 @@ class BaseValuePredictor : public SimObject
     }
 
     /** Verify-site no-livelock exception for trainAtCommit predictors
-     *  (docs/superpowers/specs/2026-08-03-vtage-design.md, "Verify"): a
+     *  (docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
+     *  "Verify"): a
      *  delivered-and-wrong prediction squashes inclusively and never
      *  retires, so a commit-only trainer would never correct its
      *  entry. Resets confidence through the token (tag-checked so a
@@ -127,7 +128,7 @@ class BaseValuePredictor : public SimObject
 
     /**
      * History-subsystem thin wrappers (framework-level, predictor-
-     * agnostic; docs/superpowers/specs/2026-08-03-vtage-design.md,
+     * agnostic; docs/legacy-log/superpowers/specs/2026-08-03-vtage-design.md,
      * "History Subsystem"). The pipeline wiring (fetch-side notify,
      * per-inst snapshot stamping, redirect restores) lives in
      * fetch.cc/bac.cc/commit.cc; only predictors with usesHistory()
@@ -258,8 +259,9 @@ class BaseValuePredictor : public SimObject
     virtual VpPredictResult predictImpl(const VpLookupContext &ctx) = 0;
     /** Algorithm training over the lookup context, the provider token
      *  stamped by the matching predict() (0 if none/stale), and the
-     *  classifier context (design doc docs/superpowers/specs/2026-08-
-     *  04-evtage-design.md, "Framework API Changes"). LVP and plain
+     *  classifier context (design doc
+     *  docs/legacy-log/superpowers/specs/2026-08-04-evtage-design.md,
+     *  "Framework API Changes"). LVP and plain
      *  VTAGE take and ignore the classifier parameter -- same bit-
      *  identity pattern as VpLookupContext::hist. */
     virtual void trainImpl(const VpLookupContext &ctx, RegVal actualValue,
