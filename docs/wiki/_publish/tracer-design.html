@@ -1,0 +1,273 @@
+<title>Task Tracer Design</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a lab-manual column with a sticky contents rail on wide screens; one column on phones. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --fg: #18212b;
+  --muted: #566170;
+  --rule: #d8dde4;
+  --accent: #0e6a70;
+  --mark: #b0520c;
+  --code-bg: #eaeef2;
+  --ok: #2e7d4f;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --s-1: 0.8125rem; --s0: 1rem; --s1: 1.25rem; --s2: 1.625rem; --s3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+    --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630; --ok: #6cc08f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+  --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630; --ok: #6cc08f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: var(--s0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 56px; } }
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: var(--s-1); }
+@media (max-width: 860px) { nav.toc { position: static; } }
+nav.toc .label { font-family: var(--f-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.72rem; margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+nav.toc a { color: var(--fg); text-decoration: none; display: block; padding: 2px 0 2px 10px; border-left: 2px solid var(--rule); }
+nav.toc a:hover, nav.toc a:focus-visible { border-left-color: var(--accent); color: var(--accent); }
+main { min-width: 0; }
+.doc { max-width: 72ch; }
+header.masthead { display: grid; gap: 10px; margin-bottom: 28px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: var(--s3); margin: 0; }
+h2 { font-size: var(--s2); margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+h3 { font-size: var(--s1); margin: 28px 0 8px; font-weight: 500; }
+p { margin: 0 0 14px; }
+.lede { font-size: 1.125rem; color: var(--fg); }
+.build { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); padding: 10px 12px; background: var(--surface); line-height: 1.5; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.875em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.codeblock { position: relative; margin: 0 0 16px; }
+.codeblock pre { margin: 0; overflow-x: auto; background: var(--code-bg); padding: 14px 16px; font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.55; border-left: 3px solid var(--accent); }
+.codeblock pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 6px; right: 6px; font-family: var(--f-mono); font-size: 0.7rem; background: var(--surface); color: var(--muted); border: 1px solid var(--rule); padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+.copy:hover, .copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.tablewrap { overflow-x: auto; margin: 0 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--f-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td code { white-space: nowrap; }
+ul, ol.steps { padding-left: 1.25rem; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+.note { border-left: 3px solid var(--mark); background: var(--surface); padding: 12px 14px; margin: 0 0 18px; font-size: 0.9375rem; }
+.note strong { color: var(--mark); }
+figure { margin: 8px 0 24px; }
+figure .fig { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: 12px; }
+figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: var(--s-1); color: var(--muted); margin-top: 8px; }
+.svg-text { fill: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.svg-label { fill: var(--fg); font-family: var(--f-mono); font-size: 11px; }
+.pipeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 20px; }
+@media (max-width: 640px) { .pipeline { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--surface); border: 1px solid var(--rule); padding: 12px 14px; min-width: 0; }
+.stage .n { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.06em; }
+.stage h4 { font-family: var(--f-display); font-weight: 600; margin: 4px 0 6px; font-size: 1.05rem; }
+.stage p { font-size: 0.875rem; margin: 0; color: var(--muted); }
+.stage code { font-size: 0.8em; }
+footer { margin-top: 64px; font-size: var(--s-1); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="label">Contents</div>
+  <ol>
+    <li><a href="#why">The problem</a></li>
+    <li><a href="#notgem5">Why not gem5's own tools</a></li>
+    <li><a href="#pieces">Pieces</a></li>
+    <li><a href="#hooks">Hooks</a></li>
+    <li><a href="#memory">Reading guest memory</a></li>
+    <li><a href="#kaslr">Finding the kernel</a></li>
+    <li><a href="#counts">Instruction counts</a></li>
+    <li><a href="#validation">Validation</a></li>
+    <li><a href="#shown">What it has shown</a></li>
+    <li><a href="#limits">Limits</a></li>
+    <li><a href="#extend">Extending it</a></li>
+  </ol>
+</nav>
+
+<main>
+<div class="doc">
+<header class="masthead">
+  <div class="eyebrow">gem5 fork · branch gfdev · LinuxTaskTracer</div>
+  <h1>Task Tracer Design</h1>
+  <p class="lede">A gem5 SimObject that watches a restored Linux guest from outside: every context switch, fork, exec, exit and OpenCode tool call, stamped in ticks and committed instructions, without changing a single simulated statistic and without recapturing any checkpoint. This page explains how it works and how we know it is right.</p>
+  <div class="build">Built from the project wiki on 2026-10-21. Sources: docs/wiki/infrastructure/{task-tracer, trace-format, trace-analysis, checkpoints}.md, docs/wiki/methodology/{validation-checks, instruction-counts, context-switch-classification}.md, docs/wiki/pitfalls/{gem5-tracing-under-kaslr, functional-translation-perturbs, replay-polling-in-measurement}.md, docs/wiki/findings/switch-cost-is-around-the-switch.md, docs/wiki/workloads/opencode-harness.md. This page is generated: fix the wiki, then rebuild. For running it, see the Task Tracer Guide.</div>
+</header>
+
+<h2 id="why">The problem</h2>
+<p>The agentic checkpoints are OpenCode coding agents replayed model-free inside an Ubuntu arm64 guest: 27 SWE-bench-Multilingual tasks, 132 checkpoints, one vCPU, kernel 6.8.12 with KASLR and KPTI. We expected their cost to sit in short, fragmented tool calls and frequent context switches. To compare the core's behaviour around those events against steady state, a run has to say:</p>
+<ul>
+<li>which guest task is on the CPU, and every switch, fork, exec, exit and rename, with names;</li>
+<li>every tool call (name, input, start and end);</li>
+<li>each stamped with the simulated tick <em>and</em> a global committed-instruction count that joins with gem5's stats.</li>
+</ul>
+<p>Two constraints rule out most designs: the measurement must not change, and the 132 checkpoints cannot be recaptured.</p>
+
+<h2 id="notgem5">Why not gem5's own tools</h2>
+<p>Every option was checked against the source on this branch. The guest runs with KASLR and the checkpoints carry an empty kernel symbol table on purpose, which breaks everything that names kernel code by link address.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>option</th><th>why it does not fit</th></tr></thead>
+<tbody>
+<tr><td><code>enable_context_switch_stats_dump</code></td><td>Hooks <code>__switch_to</code> at the unslid address; panics at start-up with an empty symbol table; reads struct offsets from symbols only a gem5-patched kernel defines (otherwise every pid reads 0); dumps and resets all stats at every switch.</td></tr>
+<tr><td><code>Exec</code>, <code>ExecSymbol</code></td><td>About 94 bytes per instruction, so ~470 GB per 5G instructions; no task identity; symbols at link addresses. Kept as a short cross-check.</td></tr>
+<tr><td><code>function_trace</code></td><td>Same symbol table, silent when it is empty; no arguments, no task.</td></tr>
+<tr><td>Probe points</td><td>A PC and nothing else, with a callback per instruction.</td></tr>
+<tr><td>Remote GDB stub</td><td>Stops at every breakpoint and perturbs the TLB (see below).</td></tr>
+<tr><td>m5ops, ftrace, eBPF in the guest</td><td>Need a recapture of all checkpoints, add work to the measured stream, and stamp guest time.</td></tr>
+</tbody></table></div>
+
+<h2 id="pieces">Pieces</h2>
+<figure>
+<div class="fig">
+<svg viewBox="0 0 720 210" role="img" aria-labelledby="arch-t arch-d">
+  <title id="arch-t">Tracer architecture</title>
+  <desc id="arch-d">Inside gem5, task_trace.py reads struct offsets through kernel_layout.py and gdb, and attaches LinuxTaskTracer, which places PC events on guest kernel functions and writes tasktrace.jsonl; stats blocks write stats.txt and intervals.csv. On the host, trace_analysis.py, trace_view.py and window_view.py read the run.</desc>
+  <rect x="10" y="10" width="460" height="190" style="fill: none; stroke: var(--rule)"/>
+  <text class="svg-text" x="20" y="28">inside the gem5 run</text>
+  <rect x="24" y="40" width="150" height="40" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="34" y="64">task_trace.py</text>
+  <rect x="200" y="40" width="250" height="40" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="210" y="58">kernel_layout.py</text>
+  <text class="svg-text" x="210" y="73">gdb on the guest vmlinux → offsets</text>
+  <line x1="174" y1="60" x2="200" y2="60" style="stroke: var(--muted)"/>
+  <rect x="24" y="100" width="426" height="40" style="fill: var(--surface); stroke: var(--accent)"/>
+  <text class="svg-label" x="34" y="118">LinuxTaskTracer (C++ SimObject)</text>
+  <text class="svg-text" x="34" y="133">PC events on guest kernel functions → tasktrace.jsonl</text>
+  <line x1="99" y1="80" x2="99" y2="100" style="stroke: var(--muted)"/>
+  <rect x="24" y="152" width="426" height="36" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="34" y="174">--stats-interval-insts → stats.txt blocks + intervals.csv</text>
+  <rect x="490" y="10" width="220" height="190" style="fill: none; stroke: var(--rule)"/>
+  <text class="svg-text" x="500" y="28">on the host, after the run</text>
+  <rect x="504" y="40" width="192" height="40" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="514" y="64">trace_analysis.py</text>
+  <rect x="504" y="100" width="192" height="40" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="514" y="124">trace_view.py</text>
+  <rect x="504" y="152" width="192" height="36" style="fill: var(--code-bg); stroke: var(--rule)"/>
+  <text class="svg-label" x="514" y="174">window_view.py</text>
+  <line x1="450" y1="120" x2="504" y2="60" style="stroke: var(--mark)"/>
+  <line x1="450" y1="170" x2="504" y2="170" style="stroke: var(--mark)"/>
+</svg>
+</div>
+<figcaption>The gem5 side runs inside the simulator; the analysis side is host Python that reads finished runs and never runs gem5.</figcaption>
+</figure>
+<div class="tablewrap"><table>
+<thead><tr><th>file</th><th>role</th></tr></thead>
+<tbody>
+<tr><td><code>src/arch/arm/linux/task_tracer.{hh,cc}</code></td><td>The tracer, <code>gem5::ArmISA::LinuxTaskTracer</code>.</td></tr>
+<tr><td><code>src/arch/arm/ArmLinuxTaskTracer.py</code></td><td>SimObject declaration; struct offsets arrive as parameters.</td></tr>
+<tr><td><code>src/cpu/base.hh</code> and the CPUs' commit code</td><td><code>BaseCPU::userInsts()</code>, a never-reset user-mode instruction counter.</td></tr>
+<tr><td><code>configs/garfield/arm/kernel_layout.py</code></td><td>Struct offsets from the guest's vmlinux through gdb.</td></tr>
+<tr><td><code>configs/garfield/arm/task_trace.py</code></td><td>The <code>--task-trace*</code> flags; builds the tracer and attaches it to the board.</td></tr>
+<tr><td><code>analysis_scripts/tasktrace/</code></td><td>Analysis, schedule viewer, window viewer, sweep tools.</td></tr>
+</tbody></table></div>
+
+<h2 id="hooks">Hooks</h2>
+<p>The tracer places a gem5 <strong>PC event</strong> on the first instruction of a few guest kernel functions. A PC event fires when that instruction is about to commit: O3 services it in commit, so it never fires on a wrong path, and the function's arguments are in <code>x0..x2</code>. PC events belong to the <code>System</code> and follow the thread across <code>m5.switchCpus</code>, so tracing is continuous from the atomic core to O3 and back.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>kernel function</th><th>what it reads</th><th>event</th></tr></thead>
+<tbody>
+<tr><td><code>__schedule(mode)</code></td><td>nothing; remembers tick and count</td><td>the next <code>switch</code> carries the scheduler's cost</td></tr>
+<tr><td><code>__switch_to(prev, next)</code></td><td>both <code>task_struct</code>s</td><td><code>switch</code></td></tr>
+<tr><td><code>wake_up_new_task(p)</code></td><td>new task; parent is current</td><td><code>fork</code></td></tr>
+<tr><td><code>__arm64_sys_execve(at)</code></td><td>user filename and argv from <code>pt_regs</code></td><td>remembered for the exec</td></tr>
+<tr><td><code>perf_event_comm(task, exec)</code></td><td>the new name, the exec flag</td><td><code>exec</code> or <code>rename</code></td></tr>
+<tr><td><code>do_exit(code)</code></td><td>exit code</td><td><code>exit</code></td></tr>
+<tr><td><code>vfs_write</code>, <code>vfs_read</code></td><td>file path from the dentry chain, buffer</td><td><code>write</code>, <code>read</code></td></tr>
+</tbody></table></div>
+<p>At start-up the tracer walks <code>init_task.tasks</code> and each thread ring and writes a snapshot of every task alive at the restore. Choices that were found the hard way:</p>
+<ul>
+<li><strong>Execs come from <code>perf_event_comm</code>.</strong> In this kernel <code>begin_new_exec</code> contains an inlined copy of <code>__set_task_comm</code>, so the out-of-line symbol only sees <code>prctl</code> renames; the first runs showed processes forking as <code>python3</code> and exiting as <code>docker</code> with no exec. With no aarch64 disassembler on the host, the callers' <code>bl</code> targets were decoded from the ELF bytes. Pending execs are keyed by <code>task_struct</code> address, since a non-leader thread that execs takes its leader's pid.</li>
+<li><strong>Tool calls come from SQLite, not the event log.</strong> OpenCode's JSON event stream only marks a call's end. Its session database writes the 4 KiB page holding a tool part's row at each state change, so recording OpenCode's writes gives <code>pending</code>, <code>running</code> and <code>completed</code> at exact instruction counts.</li>
+<li><strong><code>current</code> is <code>SP_EL0</code></strong>, which arm64 Linux uses to hold it at EL1.</li>
+</ul>
+
+<h2 id="memory">Reading guest memory without disturbing the simulation</h2>
+<p>The first version read guest memory through gem5's <code>TranslatingPortProxy</code>. An O3 pair, the same 1M + 5M window with and without the tracer, showed IPC moving from 0.635 to 0.649 and 5,377 stats lines changing. The cause: <code>ArmISA::MMU::getTE</code> does its first TLB lookup as a timing access even for a functional translation, so a "read-only" access updates TLB replacement state and statistics, and can fill the L1 TLB from the L2. Fixing the MMU would have changed every syscall-emulation result on the fork.</p>
+<p>So the tracer walks the guest's own stage-1 page tables in software (EL1&amp;0, 4 KiB granule, <code>TTBR0/1_EL1</code> by VA bit 63, start level from <code>TCR_EL1.T0SZ/T1SZ</code>) and reads descriptors and data through <code>System::physProxy</code>. Permissions are not checked, so user buffers are readable from kernel-side hooks. Kernel addresses always translate through <code>swapper_pg_dir</code>, because a restore that lands at EL0 has <code>TTBR1_EL1</code> pointing at KPTI's trampoline table, where the kernel is not mapped. A failed read is recorded as <code>null</code> and never stops the simulation. After the change the pair is byte-identical.</p>
+
+<h2 id="kaslr">Finding the kernel: KASLR slide and struct offsets</h2>
+<p><strong>The slide is derived from the restored state</strong>, following RPoint's <code>landing.py</code>:</p>
+<ol class="steps">
+<li><code>TTBR1_EL1</code> holds the physical address of <code>swapper_pg_dir</code> (at EL1) or <code>tramp_pg_dir</code> (at EL0 with KPTI).</li>
+<li>Both sit at fixed offsets in the contiguous kernel image, so each candidate gives an image base.</li>
+<li>The candidate whose <code>init_task.comm</code> reads <code>swapper/0</code> is right.</li>
+<li><code>slide = pa_text + kimage_voffset − link(_text)</code>; hook addresses are vmlinux symbols plus the slide.</li>
+</ol>
+<p>This works on all 27 local checkpoints, including the five whose provenance has no landing label. If an expected slide is given and differs, the run stops.</p>
+<p><strong>Struct offsets come from gdb</strong> evaluating <code>&amp;((struct T *)0)-&gt;field</code> on the vmlinux, which follows anonymous unions. The kernel was built with reduced debug info: <code>task_struct</code>, <code>file</code>, <code>dentry</code>, <code>qstr</code> and <code>pt_regs</code> have layouts, while <code>mm_struct</code>, <code>linux_binprm</code>, <code>path</code> and the cgroup structs do not. That is why exec paths come from the syscall's arguments, why there are no cgroup names, and why two layouts are assumed (<code>struct path</code> with its dentry at +8, <code>list_head.next</code> at 0, both unchanged since 2.6). A missing field is fatal, because a guessed offset would produce plausible garbage.</p>
+
+<h2 id="counts">Instruction counts</h2>
+<p>Every event carries <code>insts</code>, gem5's total committed instructions over all CPUs since the restore. It keeps counting across core switches and stats resets, and stats blocks record the same count, so events and blocks join exactly. Each event also carries <code>uinsts</code>, the user-mode (EL0) part, from a counter added to <code>BaseCPU</code> and incremented in the simple, O3, Minor and KVM CPUs.</p>
+<div class="note"><strong>A bug found while validating it.</strong> The first <code>uinsts</code> was incremented next to gem5's <code>numUserInsts</code> stat. But O3's instruction total leaves out NOPs and instruction prefetches while that stat counts them, so pure user slices showed −1% to −3% kernel work. The O3 increment moved to <code>CPU::instDone</code>. Afterwards a long <code>rg</code> slice's kernel share matched gem5's own stats, 54.1% against 54.2%.</div>
+<p>The <code>switch</code> event also carries the instructions and ticks from <code>__schedule</code>'s entry to <code>__switch_to</code>: the scheduler's direct cost, excluding the system call or interrupt that led to it.</p>
+
+<h2 id="validation">Validation</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>check</th><th>result</th></tr></thead>
+<tbody>
+<tr><td>No perturbation: O3 pair with and without the tracer</td><td>Byte-identical <code>stats.txt</code> apart from host time: gin-2121 1M + 5M (IPC 0.635 both); framework-52684 1M + 60M with 107 switches (IPC 0.854 both). A 400M window repeated its previous cycle count exactly after the scheduler hook was added.</td></tr>
+<tr><td>Determinism</td><td>Two atomic runs give identical traces (398 switches); two O3 runs without the tracer give identical stats.</td></tr>
+<tr><td>Landing, all local checkpoints</td><td>22 of 22 labelled checkpoints match pid, thread name and slide in one 3M-instruction pass. One lands mid-exec: the trace records the rename before the first switch, which the check accepts.</td></tr>
+<tr><td>Counters against an Exec trace</td><td><code>insts</code>, <code>uinsts</code> and the scheduler counts match exactly over 14 intervals and 828,936 instructions, NOPs excluded. Tracer ticks are 10–150 ns after Exec's, because O3 Exec prints the fetch tick.</td></tr>
+<tr><td>Stats blocks</td><td>Splitting a region into blocks leaves its IPC unchanged.</td></tr>
+<tr><td>User/kernel split</td><td>Trace and gem5 user fractions agree to a mean absolute difference of 0.05 per block (slices are split evenly where a block cuts them).</td></tr>
+</tbody></table></div>
+
+<h2 id="shown">What it has shown so far</h2>
+<div class="note"><strong>Provisional.</strong> These come from a few windows and one sweep per configuration; they are working hypotheses in the project wiki and may change with new runs.</div>
+<ul>
+<li><strong>About a fifth of agentic instructions are the benchmark's own polling.</strong> The model-free replay driver runs <code>docker inspect</code> every 50 ms of guest time while it waits, each a fresh Go process of about 40M instructions sharing the vCPU with the agent. The tracer made it visible; analyses now report shares with and without it.</li>
+<li><strong>The scheduler is cheap; what surrounds a switch is not.</strong> The scheduler path takes a median of ~1,800 instructions and ~1,700 cycles. Blocks containing a switch run at IPC 0.60 against 1.00, with three times the kernel share, and the same scheduler code takes 4,705 cycles instead of 1,650 during a tool's process churn: cold state, not scheduling.</li>
+<li><strong>The cost depends on who runs.</strong> Pipe hand-offs between two small processes raise IPC; short-lived shells, forks and execs cut it by a third to a half.</li>
+<li><strong>A tool call is mostly harness work.</strong> A 45-line file read takes about 170M instructions from running to completed, most of it OpenCode persisting state and its JavaScript runtime; a two-command <code>bash</code> call took 1.02G instructions, of which the tool processes ran about 70M.</li>
+<li><strong>The tools fence is inactive in the replay guests</strong>: no <code>cgroup.procs</code> writes, and fenced tools share OpenCode's cgroup set.</li>
+</ul>
+
+<h2 id="limits">Limits</h2>
+<ul>
+<li>One kernel's internals: gdb-derived offsets, a 4 KiB-only stage-1 walk, hooks chosen around 6.8.12's inlining. A new kernel means rerunning <code>kernel_layout.py</code> and rechecking the hooks.</li>
+<li>One vCPU, so switch counts are higher than on a multi-core machine.</li>
+<li>The user/kernel split is per time slice, in instructions; cycles per mode would need a hook on exception entry and return.</li>
+<li>No cgroup or container names, and no command lines for processes that predate the checkpoint (recording <code>mm-&gt;arg_start..arg_end</code> in the snapshot would fix this).</li>
+<li>The task on the CPU at the restore is named only when it first switches out.</li>
+<li>Reads have no data and only cover <code>read</code> and <code>pread</code>; paths stop at mount points.</li>
+</ul>
+
+<h2 id="extend">Extending it</h2>
+<ol class="steps">
+<li>Find the function in the vmlinux (<code>nm &lt;vmlinux&gt; | grep &lt;name&gt;</code>) and check it is not inlined at the call sites you need.</li>
+<li>Add a handler <code>void myHook(ThreadContext *tc)</code> to <code>LinuxTaskTracer</code>, register it in <code>startup()</code> with <code>add("symbol", &amp;LinuxTaskTracer::myHook)</code>, read arguments from <code>int_reg::X0..</code>, and write with <code>begin("name")</code>, <code>writeTask(...)</code>, <code>end()</code>.</li>
+<li>New struct fields go into <code>OFFSETS</code> in <code>kernel_layout.py</code> and as a <code>Param.Unsigned</code> of the same name in <code>ArmLinuxTaskTracer.py</code>.</li>
+<li>Read guest memory only through <code>readVirt</code>, <code>readU64</code> and <code>readString</code>, never a <code>TranslatingPortProxy</code>, then rerun the no-perturbation check.</li>
+</ol>
+<p>Another kernel needs only its own vmlinux, since the slide and offsets are derived from it. The process labels hold for any Linux guest; only the tool-call parsing is specific to OpenCode, and <code>--task-trace-process</code> points the read and write hooks at another process.</p>
+
+<footer>Generated from the project wiki (docs/wiki/) on branch gfdev. Companion page: Task Tracer Guide. Corrections go into the wiki pages listed at the top; this page is then rebuilt.</footer>
+</div>
+</main>
+</div>

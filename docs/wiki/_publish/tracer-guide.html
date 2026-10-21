@@ -1,0 +1,391 @@
+<title>Task Tracer Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: a lab-manual column with a sticky contents rail on wide screens; one column on phones. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --fg: #18212b;
+  --muted: #566170;
+  --rule: #d8dde4;
+  --accent: #0e6a70;
+  --mark: #b0520c;
+  --code-bg: #eaeef2;
+  --ok: #2e7d4f;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --s-1: 0.8125rem; --s0: 1rem; --s1: 1.25rem; --s2: 1.625rem; --s3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+    --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630; --ok: #6cc08f;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+  --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630; --ok: #6cc08f;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: var(--s0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 56px; } }
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: var(--s-1); }
+@media (max-width: 860px) { nav.toc { position: static; } }
+nav.toc .label { font-family: var(--f-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.72rem; margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+nav.toc a { color: var(--fg); text-decoration: none; display: block; padding: 2px 0 2px 10px; border-left: 2px solid var(--rule); }
+nav.toc a:hover, nav.toc a:focus-visible { border-left-color: var(--accent); color: var(--accent); }
+main { min-width: 0; }
+.doc { max-width: 72ch; }
+header.masthead { display: grid; gap: 10px; margin-bottom: 28px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: var(--s3); margin: 0; }
+h2 { font-size: var(--s2); margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+h3 { font-size: var(--s1); margin: 28px 0 8px; font-weight: 500; }
+p { margin: 0 0 14px; }
+.lede { font-size: 1.125rem; color: var(--fg); }
+.build { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); padding: 10px 12px; background: var(--surface); line-height: 1.5; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.875em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.codeblock { position: relative; margin: 0 0 16px; }
+.codeblock pre { margin: 0; overflow-x: auto; background: var(--code-bg); padding: 14px 16px; font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.55; border-left: 3px solid var(--accent); }
+.codeblock pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 6px; right: 6px; font-family: var(--f-mono); font-size: 0.7rem; background: var(--surface); color: var(--muted); border: 1px solid var(--rule); padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+.copy:hover, .copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.tablewrap { overflow-x: auto; margin: 0 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--f-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td code { white-space: nowrap; }
+ul, ol.steps { padding-left: 1.25rem; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+.note { border-left: 3px solid var(--mark); background: var(--surface); padding: 12px 14px; margin: 0 0 18px; font-size: 0.9375rem; }
+.note strong { color: var(--mark); }
+figure { margin: 8px 0 24px; }
+figure .fig { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: 12px; }
+figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: var(--s-1); color: var(--muted); margin-top: 8px; }
+.svg-text { fill: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.svg-label { fill: var(--fg); font-family: var(--f-mono); font-size: 11px; }
+.pipeline { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin: 0 0 20px; }
+@media (max-width: 640px) { .pipeline { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--surface); border: 1px solid var(--rule); padding: 12px 14px; min-width: 0; }
+.stage .n { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.06em; }
+.stage h4 { font-family: var(--f-display); font-weight: 600; margin: 4px 0 6px; font-size: 1.05rem; }
+.stage p { font-size: 0.875rem; margin: 0; color: var(--muted); }
+.stage code { font-size: 0.8em; }
+footer { margin-top: 64px; font-size: var(--s-1); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="label">Contents</div>
+  <ol>
+    <li><a href="#what">What you get</a></li>
+    <li><a href="#setup">Setup</a></li>
+    <li><a href="#run">Running a traced restore</a></li>
+    <li><a href="#place">Placing a window</a></li>
+    <li><a href="#analyse">Analysing a run</a></li>
+    <li><a href="#view">The two viewers</a></li>
+    <li><a href="#sweep">Sweeps and comparisons</a></li>
+    <li><a href="#format">Trace format</a></li>
+    <li><a href="#read">Reading the numbers</a></li>
+    <li><a href="#check">Checks after a change</a></li>
+    <li><a href="#debug">Debugging</a></li>
+    <li><a href="#limits">Known limits</a></li>
+  </ol>
+</nav>
+
+<main>
+<div class="doc">
+<header class="masthead">
+  <div class="eyebrow">gem5 fork · branch gfdev · Arm full system</div>
+  <h1>Task Tracer Guide</h1>
+  <p class="lede">How to see, inside a gem5 restore of an agentic or SPEC checkpoint, which guest process or thread is running, when it switches, forks, execs and exits, and when each OpenCode tool call starts and ends. Every event is stamped in simulated ticks and committed instructions, so it lines up with gem5's statistics.</p>
+  <div class="build">Built from the project wiki on 2026-10-21. Sources: docs/wiki/infrastructure/{running-a-traced-window, checkpoints, task-tracer, trace-format, trace-analysis, stats-blocks, viewers, sweeps, run-and-analysis-scripts}.md and docs/wiki/methodology/{window-placement, aggregating-metrics, validation-checks, instruction-counts, context-switch-classification}.md. This page is generated: fix the wiki, then rebuild.</div>
+</header>
+
+<h2 id="what">What you get</h2>
+<p>For one restored checkpoint, a traced run produces:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>output</th><th>what it is</th></tr></thead>
+<tbody>
+<tr><td><code>tasktrace.jsonl</code></td><td>A snapshot of every guest task at the restore, then one JSON line per event: context switch, fork, exec (with path and argv), rename, exit, OpenCode's <code>write()</code> (with payload) and <code>read()</code> calls, and writes to any <code>cgroup.procs</code>.</td></tr>
+<tr><td><code>intervals.csv</code> + <code>stats.txt</code></td><td>Optional: gem5 stats dumped every N instructions of the detailed region, each block with its tick and instruction range.</td></tr>
+<tr><td><code>analysis/*.csv</code>, <code>summary.md</code></td><td>Per process, per place, per tool call, per switch cause, per stats block, and event-aligned tables.</td></tr>
+<tr><td><code>analysis/schedule.html</code></td><td>An interactive timeline of who ran when.</td></tr>
+<tr><td><code>analysis/window.html</code></td><td>Per-block microarchitecture metrics as bar charts, on the same axis as the schedule.</td></tr>
+</tbody></table></div>
+
+<figure>
+<div class="fig">
+<svg viewBox="0 0 720 150" role="img" aria-labelledby="strip-t strip-d">
+  <title id="strip-t">A schedule strip</title>
+  <desc id="strip-d">Illustration of a traced timeline: CPU slices for opencode, docker and a kernel thread along an instruction axis, with switch, fork and exec marks, and a tool call bar from pending to completed.</desc>
+  <!-- axis: 0..400M instructions over x 60..700 (1.6 px per M) -->
+  <text class="svg-text" x="0" y="36">CPU</text>
+  <rect x="60" y="22" width="176" height="20" fill="var(--accent)" opacity="0.85"/>
+  <rect x="236" y="22" width="6" height="20" fill="var(--muted)"/>
+  <rect x="242" y="22" width="64" height="20" fill="var(--mark)" opacity="0.85"/>
+  <rect x="306" y="22" width="194" height="20" fill="var(--accent)" opacity="0.85"/>
+  <rect x="500" y="22" width="40" height="20" fill="var(--mark)" opacity="0.85"/>
+  <rect x="540" y="22" width="160" height="20" fill="var(--accent)" opacity="0.85"/>
+  <text class="svg-label" x="66" y="36" style="fill: var(--surface)">opencode</text>
+  <text class="svg-label" x="246" y="36" style="fill: var(--surface)">docker</text>
+  <text class="svg-label" x="312" y="36" style="fill: var(--surface)">opencode</text>
+  <text class="svg-label" x="546" y="36" style="fill: var(--surface)">opencode</text>
+  <text class="svg-text" x="0" y="68">events</text>
+  <line x1="236" y1="52" x2="236" y2="74" stroke="var(--fg)" stroke-width="1"/>
+  <line x1="306" y1="52" x2="306" y2="74" stroke="var(--fg)" stroke-width="1"/>
+  <line x1="500" y1="52" x2="500" y2="74" stroke="var(--fg)" stroke-width="1"/>
+  <line x1="540" y1="52" x2="540" y2="74" stroke="var(--fg)" stroke-width="1"/>
+  <circle cx="232" cy="63" r="4" fill="var(--fg)"/>
+  <polygon points="242,57 248,69 236,69" fill="var(--mark)"/>
+  <text class="svg-text" x="252" y="68">fork ● exec ▲ switch |</text>
+  <text class="svg-text" x="0" y="100">tool</text>
+  <rect x="140" y="88" width="56" height="16" fill="var(--accent)" opacity="0.25"/>
+  <rect x="196" y="88" width="370" height="16" fill="var(--accent)" opacity="0.6"/>
+  <text class="svg-label" x="202" y="100">read /testbed/render/reader.go · running → completed</text>
+  <line x1="60" y1="124" x2="700" y2="124" stroke="var(--rule)" stroke-width="1"/>
+  <g class="svg-text">
+    <line x1="60" y1="120" x2="60" y2="128" stroke="var(--muted)"/><text x="60" y="142" text-anchor="middle">0</text>
+    <line x1="220" y1="120" x2="220" y2="128" stroke="var(--muted)"/><text x="220" y="142" text-anchor="middle">100M</text>
+    <line x1="380" y1="120" x2="380" y2="128" stroke="var(--muted)"/><text x="380" y="142" text-anchor="middle">200M</text>
+    <line x1="540" y1="120" x2="540" y2="128" stroke="var(--muted)"/><text x="540" y="142" text-anchor="middle">300M</text>
+    <line x1="700" y1="120" x2="700" y2="128" stroke="var(--muted)"/><text x="700" y="142" text-anchor="end">400M insts</text>
+  </g>
+</svg>
+</div>
+<figcaption>What a trace lets you draw: who held the single vCPU, the scheduling events, and a tool call's states, all on the committed-instruction axis. Illustrative layout; real pages come from <code>trace_view.py</code>.</figcaption>
+</figure>
+
+<div class="pipeline">
+  <div class="stage"><div class="n">IN GEM5</div><h4>Tracer</h4><p><code>--task-trace</code> on <code>virt_run.py</code> or <code>fs_run.py</code> attaches <code>LinuxTaskTracer</code>, which writes the trace while the guest runs.</p></div>
+  <div class="stage"><div class="n">IN GEM5</div><h4>Stats blocks</h4><p><code>--stats-interval-insts N</code> dumps and resets stats every N committed instructions and writes <code>intervals.csv</code>.</p></div>
+  <div class="stage"><div class="n">ON THE HOST</div><h4>Analysis</h4><p><code>trace_analysis.py</code>, <code>trace_view.py</code>, <code>window_view.py</code> read the finished run. Python stdlib only.</p></div>
+</div>
+
+<h2 id="setup">Setup</h2>
+<ul>
+<li><strong>A gem5 build with the tracer:</strong> <code>scons build/ARM/gem5.opt -j$(nproc)</code> from the repository root.</li>
+<li><strong><code>gdb</code> on the host.</strong> It reads struct offsets from the guest's vmlinux; an x86 gdb reads the aarch64 file fine.</li>
+<li><strong>The checkpoints</strong> live outside the repository in <code>/home/snapshots/gem5-ckpts</code>. Every script takes that root from <code>CKPTS</code>, so <code>CKPTS=/other/copy</code> points them elsewhere.</li>
+<li><strong>Python 3</strong> for the analysis. matplotlib is needed only for the optional PDF figures; on hosts without it, make a venv with <code>python3 -m venv --without-pip runs/venv && pip --python runs/venv/bin/python install matplotlib</code>.</li>
+</ul>
+<p>Run everything from the repository root. Runs write into <code>runs/</code>, which git ignores.</p>
+
+<h2 id="run">Running a traced restore</h2>
+<p>Set the common agentic arguments once. <code>TASK</code> is a checkpoint name without the <code>agentic-</code> prefix, such as <code>gin-2121</code>.</p>
+<div class="codeblock"><pre><code>AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic
+TASK=gin-2121
+CPT=$AGENTIC/checkpoints/agentic-$TASK/cpt.0
+COMMON="--disk-img $AGENTIC/images/rpoint-ubuntu-24.04-v21.img \
+  --kernel $AGENTIC/kernel/arm64-linux-kernel-6.8.12-1.0.0 \
+  --bootloader $AGENTIC/bootloader/boot_v2_qemu_virt.arm64 \
+  --release kvm-host --progress-interval 10kHz"</code></pre></div>
+
+<h3>Event trace only, on the atomic core</h3>
+<p>The quickest way to see what a checkpoint is doing: about 1.7 million instructions per second.</p>
+<div class="codeblock"><pre><code>./build/ARM/gem5.opt --outdir=runs/trace-$TASK configs/garfield/arm/virt_run.py \
+  --restore-dir $CPT $COMMON \
+  --atomic-only --atomic-max-insts 2000000000 \
+  --task-trace</code></pre></div>
+<p>Or <code>run_scripts/tasktrace/atomic.sh $TASK 2000000000</code>.</p>
+
+<h3>A detailed O3 window in stats blocks</h3>
+<p>Fast-forward on the atomic core, warm up, then simulate a region on the Neoverse V2 model in fixed-size blocks. O3 runs at roughly 95 to 200 thousand instructions per second.</p>
+<div class="codeblock"><pre><code>./build/ARM/gem5.opt --outdir=runs/o3-$TASK "--stats-file=stats.txt?desc=False" \
+  configs/garfield/arm/virt_run.py --restore-dir $CPT $COMMON \
+  --settle-insts &lt;S&gt; --warmup-insts 20000000 \
+  --detailed-insts &lt;N&gt; --stats-interval-insts 200000 \
+  --tail-insts 100000000 \
+  --task-trace</code></pre></div>
+<p>Or <code>run_scripts/tasktrace/o3-window.sh $TASK &lt;S&gt; 20000000 &lt;N&gt; 200000</code>. <code>?desc=False</code> drops stat descriptions; a block is then about 320 KB, so plan on 320 KB × N / block size.</p>
+
+<h3>A SPEC CPU 2026 checkpoint</h3>
+<div class="codeblock"><pre><code>run_scripts/tasktrace/spec-window.sh 714.cpython_r 1 20000000 200000000 200000</code></pre></div>
+<p>Restores the benchmark's SimPoint through <code>fs_run.py</code>, 1 atomic instruction, 20M warm-up, 200M measured in 200K blocks. SPEC guests have no OpenCode, so the trace is the schedule only; the benchmark runs alone and is rarely switched out.</p>
+
+<h3>Flags</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>flag</th><th>meaning</th></tr></thead>
+<tbody>
+<tr><td><code>--task-trace</code></td><td>Attach the tracer; writes <code>&lt;outdir&gt;/tasktrace.jsonl</code>. Without it the drivers behave exactly as before.</td></tr>
+<tr><td><code>--task-trace-process NAME</code></td><td>Process whose writes (with payload) and reads (path, size, offset) are recorded. Default <code>opencode</code>; empty disables both.</td></tr>
+<tr><td><code>--task-trace-slide HEX</code></td><td>Expected KASLR slide. Defaults to the checkpoint's <code>provenance.json</code>; the run stops if the derived slide differs.</td></tr>
+<tr><td><code>--stats-interval-insts N</code></td><td>Dump and reset stats every N committed instructions of the detailed region and write <code>intervals.csv</code>. 0 dumps once.</td></tr>
+<tr><td><code>--tail-insts M</code></td><td>After the detailed region, switch back to atomic and run M more instructions, still traced, to see events that finish late.</td></tr>
+<tr><td><code>--disable-fdp</code>, <code>--infinite-btb</code>, <code>--infinite-tlb</code></td><td>Core configuration switches; any extra argument after a run script's positional ones is passed through.</td></tr>
+</tbody></table></div>
+
+<h3>Helper scripts</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>script</th><th>use it for</th></tr></thead>
+<tbody>
+<tr><td><code>run_scripts/tasktrace/atomic.sh [task] [max-insts]</code></td><td>Finding where things happen cheaply. <code>GEM5_OPTS="--debug-flags=TaskTracer"</code> passes gem5 options.</td></tr>
+<tr><td><code>o3-window.sh TASK SETTLE WARMUP DETAILED INTERVAL</code></td><td>One traced agentic window. <code>OUTDIR=</code> overrides the output directory.</td></tr>
+<tr><td><code>spec-window.sh BENCH SETTLE WARMUP DETAILED INTERVAL [TAG]</code></td><td>The same for SPEC.</td></tr>
+<tr><td><code>smart_sweep.sh [BASE]</code></td><td>Every checkpoint, one configuration, memory-aware. See <a href="#sweep">Sweeps</a>.</td></tr>
+<tr><td><code>o3-pair.sh [task] [warmup] [detailed]</code></td><td>The no-perturbation check after any tracer change.</td></tr>
+<tr><td><code>landing-all.sh [insts] [parallel]</code></td><td>The landing check over every checkpoint.</td></tr>
+</tbody></table></div>
+
+<h2 id="place">Placing a window on an event</h2>
+<p>Detailed simulation is slow, so find the interesting point on the atomic core first.</p>
+<ol class="steps">
+<li>Run the atomic trace long enough to cover the event.</li>
+<li>Run <code>trace_analysis.py</code> and read the event's instruction count from <code>analysis/tools.csv</code> or <code>processes.csv</code>.</li>
+<li>Restore with <code>--settle-insts</code> hundreds of millions of instructions before that count, a region long enough for the whole event, and <code>--tail-insts</code>.</li>
+<li>Locate the event again in the O3 trace before choosing phase boundaries.</li>
+</ol>
+<div class="note"><strong>Events move between atomic and O3.</strong> The replay driver's polling and the guest's timers follow simulated time, so a different core places events at different instruction counts: by a few million in one window, by about 130 million in another. Never reuse atomic positions as O3 boundaries.</div>
+<p><strong>Rounds.</strong> The restore starts inside <code>RPOINT_REPLAY_ROUND 1</code>. The guest prints <code>RPOINT_REPLAY_ROUND N</code> on <code>&lt;outdir&gt;/board.terminal</code>; each later round holds one model response and its tool calls, billions of instructions apart. To cover a whole round, run atomic until the next marker appears, then stop with SIGINT: the trace is flushed line by line.</p>
+
+<h2 id="analyse">Analysing a run</h2>
+<div class="codeblock"><pre><code>python3 analysis_scripts/tasktrace/trace_analysis.py runs/o3-$TASK [--window K]
+python3 analysis_scripts/tasktrace/trace_view.py   runs/o3-$TASK
+python3 analysis_scripts/tasktrace/window_view.py  runs/o3-$TASK</code></pre></div>
+<div class="tablewrap"><table>
+<thead><tr><th>file in <code>analysis/</code></th><th>contents</th></tr></thead>
+<tbody>
+<tr><td><code>summary.md</code></td><td>Event rates, instruction shares by place, launch tree and process, top processes with lineage, tool calls.</td></tr>
+<tr><td><code>processes.csv</code></td><td>Per process: names over its life, kind, place, launch tree, lineage, exec path and argv, user and kernel instructions.</td></tr>
+<tr><td><code>switches.csv</code></td><td>Switches by cause (<code>within opencode</code>, <code>opencode -&gt; docker</code>, ...) with the scheduler's own cost.</td></tr>
+<tr><td><code>tools.csv</code></td><td>One row per OpenCode tool call: states, durations, who ran during it, its own file I/O.</td></tr>
+<tr><td><code>blocks.csv</code></td><td>Per stats block: IPC, user share, cache, branch and TLB rates, who ran most, the events inside.</td></tr>
+<tr><td><code>aligned.csv</code></td><td>Each metric averaged over blocks at offsets −K..+K from each kind of event.</td></tr>
+<tr><td><code>containers.csv</code>, <code>writes.csv</code>, <code>reads.csv</code></td><td>Places and their members; every recorded write and read.</td></tr>
+</tbody></table></div>
+<h3>How processes are labelled</h3>
+<p>Labels are facts the trace supports, never guesses at purpose:</p>
+<ul>
+<li><strong>kind</strong>: user, kernel thread, or idle.</li>
+<li><strong>place</strong>: <code>host</code>, or <code>container &lt;top&gt; (&lt;tgid&gt;)</code>, a namespace set named after its first process.</li>
+<li><strong>launch tree</strong>: the topmost ancestor below systemd, such as <code>run.sh (519)</code> or <code>python (1003)</code>.</li>
+<li><strong>lineage</strong>: names from that root down, such as <code>run.sh &gt; sudo &gt; make &gt; sh &gt; uv &gt; python3 &gt; docker</code>.</li>
+</ul>
+<h3>How tool calls are found</h3>
+<p>OpenCode stores its session in SQLite with a write-ahead log. Each state change of a tool part (<code>pending</code>, <code>running</code>, <code>completed</code> or <code>error</code>) is one <code>write()</code> of the 4 KiB page holding that JSON row, which the tracer records. So every transition has an exact instruction count. <code>read</code>, <code>edit</code> and <code>write</code> run inside OpenCode; <code>bash</code> and ripgrep run as separate processes (<code>bash.fence-real</code>, <code>rg.fence-real</code>). A call's <code>kind</code> is observed from which descendants ran, not inferred from the tool name.</p>
+
+<h2 id="view">The two viewers</h2>
+<h3>Schedule timeline: <code>schedule.html</code></h3>
+<p>A whole-run strip you can brush, a tool-call track, a CPU track, and one lane per process with exec, fork, exit, tool I/O and cgroup marks. Colour by process, launch tree or place; click a legend entry to hide it. Each bar's darker bottom band is its kernel-mode share and its dark end is the scheduler path. <em>Open view.json</em> loads any other run's <code>schedule.view.json</code>, so one page serves every run.</p>
+<h3>Window metrics: <code>window.html</code></h3>
+<p>One bar chart per metric on a shared instruction axis, one bar per stats block, with the schedule underneath. The dashed line is the metric over the whole window, computed from summed stats. Step through events of one kind and cause with the arrow keys, see each metric's mean and quartiles around those events, and add any stat with <code>--metric KEY=STAT[/insts|/cycles]</code>.</p>
+<div class="note"><strong>One known issue.</strong> The "BTB misses" row reads <code>btb.misses</code>, which is always 0 with the decoupled front end. Use the BTB-miss mispredicts row instead.</div>
+
+<h2 id="sweep">Sweeps and comparisons</h2>
+<p>A sweep runs one traced window per local checkpoint: every SPEC benchmark (200M instructions) and every agentic task (400M), each after 1 atomic instruction and 20M of warm-up, in 200K-instruction blocks. Each finished run is analysed and marked <code>done</code>; rerunning with the same directory resumes.</p>
+<div class="codeblock"><pre><code>nohup run_scripts/tasktrace/smart_sweep.sh > runs/sweep.log 2>&1 &</code></pre></div>
+<p>Use <code>smart_sweep.sh</code> rather than <code>sweep.sh</code>. Runs need 2.5 to 22 GB each (nushell-13831 is the largest), and unguarded parallel sweeps once got the whole terminal killed by the OOM daemon. The smart version starts a run only when there is memory for its measured peak, across all sweeps sharing its lock.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>variable</th><th>meaning</th></tr></thead>
+<tbody>
+<tr><td><code>PAR</code></td><td>Most runs in parallel per sweep.</td></tr>
+<tr><td><code>EXTRA</code></td><td>Flags for every run, such as <code>--infinite-btb</code>. Resuming with different flags is refused.</td></tr>
+<tr><td><code>BASELINE</code></td><td>A sweep to compare against when this one finishes.</td></tr>
+<tr><td><code>ONLY</code>, <code>SETTLE</code>, <code>WARM</code>, <code>IVL</code>, <code>SPEC_DET</code>, <code>AGENTIC_DET</code></td><td>Restrict checkpoints; window settings.</td></tr>
+<tr><td><code>RESERVE_GB</code>, <code>STAGGER</code>, <code>LOCK</code>, <code>PEAKS</code></td><td>Memory gating (defaults 8 GB, 60 s, a per-user lock, <code>runs/sweep/mem_peaks.tsv</code>).</td></tr>
+</tbody></table></div>
+<p><code>sweep_summary.py &lt;sweep&gt;</code> writes one row per checkpoint and a violin page per suite. <code>--skip-insts 100e6</code> leaves out each window's first 100M instructions without re-simulating. <code>sweep_compare.py A B [C ...]</code> pairs checkpoints across up to eight sweeps and reports each one's change against the first:</p>
+<div class="codeblock"><pre><code>runs/venv/bin/python analysis_scripts/tasktrace/sweep_compare.py \
+    runs/sweep/&lt;fdp&gt; runs/sweep/&lt;nofdp&gt; runs/sweep/&lt;infbtb&gt; \
+    --labels FDP no-FDP inf-BTB --pdf</code></pre></div>
+
+<h2 id="format">Trace format</h2>
+<p>One JSON object per line, flushed per line. Every line has <code>tick</code> (1 ps), <code>insts</code>, <code>uinsts</code> and <code>event</code>.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>event</th><th>extra fields</th></tr></thead>
+<tbody>
+<tr><td><code>start</code></td><td><code>kaslr_slide</code></td></tr>
+<tr><td><code>snapshot</code></td><td><code>tasks</code>, <code>count</code>: every task alive at the restore</td></tr>
+<tr><td><code>switch</code></td><td><code>prev</code>, <code>next</code>, <code>same_mm</code>, <code>sched_insts</code>, <code>sched_ticks</code></td></tr>
+<tr><td><code>fork</code></td><td><code>parent</code>, <code>child</code> (same <code>tgid</code> means a new thread)</td></tr>
+<tr><td><code>exec</code> / <code>rename</code></td><td><code>task</code>; <code>path</code> and <code>argv</code> for execs seen after the restore</td></tr>
+<tr><td><code>exit</code></td><td><code>task</code>, <code>code</code></td></tr>
+<tr><td><code>write</code> / <code>read</code></td><td><code>task</code>, <code>file</code>, <code>path</code>, <code>count</code>; writes add <code>data</code>, reads add <code>pos</code></td></tr>
+</tbody></table></div>
+<p>A task is <code>{pid, tgid, ppid, comm, process, kernel_thread, kthread, ns, cg}</code>. <code>ns</code> and <code>cg</code> are kernel pointers used as identities (same value, same container or cgroup set), comparable within one run only. Guest strings are byte strings: recover the bytes with <code>s.encode("latin-1")</code>.</p>
+<div class="codeblock"><pre><code>{"tick":209306074077,"insts":1756030,"event":"switch","same_mm":true,
+ "prev":{"pid":1308,"tgid":1235,"comm":"JITWorker","process":"opencode",...},
+ "next":{"pid":1303,"tgid":1235,"comm":"JITWorker","process":"opencode",...}}</code></pre></div>
+
+<h2 id="read">Reading the numbers</h2>
+<ul>
+<li><strong>Aggregate raw counts, never ratios.</strong> IPC over blocks is total instructions over total cycles. With equal-instruction blocks the window IPC is the harmonic mean of block IPCs: in one window 0.956 against a mean bar of 1.21. <code>trace_analysis.load_blocks()</code> gives the raw counts.</li>
+<li><strong>Which instruction count.</strong> <code>insts</code> is the global committed count since the restore, never reset, the same basis as <code>intervals.csv</code>. <code>uinsts</code> is its user-mode part. gem5's <code>numInsts</code> stats include NOPs and must not be mixed with <code>insts</code>. The progress line counts micro-ops, about 12% more.</li>
+<li><strong>Thread, process and kernel switches</strong> are classified by <code>tgid</code>, not by address space. A change of process through a kernel thread (<code>opencode -&gt; rcu_preempt -&gt; cc1plus</code>) also counts as a process switch, marked <code>via kernel</code>.</li>
+<li><strong>The replay driver is in the measurement.</strong> About a fifth of agentic instructions are the host's <code>docker inspect</code> polling (the <code>run.sh</code> launch tree). Report shares with and without it.</li>
+<li><strong>A metric shift near an event is not the event's effect</strong> until you have checked a control: 714.cpython_r changes phase with no event at all.</li>
+<li><strong>Pick fine blocks</strong> (100 to 200K instructions) to separate a switch from the next task's cold start.</li>
+</ul>
+
+<h2 id="check">Checks after a change</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>check</th><th>how</th><th>expected</th></tr></thead>
+<tbody>
+<tr><td>No perturbation</td><td><code>o3-pair.sh</code>: the same short window with and without <code>--task-trace</code>, diffing <code>stats.txt</code></td><td>identical, apart from host-time lines</td></tr>
+<tr><td>Determinism</td><td><code>PAIR_ON_ARGS= o3-pair.sh</code>, or two atomic runs</td><td>identical stats or traces</td></tr>
+<tr><td>Landing</td><td><code>landing-all.sh</code> and <code>landing_summary.py</code></td><td>first switch's outgoing task and the slide match <code>provenance.json</code></td></tr>
+<tr><td>Intervals</td><td>same region with and without <code>--stats-interval-insts</code></td><td>same region IPC</td></tr>
+<tr><td>User/kernel split</td><td><code>summary.md</code> of a blocks run</td><td>trace and gem5 user fractions agree closely</td></tr>
+</tbody></table></div>
+
+<h2 id="debug">Debugging</h2>
+<ul>
+<li><code>--debug-flags=TaskTracer</code>, placed before the config script, prints the derived slide, every hook address and every <code>vfs_write</code>.</li>
+<li><strong>No switch for a while</strong> is normal inside compilers, linkers and JIT code: a 4 ms scheduler tick is about 10M instructions.</li>
+<li><strong>"KASLR slide … disagrees"</strong>: the checkpoint and its metadata do not belong together, or the vmlinux is not the guest's.</li>
+<li><strong>"cannot derive the KASLR slide"</strong>: almost always <code>--kernel</code> is a different kernel from the one the guest booted.</li>
+<li><strong><code>kernel_layout.py</code> reports unresolved fields</strong>: the vmlinux lacks debug info for that struct. Run it by hand with <code>python3 configs/garfield/arm/kernel_layout.py &lt;vmlinux&gt;</code>.</li>
+<li><strong>A restore that runs but gives uniform IPC across tasks</strong> is a corruption signature. Check <code>--release kvm-host</code>, the disk delta and the ASID fix before trusting it.</li>
+</ul>
+
+<h2 id="limits">Known limits</h2>
+<ul>
+<li>One vCPU: switch counts are higher than on a multi-core machine.</li>
+<li>The user/kernel split is per time slice, in instructions, not cycles.</li>
+<li>The scheduler cost covers <code>__schedule</code> to <code>__switch_to</code> only.</li>
+<li>No cgroup or container names, and no command lines for processes that existed before the checkpoint.</li>
+<li>The task running at the restore is named only when it is first switched out.</li>
+<li>Reads are recorded without data, and only through <code>read</code> and <code>pread</code>; paths do not cross mount points.</li>
+<li>The tools fence is not active in the replay guests, so OpenCode and its tools share one cgroup set.</li>
+</ul>
+
+<footer>Generated from the project wiki (docs/wiki/) on branch gfdev. For how the tracer works inside, see the companion Task Tracer Design page. Corrections go into the wiki pages listed at the top; this page is then rebuilt.</footer>
+</div>
+</main>
+</div>
+
+<script>
+document.querySelectorAll('.codeblock').forEach(function (block) {
+  var btn = document.createElement('button');
+  btn.className = 'copy'; btn.type = 'button'; btn.textContent = 'Copy';
+  btn.addEventListener('click', function () {
+    var text = block.querySelector('pre').innerText;
+    var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    var fallback = function () {
+      var range = document.createRange(); range.selectNodeContents(block.querySelector('pre'));
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      btn.textContent = 'Selected';
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+  block.appendChild(btn);
+});
+</script>
