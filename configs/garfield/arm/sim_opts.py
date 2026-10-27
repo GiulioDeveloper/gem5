@@ -132,6 +132,14 @@ def add_common_args(
         "study; docs/wiki/hardware/infinite-l2-tlb.md).",
     )
     prefetch.add_argument(
+        "--cache-scale",
+        type=int,
+        default=1,
+        choices=(1, 2, 4, 8, 16),
+        help="Multiply the L1I, L1D and L2 sizes by N, keeping their "
+        "associativity and latencies (capacity limit study).",
+    )
+    prefetch.add_argument(
         "--disable-l1d-prefetch",
         action="store_true",
         help="Disable the L1D Stride+SMS prefetcher stack.",
@@ -360,6 +368,7 @@ def cache_kwargs(args):
         "enable_fdp": not args.disable_fdp,
         "enable_l1d_prefetch": not args.disable_l1d_prefetch,
         "enable_l2_prefetch": not args.disable_l2_prefetch,
+        "cache_scale": args.cache_scale,
     }
 
 
@@ -483,7 +492,8 @@ def _vp_banner(args):
 def describe(args):
     """The machine banner lines implied by the shared knobs."""
     return [
-        f"  caches   : L1I/L1D 64KiB, L2 2MiB | "
+        f"  caches   : L1I/L1D {64 * args.cache_scale}KiB, "
+        f"L2 {2 * args.cache_scale}MiB | "
         f"FDP={'off' if args.disable_fdp else 'on'}, "
         f"L1Dpf={'off' if args.disable_l1d_prefetch else 'on'}, "
         f"L2pf={'off' if args.disable_l2_prefetch else 'on'}, "

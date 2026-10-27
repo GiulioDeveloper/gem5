@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-10-21
+updated: 2026-10-22
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
   - "[[legacy-log/agentic/task-tracing-guide]]"
@@ -29,9 +29,11 @@ facts the trace can show ([[trace-analysis#Process labels]]).
 (pids from gin-2121 / framework-52684; they differ per task.)
 
 OpenCode's own threads: the main JS thread, `JITWorker`s, `Bun Pool N` (file
-I/O thread pool), `HTTP`. Most context switches in the agentic traces are
-**between OpenCode's threads** or **between the Docker CLI's threads**;
-fenced tools contribute few ([[context-switch-classification]]).
+I/O thread pool), `HTTP`. Over the 27 baseline windows OpenCode runs 42.5%
+of the instructions (main thread 35.2% at IPC 0.89, `JITWorker` 7.2%) and
+causes 14% of the context switches; the Docker CLI threads of the replay
+driver cause over half ([[2026-10-14-baseline-sweep]],
+[[2026-10-22-opencode-thread-breakdown]], [[context-switch-classification]]).
 
 ## Tool calls
 

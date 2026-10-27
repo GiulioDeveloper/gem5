@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-21
+updated: 2026-10-23
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
   - configs/garfield/arm/virt_run.py
@@ -33,5 +33,25 @@ once.
   `trace_analysis.load_blocks` treats a missing stat as 0.
 - Live-value stats (e.g. `InfiniteBTB` `entries`) are not reset between
   blocks; counters are ([[infinite-btb-model]]).
+
+## Values-only table: `stats.tsv.zst`
+
+`analysis_scripts/tasktrace/stats_table.py <run>/stats.txt` rewrites the
+dumps as a TSV with the stat names once (header row) and one row of values
+per dump, compressed with zstd. A stat a dump leaves out is written as 0;
+the percentage columns of distributions are dropped (they follow from the
+counts). It checks every value against the text file and then deletes
+`stats.txt` (`--keep` to keep it). `stats_table.dumps(run)` reads either
+form, and `trace_analysis.py`, `window_view.py` and the sweep tools use it,
+so they work unchanged on converted runs.
+
+| run | `stats.txt` (no descriptions) | `stats.tsv.zst` |
+|---|---|---|
+| fmt-3901 sweep window, 2,000 blocks, 4,618 stats | 637 MB | **8.5 MB** (75×), converted in 22 s, 110 MB of memory |
+| rubocop smoke test, 20 blocks | 6.6 MB | 0.12 MB (54×) |
+
+Checked on fmt-3901: `trace_analysis.py`, `window_view.py` and
+`sweep_summary.py` produce identical outputs from either form (apart from
+the run path). `pc-trace.sh` converts at the end of every run.
 
 How to combine blocks into window values: [[aggregating-metrics]].

@@ -40,6 +40,7 @@ from m5.objects import (
     TaggedPrefetcher,
 )
 from m5.params import NULL
+from m5.util.convert import toMemorySize
 
 from gem5.components.boards.abstract_board import AbstractBoard
 from gem5.components.cachehierarchies.classic.caches.mmu_cache import (
@@ -60,6 +61,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         enable_fdp: bool = True,
         enable_l1d_prefetch: bool = True,
         enable_l2_prefetch: bool = True,
+        cache_scale: int = 1,
     ) -> None:
         # Sizes here are unused (incorporate_cache builds the real caches
         # from the neoverse_v2 classes); passed for documentation only.
@@ -67,6 +69,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         self._enable_fdp = enable_fdp
         self._enable_l1d_prefetch = enable_l1d_prefetch
         self._enable_l2_prefetch = enable_l2_prefetch
+        self._cache_scale = cache_scale
 
     def incorporate_cache(self, board: AbstractBoard) -> None:
         num_cores = board.get_processor().get_num_cores()
@@ -80,6 +83,12 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         self.l2buses = [L2XBar() for _ in range(num_cores)]
         self.l2caches = [neoverse_v2.L2() for _ in range(num_cores)]
         self.mmucaches = [MMUCache(size="8KiB") for _ in range(num_cores)]
+
+        # Capacity limit study: more sets, same associativity and latency.
+        if self._cache_scale != 1:
+            for cache in self.l1icaches + self.l1dcaches + self.l2caches:
+                size = toMemorySize(str(cache.size))
+                cache.size = f"{size * self._cache_scale}B"
         self.mmubuses = [L2XBar(width=64) for _ in range(num_cores)]
 
         for i in range(num_cores):

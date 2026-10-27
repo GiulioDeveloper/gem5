@@ -1,7 +1,7 @@
 ---
 type: meta
 status: current
-updated: 2026-10-21
+updated: 2026-10-27
 ---
 
 # Published outputs
@@ -19,7 +19,8 @@ date.
 |---|---|---|---|---|---|
 | tracer-guide | users of the tracer (running, analysing, viewing, sweeping) | [[running-a-traced-window]], [[checkpoints]], [[task-tracer]], [[trace-format]], [[trace-analysis]], [[stats-blocks]], [[viewers]], [[sweeps]], [[run-and-analysis-scripts]], [[window-placement]], [[aggregating-metrics]], [[validation-checks]], [[instruction-counts]], [[context-switch-classification]] | https://claude.ai/artifact/41mPPZTSJuU7EZTC8qssCq | 2026-10-21 | committed together with this row |
 | tracer-design | collaborators (why and how it works, validation, findings so far) | [[task-tracer]], [[trace-format]], [[trace-analysis]], [[checkpoints]], [[validation-checks]], [[instruction-counts]], [[context-switch-classification]], [[gem5-tracing-under-kaslr]], [[functional-translation-perturbs]], [[replay-polling-in-measurement]], [[switch-cost-is-around-the-switch]], [[opencode-harness]] | https://claude.ai/artifact/Q3B6N7NjRqWv7ykGraqbgT | 2026-10-21 | committed together with this row |
+| long-runs-guide | users running and analysing multi-billion-instruction runs (launch, compaction, stall split, checks, comparisons, per-process views) | [[long-runs]], [[pc-trace]], [[stats-blocks]], [[run-and-analysis-scripts]], [[guest-trng-hvc-stall]], [[comparing-configurations]], [[aggregating-metrics]], [[2026-10-23-rubocop-15g-cache-btb-tlb]] | https://claude.ai/artifact/Q59pV5tfkzizJsRkw87vGH | 2026-10-27 | committed together with this row |
 
-Both pages are private artifacts: share them from the page's Share menu.
+All pages are private artifacts: share them from the page's Share menu.
 Rebuild by editing `docs/wiki/_publish/<name>.html` from the current source
 pages and publishing the same file path, which keeps the URL.

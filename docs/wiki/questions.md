@@ -1,7 +1,7 @@
 ---
 type: overview
 status: current
-updated: 2026-10-21
+updated: 2026-10-27
 sources:
   - "[[2026-10-16-btb-tlb-limit-study]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -34,6 +34,20 @@ here when answered, with a link.
 
 ## Workload and measurement
 
+- **Investigate the long-run guest hang** ([[guest-trng-hvc-stall]]):
+  the TRNG-HVC explanation is a hypothesis from one checkpoint. Confirm it
+  (the SMCCC function ID, why the stub loops, other checkpoints and their
+  hang times), then fix it: make gem5 answer (or refuse) the SMCCC TRNG
+  call at EL2, or change the guest. Also check
+  which sweep windows, if any, crossed a reseed deadline (a task trace that
+  ends early).
+- **PC-trace metrics of the 15G rubocop runs**: footprint and branches done
+  ([[2026-10-26-rubocop-instruction-footprint]]); still PC repeat distance; and whether OpenCode's lower MPKI in
+  slow configurations is polling ([[2026-10-23-rubocop-15g-cache-btb-tlb]]).
+- **Per-phase comparison of configurations** (tool calls, rounds) instead
+  of a fixed instruction count, since the work mix shifts
+  ([[comparing-configurations]]).
+
 - **How representative is one window per task?** Use the other 4 dumps of
   each task; see how the ceilings vary. ([[agentic-ipc-variability]])
 - **Agentic numbers without the replay driver's polling.** Report the sweep
@@ -45,6 +59,12 @@ here when answered, with a link.
   call per checkpoint so far, before the L2 TLB fix).
   ([[tool-call-runup-is-cold]])
 - **Effect of the single vCPU** on switch counts and costs.
+- **How much does the harness itself cost, and does the runtime matter?**
+  Compare harnesses (OpenCode on Bun, a Node.js harness, a native Rust
+  harness, a Python one) on the same tasks by instructions and cycles per
+  agent step, not by IPC; first with `perf` on real Arm hardware, before
+  capturing checkpoints. OpenCode's direct JIT share is ~7% of
+  instructions and ~8.5% of switches ([[2026-10-22-opencode-thread-breakdown]]).
 
 ## Tooling
 

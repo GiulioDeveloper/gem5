@@ -1,0 +1,370 @@
+<title>Long Runs Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: the lab-manual column of the tracer guides (same family), sticky contents rail on wide screens; one column on phones. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --fg: #18212b;
+  --muted: #566170;
+  --rule: #d8dde4;
+  --accent: #0e6a70;
+  --mark: #b0520c;
+  --code-bg: #eaeef2;
+  --keep: #0e6a70;
+  --drop: #c9d1da;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --s-1: 0.8125rem; --s0: 1rem; --s1: 1.25rem; --s2: 1.625rem; --s3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+    --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630;
+    --keep: #4fb8bd; --drop: #2f3a47;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+  --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630;
+  --keep: #4fb8bd; --drop: #2f3a47;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: var(--s0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 56px; } }
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: var(--s-1); }
+@media (max-width: 860px) { nav.toc { position: static; } }
+nav.toc .label { font-family: var(--f-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.72rem; margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+nav.toc a { color: var(--fg); text-decoration: none; display: block; padding: 2px 0 2px 10px; border-left: 2px solid var(--rule); }
+nav.toc a:hover, nav.toc a:focus-visible { border-left-color: var(--accent); color: var(--accent); }
+main { min-width: 0; }
+.doc { max-width: 72ch; }
+header.masthead { display: grid; gap: 10px; margin-bottom: 28px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: var(--s3); margin: 0; }
+h2 { font-size: var(--s2); margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+h3 { font-size: var(--s1); margin: 28px 0 8px; font-weight: 500; }
+p { margin: 0 0 14px; }
+.lede { font-size: 1.125rem; }
+.build { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); padding: 10px 12px; background: var(--surface); line-height: 1.5; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.875em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.codeblock { position: relative; margin: 0 0 16px; }
+.codeblock pre { margin: 0; overflow-x: auto; background: var(--code-bg); padding: 14px 16px; font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.55; border-left: 3px solid var(--accent); }
+.codeblock pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 6px; right: 6px; font-family: var(--f-mono); font-size: 0.7rem; background: var(--surface); color: var(--muted); border: 1px solid var(--rule); padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+.copy:hover, .copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.tablewrap { overflow-x: auto; margin: 0 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--f-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td code { white-space: nowrap; }
+ul, ol.steps { padding-left: 1.25rem; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+.note { border-left: 3px solid var(--mark); background: var(--surface); padding: 12px 14px; margin: 0 0 18px; font-size: 0.9375rem; }
+.note strong { color: var(--mark); }
+figure { margin: 8px 0 24px; }
+figure .fig { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: 12px; }
+figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: var(--s-1); color: var(--muted); margin-top: 8px; }
+.svg-text { fill: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.svg-label { fill: var(--fg); font-family: var(--f-mono); font-size: 11px; }
+.pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 20px; }
+@media (max-width: 760px) { .pipeline { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--surface); border: 1px solid var(--rule); padding: 12px 12px; min-width: 0; }
+.stage .n { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.06em; }
+.stage h4 { font-family: var(--f-display); font-weight: 600; margin: 4px 0 6px; font-size: 1.05rem; }
+.stage p { font-size: 0.8125rem; margin: 0; color: var(--muted); }
+.sizes { display: grid; gap: 14px; margin: 0 0 20px; }
+.size-row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 4px 12px; align-items: center; font-size: 0.875rem; }
+@media (max-width: 520px) { .size-row { grid-template-columns: minmax(0, 1fr); } }
+.size-row .what { font-weight: 500; }
+.bars { display: grid; gap: 4px; min-width: 0; }
+.bar { display: flex; align-items: center; gap: 8px; font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar span.fill { display: block; height: 12px; background: var(--drop); flex: none; }
+.bar.small span.fill { background: var(--keep); min-width: 3px; }
+footer { margin-top: 64px; font-size: var(--s-1); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="label">Contents</div>
+  <ol>
+    <li><a href="#what">What a long run is</a></li>
+    <li><a href="#need">Before you start</a></li>
+    <li><a href="#launch">1 · Launch</a></li>
+    <li><a href="#compact">2 · Compaction</a></li>
+    <li><a href="#stall">3 · Cut off a guest hang</a></li>
+    <li><a href="#check">4 · Check the data</a></li>
+    <li><a href="#analyse">5 · Analyse one run</a></li>
+    <li><a href="#compare">6 · Compare configurations</a></li>
+    <li><a href="#views">7 · Per-process views</a></li>
+    <li><a href="#footprint">8 · Code footprint</a></li>
+    <li><a href="#read">Reading the numbers</a></li>
+    <li><a href="#example">Worked example</a></li>
+    <li><a href="#cheat">All commands</a></li>
+  </ol>
+</nav>
+
+<main>
+<div class="doc">
+<header class="masthead">
+  <div class="eyebrow">gem5 fork · branch gfdev · agentic checkpoints</div>
+  <h1>Long Runs Guide</h1>
+  <p class="lede">How to simulate billions of instructions of an agentic task in detail, keep every committed instruction and every stats block in under a gigabyte, and turn the result into per-process numbers you can compare across core configurations.</p>
+  <div class="build">Built from the project wiki on 2026-10-27 (revised the same day: the guest hang marked as open), at commit 07fb4950bb plus the uncommitted long-run tools. Sources: docs/wiki/infrastructure/{long-runs, pc-trace, stats-blocks, run-and-analysis-scripts}.md, docs/wiki/pitfalls/guest-trng-hvc-stall.md, docs/wiki/methodology/{comparing-configurations, aggregating-metrics}.md, docs/wiki/experiments/2026-10-23-rubocop-15g-cache-btb-tlb.md. This page is generated: fix the wiki, then rebuild.</div>
+</header>
+
+<h2 id="what">What a long run is</h2>
+<p>A sweep window simulates 400 million instructions of a checkpoint in detail. That is a fraction of a second of the guest: one tool call, or part of an agent's think step. A <strong>long run</strong> simulates billions (15G in our first study), which covers whole agent rounds, several tool calls and the tests they launch. That lets you split the run by process and ask how the agent harness behaves against the tools it calls.</p>
+<p>The problem is volume. Left alone, gem5 would write about 20 GB of statistics text and, for the instruction trace, around 225 GB of gzipped Exec trace per run. The tools below keep a whole run under 1 GB, check themselves at every step, and read the compact files directly, so you never expand them.</p>
+
+<div class="pipeline" aria-label="Workflow">
+  <div class="stage"><div class="n">1 · LAUNCH</div><h4>pc-trace.sh</h4><p>Detailed run with the task tracer, the PC trace and stats blocks.</p></div>
+  <div class="stage"><div class="n">2 · COMPACT</div><h4>automatic</h4><p>Exec trace reduced live; stats turned into a table at the end.</p></div>
+  <div class="stage"><div class="n">3 · CUT</div><h4>split_stall.sh</h4><p>Moves a guest hang at the end of the run aside.</p></div>
+  <div class="stage"><div class="n">4 · CHECK</div><h4>check_pc_slices.sh</h4><p>Traces and stats agree, slice by slice.</p></div>
+  <div class="stage"><div class="n">5–8 · ANALYSE</div><h4>compare_runs.sh</h4><p>Per run, across configurations, per process, code footprint.</p></div>
+</div>
+
+<h2 id="need">Before you start</h2>
+<ul>
+  <li><strong>Python 3.14 or newer</strong> for the readers of the compressed files (they use the built-in <code>compression.zstd</code>). The launcher picks the interpreter from <code>PY=</code>.</li>
+  <li>The <code>zstd</code> command-line tool, for the stall split and the slice check.</li>
+  <li>A built <code>build/ARM/gem5.opt</code> and the checkpoints in <code>/home/snapshots/gem5-ckpts</code> (or <code>CKPTS=</code>).</li>
+  <li><strong>A possible hang.</strong> Plan for the run to stop doing useful work partway through (step 3). Until that is understood, watch <code>run.log</code>: an IPC near 0.008 that never recovers means the guest has hung, and you can stop the run.</li>
+  <li><strong>Time and memory.</strong> About 30 hours per 15G instructions, and up to ~9 GB of memory per run by the end. Six runs at once used ~51 GB.</li>
+  <li>Run every command from the repository root. Put launch scripts and outputs under <code>runs/</code>, which git ignores.</li>
+</ul>
+
+<h2 id="launch">1 · Launch</h2>
+<div class="codeblock"><pre><code>OUTDIR=runs/my-study/baseline O3="1 20000000 15000000000" \
+    run_scripts/tasktrace/pc-trace.sh rubocop-13560 0 \
+    --stats-interval-insts 200000</code></pre></div>
+<p><code>O3=</code> gives the three phases: settle on the atomic core (1 instruction), warm the caches (20M), then the detailed region (15G). The task name is the checkpoint name without <code>agentic-</code>; the <code>0</code> is ignored when <code>O3</code> is set. Everything after it goes to the gem5 config script, so configuration flags go there too, for example <code>--cache-scale 4</code> or <code>--infinite-btb --infinite-tlb</code>.</p>
+<p><code>--stats-interval-insts 200000</code> dumps gem5's statistics every 200K instructions. Each of these <em>stats blocks</em> lines up exactly with the task trace, which is what lets you attribute misses to processes later. 200K is fine-grained enough to see the cost of a context switch; larger blocks blur it.</p>
+<p><strong>Several configurations at once:</strong> start each run with <code>setsid nohup … &amp;</code> and wait a minute or two between starts, so the restores do not all claim memory at the same moment. <code>runs/rubocop-15G/launch.sh</code> is a working example that launches six.</p>
+
+<h3>What to expect</h3>
+<div class="tablewrap"><table>
+<thead><tr><th></th><th>measured on six 15G rubocop runs</th></tr></thead>
+<tbody>
+<tr><td>speed</td><td>124–176K instructions per second; ~22K/s while the guest is hung</td></tr>
+<tr><td>wall time</td><td>30–33 h without a hang, 40 h or more with one</td></tr>
+<tr><td>memory</td><td>~3 GB at the start, ~8.6 GB at the end (the guest touches more memory as it goes)</td></tr>
+<tr><td>progress</td><td><code>run.log</code> prints the committed instruction count and IPC every 10 kHz of simulated time</td></tr>
+</tbody></table></div>
+
+<h3>Stopping a run early</h3>
+<p>Send <code>SIGTERM</code> to the <strong>gem5 process</strong>, not to the launcher script. gem5 exits, and the launcher then finishes the PC trace and converts the statistics as it would at a normal end. Two of our six runs were stopped this way after 42 hours, and both ended with complete, checked files.</p>
+
+<h2 id="compact">2 · Compaction (automatic)</h2>
+<p>You do not run anything for this step. It is worth knowing what happens, because the files you get are not the ones gem5 normally writes.</p>
+<div class="sizes" aria-label="Sizes per 15G-instruction run">
+  <div class="size-row"><div class="what">Statistics</div>
+    <div class="bars">
+      <div class="bar"><span class="fill" style="width:min(70%, 22rem)"></span>stats.txt · 20–22 GB</div>
+      <div class="bar small"><span class="fill" style="width:calc(min(70%, 22rem) * 0.012)"></span>stats.tsv.zst · 0.25–0.28 GB</div>
+    </div></div>
+  <div class="size-row"><div class="what">Instruction trace</div>
+    <div class="bars">
+      <div class="bar"><span class="fill" style="width:min(70%, 22rem)"></span>gzipped Exec trace · ~225 GB (never written)</div>
+      <div class="bar small"><span class="fill" style="width:calc(min(70%, 22rem) * 0.0024)"></span>pc_trace.zst · 0.37–0.54 GB</div>
+    </div></div>
+</div>
+<h3>The statistics table: <code>stats.tsv.zst</code></h3>
+<p>gem5 writes every stat name again in every block, which is most of the 20 GB. At the end of the run the launcher calls <code>stats_table.py</code>, which writes the names once as a header and then one row of numbers per block, compressed with zstd. Before deleting <code>stats.txt</code> it reads both files back and compares every value; the run log then says <code>checked</code>. All six 15G runs converted 80–83× smaller. Every analysis script reads either form, so you rarely notice the difference. Set <code>KEEP_STATS=1</code> to keep the text file too.</p>
+<h3>The PC trace: <code>pc_trace.zst</code></h3>
+<p>gem5's Exec trace prints a long line for every instruction. Instead, gem5 writes it into a named pipe, and <code>pc_trace.py</code> reads it as it comes and keeps one short line per committed instruction: the address only when the program jumped (otherwise it is the previous address plus 4), and the instruction's name. Every time the guest switches tasks, it inserts a marker naming the task that runs next. The result is about 0.035 bytes per instruction, and it rebuilds the exact sequence of committed addresses. You can read it in Python with <code>pc_trace.read_pc_trace(path)</code>.</p>
+
+<h2 id="stall">3 · Cut off a guest hang</h2>
+<div class="note"><strong>Long runs can hang, and we do not fully understand why yet.</strong> Four of our six 15G rubocop runs stopped doing useful work at the same moment, about 4.6 simulated seconds after the restore; the two fastest configurations finished first. From then on the guest runs one kernel thread in a spin and never switches tasks, and gem5 slows to ~22K instructions per second. Our working hypothesis is that the kernel's first reseed of its random number generator asks the firmware for random bits and the call lands in a stub that loops forever. That comes from one checkpoint's trace and is <em>not confirmed</em>: which checkpoints hang, when, and how to prevent it are open questions for a future investigation. Cutting the hang off, below, is a workaround that lets you analyse the useful part of a run, not a fix.</div>
+<p>Before analysing a run, move the hung part out of the way:</p>
+<div class="codeblock"><pre><code>analysis_scripts/tasktrace/split_stall.sh runs/my-study/baseline</code></pre></div>
+<p>Because the cause is not settled, the script does not look for any particular cause. It finds the hang from the data: the run kept going for more than 0.1 simulated seconds after the task trace's last event (<code>STALL_MIN=</code> changes the threshold). The stats blocks before it stay where they are; the rest move to <code>&lt;run&gt;/stall/</code>, and the PC trace is cut at its last task marker. It deletes the original files only when the blocks, stats rows and PC-trace instructions of both parts add up exactly, and records the split in <code>stall/SPLIT.txt</code>. A run that did not hang is left untouched, so it is safe to run on every run.</p>
+<p>It needs the statistics as a table and refuses to run while a <code>stats.txt</code> is still present, since the readers would pick the text file and ignore the split.</p>
+
+<h2 id="check">4 · Check the data</h2>
+<p>Three independent records describe the same run: the task trace (who ran, with instruction counts), the PC trace (every instruction) and the stats blocks. These checks confirm that they agree.</p>
+<div class="codeblock"><pre><code>analysis_scripts/tasktrace/check_pc_slices.sh runs/my-study/baseline</code></pre></div>
+<p>This counts the instructions between every two task markers of the PC trace and compares them with the task trace's count between the same two context switches. Every slice should match; the output reads like <code>slices equal without NOPs 22631, equal with NOPs 0, different 0</code>. (On the detailed O3 core, the tracer's count leaves out NOP instructions, so the matches appear under "without NOPs".) It exits with an error if any slice differs, and takes about 10 minutes per 15G instructions.</p>
+<p>Two more checks run on their own: <code>trace_analysis.py</code> prints how far gem5's user-mode share per block is from the trace's (around 0.05 is normal), and <code>pc_footprint.py</code> checks the instruction count at every task marker as it goes.</p>
+
+<h2 id="analyse">5 · Analyse one run</h2>
+<div class="codeblock"><pre><code>python3 analysis_scripts/tasktrace/trace_analysis.py runs/my-study/baseline
+python3 analysis_scripts/tasktrace/window_view.py runs/my-study/baseline</code></pre></div>
+<p>Both write to <code>&lt;run&gt;/analysis/</code>. <code>trace_analysis.py</code> works out who ran when, the tool calls, and a table of the stats blocks (<code>blocks.csv</code>: IPC, user-mode share and miss rates per block, and which process filled it). <code>window_view.py</code> builds <code>window.html</code>, an interactive page with the per-block metrics and the trace's events on the same axis. Both stream the statistics, so a 75,000-block run needs little memory.</p>
+
+<h2 id="compare">6 · Compare configurations</h2>
+<p>For one checkpoint run under several configurations (a limit study, a cache sweep), one script does steps 5 and 7 for every run and compares them:</p>
+<div class="codeblock"><pre><code>analysis_scripts/tasktrace/compare_runs.sh runs/my-study/compare \
+    runs/my-study/baseline runs/my-study/cache4x runs/my-study/cache8x</code></pre></div>
+<ul>
+  <li>The run directory names become the labels, and the <strong>first run is the baseline</strong>.</li>
+  <li>Each run gets its own analysis (step 5).</li>
+  <li>A <strong>common region</strong>, the first N blocks of every run (N = the shortest run), goes through the sweep tools: <code>OUT/compare/</code> has every metric per configuration and its change against the baseline, as a CSV and an HTML page.</li>
+  <li>The per-process views (step 7) go to <code>OUT/process_views.csv</code>, with an IPC summary in <code>OUT/process_views.txt</code>.</li>
+</ul>
+<div class="note"><strong>Same instructions, different work.</strong> The guest's agent session runs on wall-clock time: timeouts, polling, waiting for Docker. A faster core gets further into the session in the same number of instructions, so the common region of a fast configuration contains more tool work and less waiting. On rubocop the tools' share of instructions grew from 3.6% in the baseline to 19.5% in the fastest configuration. Whole-region numbers therefore mix the effect of the hardware with a change of workload. Compare per process (next step) instead.</div>
+
+<h2 id="views">7 · Per-process views</h2>
+<div class="codeblock"><pre><code>python3 analysis_scripts/tasktrace/process_views.py \
+    runs/my-study/baseline runs/my-study/cache8x -o views.csv</code></pre></div>
+<p>The run is cut at every context switch, and each slice goes to the task that ran in it. Tasks are grouped by who launched them:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>group</th><th>what is in it</th></tr></thead>
+<tbody>
+<tr><td>harness</td><td>OpenCode, all its threads, and what it launches itself outside a tool call (its git snapshots)</td></tr>
+<tr><td>tools</td><td>everything started by a tool call: processes under <code>bash.fence-real</code> or <code>rg.fence-real</code>, the wrappers of OpenCode's shell and search tools (for rubocop: <code>bundle</code>, <code>ruby</code>, <code>gem</code>, …)</td></tr>
+<tr><td>driver</td><td>the replay driver (<code>run.sh</code> and its children) and the Docker daemons. This is our replay machinery, not part of the agent, so it is kept apart.</td></tr>
+<tr><td>other</td><td>every other user process</td></tr>
+<tr><td>kernel</td><td>kernel threads and the idle task</td></tr>
+</tbody></table></div>
+<p>For each group and each process you get: the share of time and of instructions, the split between user and kernel mode, IPC, and misses per 1,000 instructions (L1I, L1D, L2, branch, BTB, iTLB, dTLB). Each comes in four <strong>views</strong> that answer "how much of this is the cost of being switched in and out?":</p>
+<figure>
+  <div class="fig">
+  <svg viewBox="0 0 640 196" role="img" aria-label="Which stats blocks each view keeps from one run of a process: all keeps the whole slice; skip1 drops the two edge blocks that hold the switches; skip3 drops three blocks at each end; skip6 drops six at each end.">
+    <text class="svg-label" x="8" y="22">view</text>
+    <text class="svg-text" x="96" y="22">one run of a process: 14 stats blocks of 200K instructions, from switch in to switch out</text>
+    <!-- rows: all, skip1, skip3, skip6; 14 blocks from x=96, width 36 -->
+    <g id="rows"></g>
+    <line x1="114" y1="32" x2="114" y2="168" stroke="var(--mark)" stroke-width="2" stroke-dasharray="4 3"></line>
+    <line x1="582" y1="32" x2="582" y2="168" stroke="var(--mark)" stroke-width="2" stroke-dasharray="4 3"></line>
+    <text class="svg-text" x="114" y="186" text-anchor="middle">switch in</text>
+    <text class="svg-text" x="582" y="186" text-anchor="middle">switch out</text>
+  </svg>
+  </div>
+  <figcaption>Filled: what each view keeps. <code>all</code> takes the slice exactly, from switch to switch. The trimmed views keep only whole blocks, dropping 1, 3 or 6 at each end. A short run of a process can lose all its blocks in <code>skip6</code>.</figcaption>
+</figure>
+<ul>
+  <li><strong>all</strong>: every slice, whole. IPC and the user/kernel split are exact, from the trace's own cycle and instruction counts; misses are shared out from the stats blocks by instruction overlap.</li>
+  <li><strong>skip1</strong>: drops the block holding the switch in and the one holding the switch out.</li>
+  <li><strong>skip3</strong>, <strong>skip6</strong>: drop 3 or 6 blocks at each end, so the first 0.6M or 1.2M instructions after the process is switched in and the same before it is switched out.</li>
+</ul>
+<p>The gap between <code>all</code> and the trimmed views is the cost of running next to a switch: cold caches, branch predictors and TLBs after another process has used them. A group's numbers are the sum of its processes, so the harness is also trimmed where OpenCode hands over to its own git snapshots.</p>
+
+<h2 id="footprint">8 · Code footprint</h2>
+<div class="codeblock"><pre><code>python3 analysis_scripts/tasktrace/pc_footprint.py runs/my-study/cache8x</code></pre></div>
+<p>From the PC trace alone, independent of the simulated caches: how much code each process, PID and thread runs (distinct instructions, cache lines and pages), how that compares with the L1I and L2 sizes, the hit rate a fully associative LRU cache of each size would get, how soon each instruction repeats, and how many distinct branches there are by type. Output in <code>&lt;run&gt;/footprint/</code>, including <code>report.html</code>, a per-thread page. Since the code a run executes barely depends on the core configuration, one run per checkpoint is enough. It takes 15–45 minutes and up to 8 GB of memory per 15G instructions.</p>
+
+<h2 id="read">Reading the numbers</h2>
+<ul>
+  <li><strong>Sum, then divide.</strong> Window IPC is total instructions over total cycles. The average of per-block IPCs is higher (1.147 against 0.921 for the rubocop baseline), because fast blocks and slow blocks have the same number of instructions.</li>
+  <li><strong>Compare per process, not per window</strong>, for the work-mix reason above.</li>
+  <li><strong>Trimmed views of small groups are noisy.</strong> Tools and kernel threads run in short bursts; <code>skip6</code> may keep only a handful of blocks, or none. The CSV gives the number of kept blocks.</li>
+  <li>The PC trace reducer warns about "switch ticks before their Exec tick" (46–68 per 15G run). On the O3 core that is expected and does not affect the result.</li>
+  <li>The PC trace has committed instructions only: no wrong-path fetches.</li>
+</ul>
+
+<h2 id="example">Worked example: rubocop, 15G instructions, six configurations</h2>
+<p>The first study with these tools ran rubocop-13560 under six configurations: the baseline, an infinite BTB with an infinite L2 TLB, and both of those with caches ×4 and ×8 larger. Group IPC per slice, before the hang, and its change against the baseline:</p>
+<div class="tablewrap"><table>
+<thead><tr><th>group</th><th class="num">time</th><th class="num">baseline</th><th class="num">inf. BTB+TLB</th><th class="num">caches ×8</th><th class="num">both, ×8</th></tr></thead>
+<tbody>
+<tr><td>whole task</td><td class="num">100%</td><td class="num">0.909</td><td class="num">+9.8%</td><td class="num">+27.2%</td><td class="num">+32.5%</td></tr>
+<tr><td>harness</td><td class="num">73.9%</td><td class="num">0.923</td><td class="num">+7.9%</td><td class="num">+21.4%</td><td class="num">+27.3%</td></tr>
+<tr><td>tools</td><td class="num">2.8%</td><td class="num">1.147</td><td class="num">+10.7%</td><td class="num">+34.3%</td><td class="num">+38.4%</td></tr>
+<tr><td>driver and Docker</td><td class="num">20.7%</td><td class="num">0.891</td><td class="num">+7.3%</td><td class="num">+19.5%</td><td class="num">+23.5%</td></tr>
+</tbody></table></div>
+<p>The tools run about a quarter faster than the harness and gain more from every configuration. Trimming 3 blocks at each switch raises the baseline IPC by 11% and lowers the gains (the infinite BTB+TLB from +9.8% to +6.5% over the whole task), so a good part of what these structures buy is faster recovery after a switch. These are results from one task and should be read as such. Details are on the experiment's wiki page, <code>docs/wiki/experiments/2026-10-23-rubocop-15g-cache-btb-tlb.md</code>.</p>
+
+<h2 id="cheat">All commands</h2>
+<p>For a study with a baseline and two configurations, from the repository root:</p>
+<div class="codeblock"><pre><code># 1. launch (one per configuration; ~30 h each for 15G)
+mkdir -p runs/my-study
+for c in baseline:"" cache4x:"--cache-scale 4" cache8x:"--cache-scale 8"; do
+    name=${c%%:*} flags=${c#*:}
+    OUTDIR=runs/my-study/$name O3="1 20000000 15000000000" setsid nohup \
+        run_scripts/tasktrace/pc-trace.sh rubocop-13560 0 \
+        --stats-interval-insts 200000 $flags > runs/my-study/$name.log 2>&amp;1 &lt; /dev/null &amp;
+    sleep 90
+done
+
+# 2. compaction happens at the end of each run; look for "checked"
+grep checked runs/my-study/*.log
+
+# 3. cut off the guest hang (no-op on runs that did not hang)
+for r in runs/my-study/{baseline,cache4x,cache8x}; do
+    analysis_scripts/tasktrace/split_stall.sh $r
+done
+
+# 4. check the PC trace against the task trace
+for r in runs/my-study/{baseline,cache4x,cache8x}; do
+    analysis_scripts/tasktrace/check_pc_slices.sh $r
+done
+
+# 5-7. per-run analysis, comparison, per-process views
+analysis_scripts/tasktrace/compare_runs.sh runs/my-study/compare \
+    runs/my-study/baseline runs/my-study/cache4x runs/my-study/cache8x
+
+# 8. code footprint, on one run
+python3 analysis_scripts/tasktrace/pc_footprint.py runs/my-study/baseline</code></pre></div>
+
+<footer>Generated from the project wiki (docs/wiki/) on branch gfdev. Companion pages: the Task Tracer Guide (running and reading traced windows) and the Task Tracer Design page. Corrections go into the wiki pages listed at the top; this page is then rebuilt.</footer>
+</div>
+</main>
+</div>
+
+<script>
+(function () {
+  var g = document.getElementById('rows');
+  var ns = 'http://www.w3.org/2000/svg';
+  var views = [['all', 0], ['skip1', 1], ['skip3', 3], ['skip6', 6]];
+  var x0 = 96, w = 36, n = 14;
+  views.forEach(function (v, r) {
+    var y = 38 + r * 34;
+    var t = document.createElementNS(ns, 'text');
+    t.setAttribute('class', 'svg-label'); t.setAttribute('x', 8); t.setAttribute('y', y + 15);
+    t.textContent = v[0]; g.appendChild(t);
+    for (var i = 0; i < n; i++) {
+      var keep = v[1] === 0 ? true : (i >= v[1] && i <= n - 1 - v[1]);
+      var rect = document.createElementNS(ns, 'rect');
+      rect.setAttribute('x', x0 + i * w + 1); rect.setAttribute('y', y);
+      rect.setAttribute('width', w - 2); rect.setAttribute('height', 22);
+      rect.setAttribute('fill', keep ? 'var(--keep)' : 'var(--drop)');
+      g.appendChild(rect);
+    }
+    if (v[1] === 0) {
+      // "all" is the slice itself: from the switch in (mid block 0) to the switch out (mid block 13)
+      [[x0, 18], [x0 + 13 * w + 18, 18]].forEach(function (p) {
+        var m = document.createElementNS(ns, 'rect');
+        m.setAttribute('x', p[0] + 1); m.setAttribute('y', y);
+        m.setAttribute('width', p[1] - 1); m.setAttribute('height', 22);
+        m.setAttribute('fill', 'var(--drop)'); g.appendChild(m);
+      });
+    }
+  });
+})();
+document.querySelectorAll('.codeblock').forEach(function (block) {
+  var btn = document.createElement('button');
+  btn.className = 'copy'; btn.type = 'button'; btn.textContent = 'Copy';
+  btn.addEventListener('click', function () {
+    var text = block.querySelector('pre').innerText;
+    var done = function () { btn.textContent = 'Copied'; setTimeout(function () { btn.textContent = 'Copy'; }, 1500); };
+    var fallback = function () {
+      var range = document.createRange(); range.selectNodeContents(block.querySelector('pre'));
+      var sel = window.getSelection(); sel.removeAllRanges(); sel.addRange(range);
+      btn.textContent = 'Selected';
+    };
+    try { navigator.clipboard.writeText(text).then(done, fallback); } catch (e) { fallback(); }
+  });
+  block.appendChild(btn);
+});
+</script>

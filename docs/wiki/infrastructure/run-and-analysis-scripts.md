@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-21
+updated: 2026-10-27
 sources:
   - run_scripts/README.md
   - analysis_scripts/README.md
@@ -30,6 +30,7 @@ this page is the reference.
 | `tasktrace/spec-window.sh BENCH SETTLE WARMUP DETAILED INTERVAL [TAG] [args]` | same for SPEC | |
 | `tasktrace/sweep.sh`, `tasktrace/smart_sweep.sh` | every checkpoint ([[sweeps]]) | one config across the suites (prefer smart) |
 | `tasktrace/o3-pair.sh [task] [warmup] [detailed]` | same window without and with `--task-trace`, diff `stats.txt`; `PAIR_ON_ARGS=` for a determinism check | after any tracer change |
+| `tasktrace/pc-trace.sh TASK MAX_INSTS [args]` | atomic restore (or an O3 window with `O3=`) streaming the Exec trace into `pc_trace.py`, storing only the compact PC trace; converts the stats to a table at the end | footprint, branch and repeat-distance studies ([[pc-trace]]); long runs ([[long-runs]]) |
 | `tasktrace/landing-all.sh [insts] [parallel]` | landing check over every checkpoint (`TASKS=` limits) | new checkpoints, slide or task-reading changes |
 
 How to choose the window numbers: [[running-a-traced-window]].
@@ -45,6 +46,12 @@ They import each other from that folder, so keep them together.
 | `window_view.py <run>` + `window_view.html` | [[viewers]] |
 | `sweep_summary.py <sweep>` + `sweep_view.html`, `sweep_compare.py A B ...` | [[sweeps]] |
 | `landing_summary.py <landing run> <checkpoints>` | [[validation-checks]] |
+| `pc_trace.py reduce/verify` | [[pc-trace]] |
+| `pc_footprint.py <run>` | instruction footprint, LRU hit rates, repeat distance and branches per process, PID and thread from a PC trace, plus the per-thread `report.html` ([[pc-trace#Footprint, hit rates and branches]]) |
+| `pc_footprint_report.py <run>/footprint` | rebuilds the per-thread `report.html` from an existing output |
+| `stats_table.py <run>/stats.txt` | [[stats-blocks]] |
+| `split_stall.sh <run>`, `check_pc_slices.sh <run>` | [[long-runs]] |
+| `compare_runs.sh OUT RUN RUN ...`, `process_views.py RUN ... -o OUT.csv` | [[long-runs]] |
 
 The sweep scripts run the per-run tools themselves; run them by hand only
 to regenerate outputs after changing a script.

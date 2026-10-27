@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-10-21
+updated: 2026-10-25
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - configs/garfield/arm/cache_hierarchy.py
@@ -68,6 +68,7 @@ walks. TLBs: [[tlb-hierarchy]] (48-entry L1 iTLB and dTLB, 2,048-entry
 | `--disable-l1d-prefetch`, `--disable-l2-prefetch` | detach those prefetchers |
 | `--infinite-btb` | [[infinite-btb-model]] instead of the 12K BTB |
 | `--infinite-tlb` | [[infinite-l2-tlb]] instead of the 2K L2 TLB |
+| `--cache-scale N` (1, 2, 4, 8, 16) | multiplies the L1I, L1D and L2 sizes by N (more sets; associativity and latencies unchanged); first used in [[2026-10-23-rubocop-15g-cache-btb-tlb]] |
 | `--clk-freq`, `--mem-type`, `--mem-size` | clock, DRAM preset, guest RAM (must match the checkpoint) |
 | `--progress-interval` | heartbeat with IPC and KIPS; always use `10kHz` on restores |
 

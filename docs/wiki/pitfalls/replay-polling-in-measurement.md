@@ -1,7 +1,7 @@
 ---
 type: pitfall
 status: current
-updated: 2026-10-21
+updated: 2026-10-22
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
 tags: [agentic, replay, measurement]
@@ -21,7 +21,9 @@ it shares the single vCPU with OpenCode. In the trace it is the host
 
 **Size:** 17–22% of instructions in the traces so far (gin-2121 17%,
 framework-52684 21.6%, redis window 22%, jq window 12%); 22–23% of a tool
-call's span; 26% of framework-52684's context switches. Because the poll
+call's span; 26% of framework-52684's context switches, and over half of
+all switches across the 27 baseline windows (7,557 within `docker` alone,
+of 18,112; [[2026-10-22-opencode-thread-breakdown]]). Because the poll
 period is in simulated time, a slower simulated core polls more per unit of
 work.
 

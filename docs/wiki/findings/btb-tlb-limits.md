@@ -1,9 +1,10 @@
 ---
 type: finding
 status: current
-updated: 2026-10-21
+updated: 2026-10-25
 sources:
   - "[[2026-10-16-btb-tlb-limit-study]]"
+  - "[[2026-10-23-rubocop-15g-cache-btb-tlb]]"
 tags: [btb, tlb, limit-study, front-end]
 ---
 
@@ -42,6 +43,12 @@ task gains with both (+0.3% to +13.2%). SPEC's median moves by 0.1%.
   714.cpython_r *loses* 3.4% with the infinite BTB (unexplained).
 - Top agentic gainers with both: redis +13.2%, rubocop +11.9%, framework
   +11.6%.
+
+- **Long run, one task** ([[2026-10-23-rubocop-15g-cache-btb-tlb]], 12–15G
+  instructions of rubocop): both together gain +2–11% per process (+7%
+  for OpenCode, +9.8% over the whole common region). ×8 L1/L2 caches gain
+  more (+12–25% per process), and the two add up. Whole-window comparisons
+  there are confounded by a shift in work mix.
 
 Models: [[infinite-btb-model]], [[infinite-l2-tlb]]. Context:
 [[agentic-front-end-bound]].

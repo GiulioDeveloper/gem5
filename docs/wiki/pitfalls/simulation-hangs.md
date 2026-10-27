@@ -1,7 +1,7 @@
 ---
 type: pitfall
 status: current
-updated: 2026-10-21
+updated: 2026-10-27
 sources:
   - "[[legacy-log/commit-notes/20260627-202307-add-rob-head-deadlock-detector]]"
   - "[[legacy-log/commit-notes/20260804-064438-fix-fdp-infinite-loop-on-last-block-fetch-target]]"
@@ -27,6 +27,14 @@ stuck inside one tick. Without a guard it just runs slowly forever.
   not covered.
 - **`--progress-interval 10kHz`** on every restore: a heartbeat with IPC
   and KIPS, so a stalled or crawling run is visible.
+
+## Guest-side livelock (cause under investigation)
+
+A guest can also loop forever while gem5 is fine: a few simulated seconds
+after a restore, the agentic guests can end up spinning in the EL2 hyp
+stub ([[guest-trng-hvc-stall]]; that the first RNG reseed triggers it is a
+hypothesis still to confirm). Instructions keep committing, so the watchdog
+stays quiet; the sign is a silent task trace and IPC ≈ 0.008.
 
 ## Fixed hang: FDP block walk past MaxAddr (2026-08-04)
 

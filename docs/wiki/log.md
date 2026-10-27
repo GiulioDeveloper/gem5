@@ -110,3 +110,157 @@ the wiki:
   limits, extending.
 
 The source HTML is in `docs/wiki/_publish/`.
+
+## [2026-10-22] query | Is OpenCode's JIT runtime the problem?
+
+The user asked whether OpenCode's JIT causes most context switches and
+whether JIT-compiled TypeScript is known to be slow on the core.
+Re-analysed the baseline sweep traces:
+[[2026-10-22-opencode-thread-breakdown]]. OpenCode runs 42.5% of the
+instructions and causes 14% of the switches (`JITWorker` 7.2% and ~8.5%);
+the Docker polling of the replay driver causes over half. Updated
+[[opencode-harness]], [[replay-polling-in-measurement]], [[questions]].
+
+## [2026-10-23] ingest | PC trace for footprint and branch studies
+
+At the user's request (no gem5 changes): `analysis_scripts/tasktrace/pc_trace.py`
+reduces gem5's Exec trace to one line per committed instruction (address
+only when not PC+4, plus the mnemonic) with task markers joined by tick
+from the task tracer; `run_scripts/tasktrace/pc-trace.sh` streams the Exec
+trace through a named pipe so only the reduced file is stored. Validated on
+gin-2121 (2M instructions): exact PC-for-PC expansion, tracer counts match,
+138 KB vs 30 MB. Found that the full `Exec` flag set includes
+`ExecFaulting`, which adds instructions that did not commit. New page
+[[pc-trace]]; updated [[run-and-analysis-scripts]], [[index]] and the two
+script READMEs.
+
+## [2026-10-23] fix | PC trace joins tasks by PC, works on O3
+
+`pc_trace.py` now places task markers at each committed instruction at
+`__switch_to`'s slid address instead of by tick: O3's Exec lines carry the
+fetch tick (4–99 ns before the tracer's commit tick in the check), which
+would misplace markers. `pc-trace.sh` gained `O3="SETTLE WARMUP DETAILED"`.
+Checked on atomic (unchanged result) and on an O3 window (exact PC stream;
+slice count equal to the tracer's without NOPs). Updated [[pc-trace]].
+
+## [2026-10-23] experiment | PC-trace smoke test on rubocop (O3)
+
+`pc-trace.sh` gained `GEM5_OPTS` (default: stats without descriptions).
+Smoke test on rubocop-13560, 1 + 1M + 20M O3 instructions in 1M blocks:
+181K instructions/s, 2.7 GB peak, 0.041 bytes per instruction of PC trace,
+62/62 switches joined, 61/61 slices equal to the tracer's count without
+NOPs. Planning numbers for a 15G run are in [[pc-trace]].
+
+## [2026-10-23] ingest | Stats as a values-only table
+
+`analysis_scripts/tasktrace/stats_table.py` converts `stats.txt` to
+`stats.tsv.zst` (names once, one row of values per dump; checked, then the
+text deleted): 637 MB → 8.5 MB on a sweep window. `trace_analysis.py`,
+`window_view.py` and the sweep tools read either form (outputs identical on
+fmt-3901); `pc-trace.sh` converts at the end of each run. Updated
+[[stats-blocks]], [[pc-trace]], [[run-and-analysis-scripts]].
+
+## [2026-10-25] experiment | rubocop 15G: caches ×1/×4/×8 × infinite BTB+TLB
+
+Six 15G-instruction O3 runs of rubocop-13560 with PC traces and 200K
+blocks (new `--cache-scale` in `sim_opts.py`). All runs hit a guest stall
+at tick ≈ 4.6228e12; the two ×8 runs finished before it, `normal` and
+`infbtbtlb` were stopped. Stall parts moved to `<run>/stall/`. The
+configurations do different work over the same instructions (the Ruby test
+run grows from 3% to 16%), so per-process comparison is the main result:
+×8 caches +12–25% IPC, infinite BTB+TLB +2–11%, additive. New
+[[2026-10-23-rubocop-15g-cache-btb-tlb]]; updated [[btb-tlb-limits]],
+[[comparing-configurations]], [[neoverse-v2]], [[pc-trace]], [[questions]].
+`trace_analysis.load_blocks` now streams the stats dumps (a 75K-block run
+does not fit in memory as dicts).
+
+## [2026-10-25] ingest | Guest stall: TRNG HVC into the EL2 hyp stub
+
+From the stall's PC trace: `crng_reseed` (timer-driven kworker) →
+`arch_get_random_seed_longs` → SMCCC TRNG over HVC → the kernel's hyp stub
+at EL2 (`0x41068000`), which loops at its current-EL sync vector forever.
+New pitfall [[guest-trng-hvc-stall]]; linked from [[simulation-hangs]].
+
+## [2026-10-26] experiment | Instruction footprint per process (rubocop 15G)
+
+New `analysis_scripts/tasktrace/pc_footprint.py` (+ `pc_footprint.cc`):
+one pass over a PC trace for distinct instructions/lines/pages, LRU stack
+distances (private and shared) at the L1I/L2 sizes, and distinct branches
+by type, per process name with execs placed exactly. On cache8x: OpenCode
+has ~10 MB of code but fits an 8 MB L2; the rest fits 512K–2M; docker and
+git misses are cold. New [[2026-10-26-rubocop-instruction-footprint]];
+updated [[pc-trace]], [[run-and-analysis-scripts]], [[questions]],
+[[index]].
+
+## [2026-10-26] experiment | Footprint per PID and aggregated by name
+
+`pc_footprint.py` now reports three views: per PID (`instances.csv`), per
+name with each process separate, and per name with same-name processes
+sharing addresses. On rubocop cache8x the aggregation barely shrinks
+docker's and git's code (overlap 0.98–0.99): runs load at randomized
+addresses, so cross-run sharing needs load addresses. Updated
+[[2026-10-26-rubocop-instruction-footprint]], [[pc-trace]].
+
+## [2026-10-27] experiment | Footprint per thread, repeat distance per PC
+
+`pc_footprint.py` now also reports per thread (each thread's user and
+kernel code on its own), with the repeat distance per instruction address
+next to the one per line, and writes `report.html` (new
+`pc_footprint_report.py`), a per-thread page for every future pass. On
+rubocop cache8x (944 threads): OpenCode's main thread holds 7.0 MB of its
+9.5 MB and repeats much sooner than the interpreters (median 68
+instructions vs ~500) but has a longer tail. Updated
+[[2026-10-26-rubocop-instruction-footprint]], [[pc-trace]],
+[[run-and-analysis-scripts]].
+
+## [2026-10-27] infra | Footprint report: user/kernel split, process filter
+
+`report.html` (`pc_footprint_report.py`) now splits each thread's
+instructions and code size between user and kernel mode, can count user
+code only or kernel code only against the cache sizes, and hides
+processes by name. Updated [[pc-trace]].
+
+## [2026-10-27] infra | Footprint pass: NOP counting for atomic traces
+
+Checked `pc_footprint.py` on five other traces. On the atomic core the
+tracer's instruction count includes NOPs (O3's does not), so the pass,
+which always left them out, would place execs early on atomic traces.
+It now keeps both counts and uses the one the first switch matches. O3
+results (all rubocop runs) are unchanged. Updated [[pc-trace]].
+
+## [2026-10-27] infra | Long-run tools in analysis_scripts
+
+The rubocop-15G scripts that are not specific to that study are now
+tracked tools in `analysis_scripts/tasktrace/`: `split_stall.sh` (moves a
+trailing guest stall aside, found from the data), `check_pc_slices.sh`
+(PC trace against the task trace, slice by slice), `compare_runs.sh`
+(per-run analysis, common region through the sweep tools, process views)
+and `process_views.py` (harness / tools / replay driver / other / kernel,
+per process, over whole slices and with 1/3/6 blocks trimmed at each
+switch; clock from config.ini). Tested on copies of the rubocop smoke run;
+`process_views.py` reproduces the dashboard's numbers on the six 15G runs
+(0.1% apart in the whole-slice IPC: 333 ticks per cycle from config.ini
+instead of 333.33). New [[long-runs]]; updated [[run-and-analysis-scripts]],
+`analysis_scripts/README.md`.
+
+## [2026-10-27] experiment | rubocop 15G: harness vs tools, cost around switches
+
+Added the per-process views, the harness-vs-tools comparison and the
+switch-exclusion bound to [[2026-10-23-rubocop-15g-cache-btb-tlb]], with
+the dashboard's link and where its source is kept.
+
+## [2026-10-27] publish | Long Runs Guide
+
+New output `long-runs-guide` (https://claude.ai/artifact/Q59pV5tfkzizJsRkw87vGH),
+built from [[long-runs]] and the pages listed in [[publish]].
+
+
+## [2026-10-27] fix | Long-run guest hang marked as open
+
+The user asked to treat the hang of long runs as something to
+investigate, not a settled cause. [[guest-trng-hvc-stall]] is now
+`status: open` with a provisional warning: the hang is observed, while the
+RNG-reseed / TRNG-HVC mechanism is a hypothesis from one checkpoint's PC
+trace. Cutting the hang off is a workaround. Updated [[long-runs]],
+[[2026-10-23-rubocop-15g-cache-btb-tlb]], [[questions]], and the Long Runs
+Guide.

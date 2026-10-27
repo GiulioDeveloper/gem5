@@ -36,6 +36,7 @@ The wiki describes these in detail: `docs/wiki/infrastructure/`
 | `sweep.sh [BASE]` | `o3-window.sh` / `spec-window.sh` over every local checkpoint, analysis of each run, then `sweep_summary.py` (and `sweep_compare.py` against `BASELINE`). `EXTRA` adds flags to every run; resumes an interrupted `BASE` | one sweep on its own |
 | `smart_sweep.sh [BASE]` | `sweep.sh` with memory-aware launching: each run starts only when there is memory for its expected peak, shared across sweeps through a lock | several sweeps at once, or any sweep that includes the heavy tasks (docusaurus-9897, nushell-13831) |
 | `o3-pair.sh [task] [warmup] [detailed]` | restores the same window twice, without and with `--task-trace`, and diffs `stats.txt`; `PAIR_ON_ARGS=` runs the plain config twice (determinism check) | after any change to the tracer, to show it does not perturb the simulation |
+| `pc-trace.sh TASK MAX_INSTS [args]` | atomic restore with gem5's Exec trace streamed through a named pipe into `analysis_scripts/tasktrace/pc_trace.py`; stores only the compact PC trace, joined with the task trace | instruction footprint, branch and repeat-distance studies |
 | `landing-all.sh [insts] [parallel]` | restores every local checkpoint briefly on the atomic core with the tracer and checks the first switch and KASLR slide against the checkpoint's landing label (summarized by `analysis_scripts/tasktrace/landing_summary.py`) | when checkpoints are added or regenerated, or the tracer's slide or task reading changes |
 
 Comparing configurations: run a sweep with `EXTRA="<flags>"` and

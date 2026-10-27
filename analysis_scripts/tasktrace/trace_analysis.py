@@ -54,6 +54,8 @@ import re
 from collections import Counter, defaultdict
 from pathlib import Path
 
+import stats_table
+
 KINDS = ("user", "kernel", "idle")
 GROUP_BY = ("process", "tree", "place")
 # Who ran during a tool call: the process that recorded it, its
@@ -109,7 +111,7 @@ def load_events(path):
     end = {"tick": int(rows[-1]["tick_end"]),
            "insts": int(rows[-1]["insts_end"]), "event": "end"}
     if "uinsts" in last and int(rows[0]["insts_start"]) <= last["insts"]:
-        user, commit = user_per_block(path.parent / "stats.txt")
+        user, commit = user_per_block(path.parent)
         uinsts = last["uinsts"]
         for r, u, c in zip(rows, user, commit):
             lo, hi = int(r["insts_start"]), int(r["insts_end"])
@@ -120,21 +122,12 @@ def load_events(path):
     return events
 
 
-def user_per_block(stats):
+def user_per_block(run):
     """User-mode and committed instructions of each stats dump."""
-    keys = (STATS["user_insts"], STATS["commit_insts"])
     user, commit = [], []
-    with open(stats) as f:
-        for line in f:
-            if line.startswith("---------- Begin"):
-                user.append(0.0)
-                commit.append(0.0)
-            elif line.startswith(keys):
-                parts = line.split()
-                if parts[0] == keys[0]:
-                    user[-1] = float(parts[1])
-                elif parts[0] == keys[1]:
-                    commit[-1] = float(parts[1])
+    for d in stats_table.dumps(run):
+        user.append(float(d.get(STATS["user_insts"], "0")))
+        commit.append(float(d.get(STATS["commit_insts"], "0")))
     return user, commit
 
 
@@ -542,17 +535,9 @@ def load_blocks(outdir):
         return []
     with open(ivs) as f:
         intervals = list(csv.DictReader(f))
-    dumps, cur = [], None
-    with open(outdir / "stats.txt") as f:
-        for line in f:
-            if line.startswith("---------- Begin"):
-                cur = {}
-            elif line.startswith("---------- End"):
-                dumps.append(cur)
-            elif cur is not None:
-                parts = line.split()
-                if len(parts) >= 2:
-                    cur[parts[0]] = parts[1]
+    # stats.txt, or the values-only table that replaces it (stats_table).
+    # Streamed: a long run's dumps do not fit in memory as dicts.
+    dumps = stats_table.dumps(outdir)
     # The run dumps once per interval; gem5's exit dump (e.g. after a tail)
     # follows and has no interval row.
     blocks = []

@@ -1,7 +1,7 @@
 ---
 type: method
 status: current
-updated: 2026-10-21
+updated: 2026-10-25
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-16-infinite-btb]]"
@@ -37,3 +37,11 @@ change** (B / A − 1) per suite with its quartiles, plus the outliers.
   3.0% + 3.3% individually and 7.5% together after a 100M skip
   ([[btb-tlb-limits]]).
 - Coverage of a mechanism is not speedup ([[garfield-lessons]]).
+- **The same instruction window is not the same work** when the guest's
+  work depends on timing. In a 12G-instruction rubocop run, faster
+  configurations got further into the session: the Ruby test run grew from
+  3% to 16% of the instructions, OpenCode and Docker shrank, and whole-run
+  branch and dTLB MPKI rose with cache size for that reason alone. Compare
+  per process (blocks dominated by one process) or per phase as well
+  ([[2026-10-23-rubocop-15g-cache-btb-tlb]]). Short windows shift less, but
+  the effect is there too.

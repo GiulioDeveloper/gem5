@@ -1,7 +1,7 @@
 ---
 type: meta
 status: current
-updated: 2026-10-21
+updated: 2026-10-27
 ---
 
 # Index
@@ -41,6 +41,8 @@ Human-facing outputs: [[publish]].
 - [[sweeps]]: `sweep.sh`/`smart_sweep.sh`, summaries, multi-sweep comparisons, known sweeps
 - [[run-and-analysis-scripts]]: catalog of the launchers and readers
 - [[running-a-traced-window]]: step-by-step commands
+- [[pc-trace]]: compact committed-PC trace with task markers, from gem5's Exec trace through a pipe
+- [[long-runs]]: multi-billion-instruction runs: launch, compaction, stall split, checks, multi-config and per-process analysis
 
 ## Experiments
 
@@ -49,6 +51,9 @@ Human-facing outputs: [[publish]].
 - [[2026-10-14-baseline-sweep]]: SPEC vs agentic over 53 windows (baseline A)
 - [[2026-10-14-fdp-off-sweep]]: FDP off, paired per checkpoint
 - [[2026-10-16-btb-tlb-limit-study]]: infinite BTB, infinite L2 TLB, both; five-way sweeps; 100M skip
+- [[2026-10-22-opencode-thread-breakdown]]: instruction share, IPC and switches by OpenCode thread vs Docker vs tools
+- [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process (rubocop, 15G)
+- [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
 
 ## Findings
 
@@ -85,6 +90,7 @@ Human-facing outputs: [[publish]].
 - [[gem5-tracing-under-kaslr]]: why gem5's own tracing features do not work here
 - [[o3-wrong-path-counting]]: verify-site counters and training see doomed instructions
 - [[simulation-hangs]]: the ROB-head watchdog, the FDP MaxAddr hang, how to tell a hang from a livelock
+- [[guest-trng-hvc-stall]]: long runs hang with the guest spinning in the EL2 hyp stub; RNG-reseed cause is a hypothesis, open
 
 ## gem5
 

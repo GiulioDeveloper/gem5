@@ -30,6 +30,7 @@ import csv
 import json
 from pathlib import Path
 
+import stats_table
 import trace_analysis as ta
 import trace_view
 
@@ -201,27 +202,20 @@ TOPDOWN = [
 ]
 
 
-def read_dumps(path, wanted, suffixes):
+def read_dumps(run, wanted, suffixes):
     """Per stats dump, {stat: float} restricted to `wanted` and to stats
-    ending in one of `suffixes`."""
-    dumps, cur = [], None
-    with open(path) as f:
-        for line in f:
-            if line.startswith("---------- Begin"):
-                cur = {}
-            elif line.startswith("---------- End"):
-                dumps.append(cur)
-                cur = None
-            elif cur is not None:
-                parts = line.split(maxsplit=2)
-                if len(parts) < 2:
-                    continue
-                name = parts[0]
-                if name in wanted or name.endswith(suffixes):
-                    try:
-                        cur[name] = float(parts[1])
-                    except ValueError:
-                        pass
+    ending in one of `suffixes`. Reads stats.txt or its values-only table
+    (stats_table)."""
+    dumps = []
+    for d in stats_table.dumps(run):
+        cur = {}
+        for name, value in d.items():
+            if name in wanted or name.endswith(suffixes):
+                try:
+                    cur[name] = float(value)
+                except ValueError:
+                    pass
+        dumps.append(cur)
     return dumps
 
 
@@ -257,7 +251,7 @@ def block_metrics(outdir, extra, skip_insts=0):
     wanted = {x for m in metrics for x in m[5][0]}
     wanted |= {CORE + "numCycles", CORE + "commitStats0.numInsts"}
     suffixes = tuple("." + t[1] for t in TOPDOWN)
-    dumps = read_dumps(outdir / "stats.txt", wanted, suffixes)
+    dumps = read_dumps(outdir, wanted, suffixes)
     # One dump per interval; gem5's exit dump has no interval row.
     blocks = []
     for iv, d in zip(intervals, dumps):
