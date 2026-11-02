@@ -52,7 +52,7 @@ Human-facing outputs: [[publish]].
 - [[2026-10-14-fdp-off-sweep]]: FDP off, paired per checkpoint
 - [[2026-10-16-btb-tlb-limit-study]]: infinite BTB, infinite L2 TLB, both; five-way sweeps; 100M skip
 - [[2026-10-22-opencode-thread-breakdown]]: instruction share, IPC and switches by OpenCode thread vs Docker vs tools
-- [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process (rubocop, 15G)
+- [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process and thread; per-bin footprint, window length vs program (rubocop, 15G)
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
 
 ## Findings

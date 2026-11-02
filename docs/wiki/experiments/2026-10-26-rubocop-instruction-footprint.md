@@ -1,12 +1,13 @@
 ---
 type: experiment
 status: current
-updated: 2026-10-27
+updated: 2026-10-30
 sources:
   - runs/rubocop-15G/cache8x/footprint/summary.md
   - runs/rubocop-15G/cache8x/footprint/footprint.csv
   - runs/rubocop-15G/cache8x/footprint/instances.csv
   - runs/rubocop-15G/cache8x/footprint/threads.csv
+  - runs/rubocop-15G/cache8x/footprint/thread_bins.csv
   - runs/rubocop-15G/cache8x/footprint/report.html
   - analysis_scripts/tasktrace/pc_footprint.py
 tags: [agentic, rubocop, footprint, icache, branches, pc-trace]
@@ -115,6 +116,45 @@ distinct instructions or lines since the previous use, median / 90th /
 - The docker client's threads spend half their instructions in the
   kernel; at 2M their misses are cold (0.66 MPKI).
 
+### Per bin: window length vs the program (fourth pass, 2026-10-30)
+
+Question (user): is a thread's footprint large because the stream is long
+(15G instructions) or because of the program? Rerun with per-thread bins
+([[pc-trace#Footprint, hit rates and branches]]): distinct code and
+branches in each 100M / 500M / 1G instructions, cut by the thread's own
+instructions (*own*) or by windows of the run (*run*), mean over whole
+bins. The earlier outputs are byte-identical. Published in the same
+report (https://claude.ai/artifact/WggFB79GWaW6x7nUsun7So), with a growth
+plot per thread.
+
+| thread | instructions | whole | own 100M | own 500M | own 1G | run 100M | run 500M | run 1G |
+|---|---|---|---|---|---|---|---|---|
+| opencode main | 6,865M | 6,985 | 2,386 | 4,214 | 4,850 | 1,772 | 3,360 | 4,171 |
+| opencode JITWorker 1263 | 989M | 2,914 | 1,651 | 2,542 | — | 856 | 1,301 | 1,622 |
+| bundle 2482 | 968M | 1,581 | 883 | 1,421 | — | 801 | 1,170 | 1,263 |
+| gem 2704 | 501M | 1,471 | 903 | 1,471 | — | 757 | 1,006 | 1,362 |
+| python3 622 | 363M | 587 | 574 | — | — | 371 | 490 | 529 |
+| docker (55, each) | 25–29M | ~1,170 | — | — | — | ~1,010 (median) | ~1,170 | ~1,170 |
+
+Code size in KiB, user + kernel; — = the thread is shorter than the bin.
+Distinct taken branches, opencode main: 146K whole, 44K per own 100M, 80K
+per 500M, 93K per 1G; JITWorker 1263: 69K whole, 37K per 100M.
+
+- **OpenCode's main thread:** about two thirds of its 7.0 MB comes from
+  the length of the stream. Per 100M of its own work it touches 2.4 MB
+  (1.2× a 2 MB L2), per 1G 4.9 MB; it keeps reaching new code as it runs
+  (JIT-compiled functions, more of the runtime), without levelling off at
+  1G.
+- **Per 100M run window**, the length of a sweep window, it shows 1.8 MB,
+  because it shares the window with other threads.
+- **The interpreters** (bundle, gem, ruby) touch 0.8–0.9 MB per 100M and
+  grow to 1.3–1.6 MB over their lives: the same growth, smaller.
+- **docker** reaches its whole 1.2 MB within each 25–29M-instruction
+  life: its footprint is the program, not the window.
+- **Branches:** even per 100M, OpenCode's main thread has ~44K distinct
+  taken branches against the BTB's 12K entries, and each docker instance
+  ~9K; the BTB pressure is not an artefact of the long stream.
+
 ## Conclusions (provisional)
 
 - **OpenCode's code is ~10 MB** (JIT-compiled JavaScript plus the Bun
@@ -145,6 +185,10 @@ distinct instructions or lines since the previous use, median / 90th /
   against capacity; branches by type with taken-ever.
 - 2026-10-26: added a per-PID view and a per-name view where same-name
   processes share addresses, on request.
+- 2026-10-30: per-thread bins of 100M/500M/1G, two cuts (the thread's
+  own instructions and run windows), weighted mean over whole bins;
+  partial bins only for threads shorter than one bin. The user chose to
+  have both cuts, switchable in the report.
 - 2026-10-27: added per-thread statistics, the repeat distance per
   instruction address, and `report.html`, the per-thread page meant for
   every future footprint pass.

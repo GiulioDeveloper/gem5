@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-27
+updated: 2026-11-02
 sources:
   - analysis_scripts/tasktrace/pc_trace.py
   - run_scripts/tasktrace/pc-trace.sh
@@ -177,8 +177,13 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   aggregated / summed footprint). There are no physical addresses, so
   shared libraries are never shared across processes.
 - **Footprint:** distinct instructions, 64-byte lines and 4 KiB pages; the
-  line footprint as a multiple of each L1I/L2 size (64K/256K/512K,
-  2M/8M/16M, the [[neoverse-v2]] sizes at ×1/×4/×8).
+  line footprint as a multiple of each cache size. The sizes are a
+  parameter, `--caches LEVEL:SIZE,...` (since 2026-11-02); the default is
+  the [[neoverse-v2]] L1I and L2 at ×1/×4/×8 (64K/256K/512K, 2M/8M/16M).
+  The pass saves the list in `caches.json`, which `--summary-only` and the
+  report reuse; changing it needs a new pass, since the LRU capacities
+  are counted in the pass. The summary's short tables show the smallest
+  and largest size of each level.
 - **LRU stack distance** per line access (a fetch that moves to another
   line): the number of distinct lines touched since the line's previous
   access (Fenwick tree over access slots). A fully associative LRU cache of
@@ -204,6 +209,29 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   and distinct branches by type; miss ratio curves of the threads picked;
   a sortable table; processes can be hidden by name (kernel threads are
   one entry).
+- **Per thread, per bin** (`thread_bins.csv`, since 2026-10-30): a long
+  thread's footprint grows with the length of what it ran, so the pass
+  also cuts each thread's stream into bins of N instructions (`--bins`,
+  default 100M, 500M, 1G) and counts distinct instructions, lines (code
+  size, user and kernel) and branches by type, and distinct taken
+  branches, in each bin. Two cuts: **own**, every N of the thread's own
+  instructions (the same amount of work for every thread), and **run**,
+  windows of N instructions of the whole run (what a sweep window or a
+  cache sees in that time; a thread with little time in a window shows
+  little code there). The value reported is the mean over the thread's
+  whole bins, each weighted by its instructions (for own bins all
+  weights are equal), with the largest bin's values. Only whole bins
+  count (own: the thread reached N; run: the window ended before the
+  trace did); a thread with none, shorter than one bin, reports its
+  partial bin, which is its whole stream (`partial_only`). Checked on a
+  20M-instruction prefix against a brute-force count, both cuts, all
+  threads without an exec; a bin larger than the stream reproduces
+  `threads.csv` exactly. `report.html` switches between the whole stream
+  and the bins (and the cut); the code-size, fit and branch columns
+  follow it, the repeat distances and misses stay whole-stream, and a
+  growth plot shows the picked threads' code size and distinct taken
+  branches against the bin size, with the cache sizes and the baseline
+  BTB's 12K entries as references.
 - **Branches:** distinct addresses of `b.cond`/`cbz`/`cbnz`/`tbz`/`tbnz`
   (cond), `b`, `bl`, `blr*`, `br*`, `ret*`, `eret*`; *taken* when the next
   instruction is not at PC + 4. A transfer into the kernel's EL1 vector
@@ -220,6 +248,13 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
 - JIT code can reuse an address for different code: footprint counts
   addresses touched per address space, not distinct code.
 - `report.html` has fixed axes (code 4 KiB–64 MiB, repeat distance up to
-  2^25 instructions and 2^22 lines); values beyond them sit at the edge.
-  The cache sizes are the [[neoverse-v2]] L1I and L2 at ×1/×4/×8
-  (`CACHES` in `pc_footprint.py`).
+  2^25 instructions and 2^22 lines, widened to twice the largest cache);
+  values beyond them sit at the edge. The BTB line (12K entries,
+  `NeoverseV2_BTB`) is still fixed in `pc_footprint_report.py`.
+- Bins are cut by the pass's own instruction count, which includes NOPs
+  (the tracer's O3 count does not); negligible at 100M.
+- The bins cost memory and time: on rubocop cache8x the pass went from 43
+  min and 7.8 GB to 51 min and 12.8 GB (2026-10-30). `--bins ""` turns
+  them off.
+- `report.html` is ~2.8 MB with the bins. Before 2026-10-30 its "All
+  numbers" table never rendered (its default sort key named no column).

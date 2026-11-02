@@ -3,7 +3,7 @@ thread, from a run's PC trace (pc_trace.py) and task trace.
 
 usage:
   python3 analysis_scripts/tasktrace/pc_footprint.py <run> [-o OUT]
-      [--vmlinux VMLINUX] [--limit N]
+      [--vmlinux VMLINUX] [--limit N] [--bins N,...] [--caches LEVEL:SIZE,...]
 
 A process instance ("PID") is a tgid between execs (threads share it): an
 exec event, placed at its exact instruction by the global instruction
@@ -41,13 +41,27 @@ its own: distinct instructions and lines (user and kernel), LRU stack
 distance per line as above (private: the thread alone; shared: the
 interleaved stream), the repeat distance per instruction address (the
 number of distinct instructions since the same PC last committed), and
-distinct branches by type.
+distinct branches by type. And its footprint per bin: the thread's stream
+cut every N instructions (--bins, default 100M, 500M and 1G), counted
+either by the thread's own instructions ("own": the same amount of work
+for every thread) or by the run's ("run": fixed windows of the whole run,
+as a sweep window or a cache sees them). Per bin: distinct instructions,
+lines (code size) and branches; reported as the mean over the thread's
+whole bins, each bin weighted by its instructions, and the largest bin. A
+thread shorter than one bin has only a partial bin, which then counts
+(flagged `partial_only`).
+
+The cache sizes (--caches, default the Neoverse V2 L1I and L2 at x1, x4
+and x8) set the LRU capacities of the pass and the footprint multiples;
+the pass saves them in OUT/caches.json, which --summary-only and the
+report reuse.
 
 Writes OUT (default <run>/footprint/): groups.tsv, hist.tsv (stack
 distance histograms, log2 buckets), instances.tsv from the C++ pass
 (pc_footprint.cc, built on first use), threads.tsv and thread_hist.tsv,
-then footprint.csv (per name, both views), instances.csv (per PID),
-threads.csv (per thread), summary.md and report.html
+thread_bins.tsv, then footprint.csv (per name, both views), instances.csv (per PID),
+threads.csv (per thread), thread_bins.csv (per thread, bin size and
+cut), summary.md and report.html
 (pc_footprint_report.py).
 """
 
@@ -67,10 +81,9 @@ from pc_trace import DEFAULT_VMLINUX  # noqa: E402
 
 SRC = Path(__file__).with_name("pc_footprint.cc")
 LINE = 64
-# (label, bytes): L1I and L2 of the Neoverse V2 config at x1, x4, x8.
-CACHES = (("L1I 64K", 64 << 10), ("L1I 256K", 256 << 10),
-          ("L1I 512K", 512 << 10), ("L2 2M", 2 << 20), ("L2 8M", 8 << 20),
-          ("L2 16M", 16 << 20))
+# LEVEL:SIZE: L1I and L2 of the Neoverse V2 config at x1, x4, x8.
+CACHES = "L1I:64K,L1I:256K,L1I:512K,L2:2M,L2:8M,L2:16M"
+BINS = (100_000_000, 500_000_000, 1_000_000_000)
 BRANCHES = ("cond", "direct", "call", "indirect_call", "indirect_jump",
             "return", "exception_return")
 
@@ -119,16 +132,71 @@ def side_files(run, out):
     return sw, ex
 
 
-def run_pass(run, out, vmlinux, limit):
+def parse_caches(spec):
+    """[(label, bytes)] from "LEVEL:SIZE,..." (SIZE in bytes, or with a K, M
+    or G binary suffix), in the given order; the label is "LEVEL SIZE"."""
+    caches = []
+    for item in spec.split(","):
+        level, _, size = item.strip().partition(":")
+        mult = {"K": 1 << 10, "M": 1 << 20, "G": 1 << 30}.get(size[-1:].upper())
+        n = int(size[:-1]) * mult if mult else int(size)
+        if not level or n < LINE or n % LINE:
+            sys.exit(f"bad cache {item!r}: want LEVEL:SIZE, a multiple of "
+                     f"{LINE} bytes")
+        caches.append((f"{level} {size.upper()}", n))
+    return caches
+
+
+def load_caches(out):
+    """The cache list the pass in OUT ran with (the default before
+    caches.json existed)."""
+    path = out / "caches.json"
+    if path.exists():
+        return [tuple(c) for c in json.loads(path.read_text())]
+    return parse_caches(CACHES)
+
+
+def by_level(caches):
+    """{level: [(label, bytes), ...]} in the given order."""
+    by = {}
+    for c in caches:
+        by.setdefault(c[0].split(" ")[0], []).append(c)
+    return by
+
+
+def ends(caches):
+    """The smallest and largest cache of each level, for the tables that
+    show a few sizes only."""
+    keep = {x for cs in by_level(caches).values()
+            for x in (min(cs, key=lambda c: c[1]), max(cs, key=lambda c: c[1]))}
+    return [c for c in caches if c in keep]
+
+
+def firsts(caches):
+    """The smallest cache of each level."""
+    keep = {min(cs, key=lambda c: c[1]) for cs in by_level(caches).values()}
+    return [c for c in caches if c in keep]
+
+
+def bin_label(n):
+    for unit, d in (("G", 10**9), ("M", 10**6), ("K", 10**3)):
+        if n >= d and n % d == 0:
+            return f"{n // d}{unit}"
+    return str(n)
+
+
+def run_pass(run, out, vmlinux, limit, bins, caches):
     exe = build()
     sw, ex = side_files(run, out)
     v0, v1 = vector_tables(vmlinux)
-    caps = [str(size // LINE) for _, size in CACHES]
+    caps = [str(c) for c in sorted({size // LINE for _, size in caches})]
     src = f"zstd -dc {run / 'pc_trace.zst'}"
     if limit:   # zstd ends with SIGPIPE (141) when head stops reading
         src = f"{{ {src} || [ $? -eq 141 ]; }} | head -n {int(limit)}"
-    cmd = (f"{src} | {exe} {sw} {ex} {out} {v0} {v1} " + " ".join(caps))
+    opt = f"--bins={','.join(str(b) for b in bins)} " if bins else ""
+    cmd = (f"{src} | {exe} {opt}{sw} {ex} {out} {v0} {v1} " + " ".join(caps))
     subprocess.run(["bash", "-o", "pipefail", "-c", cmd], check=True)
+    (out / "caches.json").write_text(json.dumps(caches) + "\n")
 
 
 def rows_of(path):
@@ -140,10 +208,10 @@ def key_of(label):
     return label.replace(" ", "_")
 
 
-def rates(n, prefix=""):
+def rates(n, caches, prefix=""):
     """Footprint multiples, MPKI and branch totals of one stats row (numbers
     keyed by column name) in one view (prefix "" or "m_")."""
-    caps = [size // LINE for _, size in CACHES]
+    caps = [size // LINE for _, size in caches]
     insts, acc = n[prefix + "insts"], n[prefix + "line_accesses"]
     lines = n[prefix + "uniq_lines"]
     r = {"uniq_insts": int(n[prefix + "uniq_insts"]),
@@ -151,7 +219,7 @@ def rates(n, prefix=""):
          "uniq_pages": int(n[prefix + "uniq_pages"]),
          "code_kib": lines * LINE / 1024,
          "cold_mpki": n[prefix + "priv_cold"] / insts * 1000 if insts else None}
-    for (label, size), c in zip(CACHES, caps):
+    for (label, size), c in zip(caches, caps):
         k = key_of(label)
         r[f"x_{k}"] = lines * LINE / size
         for view in ("priv", "shared"):
@@ -182,15 +250,26 @@ def fmt(x, digits=2):
     return "" if x is None else f"{x:.{digits}f}"
 
 
-def mpki_table(lines, rows, view, title):
+def fmt_x(x):
+    """A footprint multiple, to about three significant digits."""
+    if x >= 100:
+        return f"{x:,.0f}"
+    return f"{x:.1f}" if x >= 10 else f"{x:.2f}" if x >= 1 else f"{x:.3g}"
+
+
+def size_of(label):
+    return label.split(" ")[1]
+
+
+def mpki_table(lines, rows, view, title, caches):
     lines.append(title)
     lines.append("")
-    lines.append("| process | " + " | ".join(l for l, _ in CACHES)
+    lines.append("| process | " + " | ".join(l for l, _ in caches)
                  + " | of which cold |")
-    lines.append("|---|" + "---|" * (len(CACHES) + 1))
+    lines.append("|---|" + "---|" * (len(caches) + 1))
     for name, r in rows:
         lines.append(f"| {name} | " + " | ".join(
-            fmt(r[f"{view}_mpki_{key_of(l)}"]) for l, _ in CACHES)
+            fmt(r[f"{view}_mpki_{key_of(l)}"]) for l, _ in caches)
             + f" | {fmt(r['cold_mpki'])} |")
     lines.append("")
 
@@ -233,10 +312,10 @@ def quantile(hist, total, p):
     return None
 
 
-def summarize_threads(out):
+def summarize_threads(out, caches):
     """threads.csv: one row per thread that committed instructions."""
     hists = thread_hists(out)
-    caps = [size // LINE for _, size in CACHES]
+    caps = [size // LINE for _, size in caches]
     rows = []
     for t in rows_of(out / "threads.tsv"):
         n = numbers(t, ("thread", "group", "comm"))
@@ -259,7 +338,7 @@ def summarize_threads(out):
              "line_accesses": int(acc),
              "line_cold_pct": n["priv_cold"] / acc * 100 if acc else None,
              "pc_cold_pct": n["pc_cold"] / insts * 100}
-        for (label, size), c in zip(CACHES, caps):
+        for (label, size), c in zip(caches, caps):
             k = key_of(label)
             r[f"x_{k}"] = lines * LINE / size
             r[f"priv_hit_pct_{k}"] = (n[f"priv_hits_{c}"] / acc * 100
@@ -283,6 +362,43 @@ def summarize_threads(out):
     return rows
 
 
+def summarize_bins(out):
+    """thread_bins.csv: per thread, bin size and cut, the mean of each value
+    over the thread's bins (weighted by their instructions) and the largest
+    bin's."""
+    if not (out / "thread_bins.tsv").exists():
+        return []
+    rows = []
+    for t in rows_of(out / "thread_bins.tsv"):
+        n = numbers(t, ("cut",))
+        w = n["sum_w"]
+        if not w:
+            continue
+
+        def mean(v):
+            return n[f"sum_wv_{v}"] / w
+        r = {"thread": int(n["thread"]), "cut": t["cut"],
+             "bin_insts": int(n["bin_insts"]),
+             "bin": bin_label(int(n["bin_insts"])), "bins": int(n["bins"]),
+             "partial_only": int(n["partial_only"]), "insts": int(w),
+             "u_uniq_insts": mean("u_insts"), "k_uniq_insts": mean("k_insts"),
+             "u_code_kib": mean("u_lines") * LINE / 1024,
+             "k_code_kib": mean("k_lines") * LINE / 1024,
+             "branches": sum(mean(f"br_{b}") for b in BRANCHES),
+             "branches_taken": mean("taken")}
+        r["uniq_insts"] = r["u_uniq_insts"] + r["k_uniq_insts"]
+        r["code_kib"] = r["u_code_kib"] + r["k_code_kib"]
+        for b in BRANCHES:
+            r[f"br_{b}"] = mean(f"br_{b}")
+        for v in ("u_insts", "k_insts", "u_lines", "k_lines", "taken"):
+            r[f"max_{v}"] = int(n[f"max_{v}"])
+        r["max_branches"] = int(max(n[f"max_br_{b}"] for b in BRANCHES))
+        rows.append(r)
+    if rows:
+        write_csv(out / "thread_bins.csv", rows)
+    return rows
+
+
 def thread_label(r):
     if r["kthread"]:
         return f"{r['comm']} (kernel, {r['pid']})"
@@ -291,7 +407,9 @@ def thread_label(r):
     return f"{r['process']} {r['comm']} ({r['pid']})"
 
 
-def thread_section(lines, threads):
+def thread_section(lines, threads, caches):
+    first = firsts(caches)
+
     def dist(x):
         return "cold" if x is None else f"{x:,.0f}"
     lines.append("## 4. By thread")
@@ -303,26 +421,60 @@ def thread_section(lines, threads):
                  "(per PC) or distinct 64-byte lines since the previous use, "
                  "50th / 90th / 99th percentile.")
     lines.append("")
-    lines.append("| thread | instructions | kernel | code (KiB) | ×64K | ×2M "
-                 "| repeat distance, instructions | lines | MPKI 64K | 2M "
-                 "| branches (taken) |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|")
+    lines.append("| thread | instructions | kernel | code (KiB) | "
+                 + "".join(f"×{size_of(l)} | " for l, _ in first)
+                 + "repeat distance, instructions | lines | "
+                 + "".join(f"MPKI {size_of(l)} | " for l, _ in first)
+                 + "branches (taken) |")
+    lines.append("|---|---|---|---|" + "---|" * (2 * len(first) + 3))
     for r in threads[:30]:
         lines.append(
             f"| {thread_label(r)} | {r['insts'] / 1e6:,.1f}M "
             f"| {r['k_insts'] / r['insts'] * 100:.0f}% "
-            f"| {r['code_kib']:,.0f} | {r['x_L1I_64K']:.1f} "
-            f"| {r['x_L2_2M']:.2f} "
-            f"| {' / '.join(dist(r[f'pc_p{p}']) for p in (50, 90, 99))} "
-            f"| {' / '.join(dist(r[f'line_p{p}']) for p in (50, 90, 99))} "
-            f"| {fmt(r['priv_mpki_L1I_64K'])} | {fmt(r['priv_mpki_L2_2M'])} "
-            f"| {r['branches']:,} ({r['branches_taken']:,}) |")
+            f"| {r['code_kib']:,.0f} | "
+            + "".join(f"{fmt_x(r[f'x_{key_of(l)}'])} | " for l, _ in first)
+            + f"{' / '.join(dist(r[f'pc_p{p}']) for p in (50, 90, 99))} "
+            f"| {' / '.join(dist(r[f'line_p{p}']) for p in (50, 90, 99))} | "
+            + "".join(f"{fmt(r[f'priv_mpki_{key_of(l)}'])} | "
+                      for l, _ in first)
+            + f"{r['branches']:,} ({r['branches_taken']:,}) |")
+    lines.append("")
+
+
+def bin_section(lines, threads, bins):
+    if not bins:
+        return
+    by = {(r["thread"], r["cut"], r["bin"]): r for r in bins}
+    labels = sorted({(r["bin_insts"], r["bin"]) for r in bins})
+    lines.append("## 5. By thread, per bin")
+    lines.append("")
+    lines.append("Code size (KiB, user + kernel) per bin of N instructions, "
+                 "mean over the thread's whole bins weighted by their "
+                 "instructions; `own`: the thread's own instructions, `run`: "
+                 "windows of the whole run; * = shorter than one bin (its "
+                 "partial bin). All in `thread_bins.csv` and `report.html`.")
+    lines.append("")
+    head = [f"{c} {b}" for c in ("own", "run") for _, b in labels]
+    lines.append("| thread | instructions | whole | " + " | ".join(head)
+                 + " |")
+    lines.append("|---|---|---|" + "---|" * len(head))
+    for t in threads[:30]:
+        cells = []
+        for c in ("own", "run"):
+            for _, b in labels:
+                r = by.get((t["thread"], c, b))
+                cells.append("" if r is None else f"{r['code_kib']:,.0f}"
+                             + ("*" if r["partial_only"] else ""))
+        lines.append(f"| {thread_label(t)} | {t['insts'] / 1e6:,.1f}M "
+                     f"| {t['code_kib']:,.0f} | " + " | ".join(cells) + " |")
     lines.append("")
 
 
 def summarize(out):
     groups = rows_of(out / "groups.tsv")
-    caps = [size // LINE for _, size in CACHES]
+    caches = load_caches(out)
+    caps = [size // LINE for _, size in caches]
+    end, first = ends(caches), firsts(caches)
 
     # ---- per name, both views ------------------------------------------
     table = []
@@ -332,11 +484,11 @@ def summarize(out):
             continue
         r = {"group": g["group"], "kernel": g["kernel"],
              "processes": int(n["instances"]), "insts": int(n["insts"])}
-        r.update({k: v for k, v in rates(n).items()})
-        r.update({"m_" + k: v for k, v in rates(n, "m_").items()})
+        r.update({k: v for k, v in rates(n, caches).items()})
+        r.update({"m_" + k: v for k, v in rates(n, caches, "m_").items()})
         r["overlap"] = (n["m_uniq_lines"] / n["uniq_lines"]
                         if n["uniq_lines"] else None)
-        for (label, _), c in zip(CACHES, caps):
+        for (label, _), c in zip(caches, caps):
             kh = n[f"k_shared_hits_{c}"]
             r[f"k_shared_mpki_{key_of(label)}"] = (
                 (n["k_accesses"] - kh) / n["k_insts"] * 1000
@@ -357,7 +509,7 @@ def summarize(out):
         r = {"instance": int(i["instance"]), "pid": int(i["tgid"]),
              "exec": int(i["generation"]), "process": i["group"],
              "insts": int(n["insts"]), "k_insts": int(n["k_insts"])}
-        r.update(rates(n))
+        r.update(rates(n, caches))
         pids.append(r)
     # A fork child that runs a little of its parent's code and then execs
     # (the same PID has a later exec) is not a run of the parent's program.
@@ -379,8 +531,8 @@ def summarize(out):
                  "1,000 instructions (shared cache, instruction lines only, "
                  "fully associative, no prefetch):")
     lines.append("")
-    lines.append("| view | " + " | ".join(l for l, _ in CACHES) + " |")
-    lines.append("|---|" + "---|" * len(CACHES))
+    lines.append("| view | " + " | ".join(l for l, _ in caches) + " |")
+    lines.append("|---|" + "---|" * len(caches))
     for prefix, label in (("", "each process separate"),
                           ("m_", "same-name processes share code")):
         vals = []
@@ -402,23 +554,24 @@ def summarize(out):
                  "its processes. Groups with ≥0.2% of the instructions.")
     lines.append("")
     lines.append("| process | processes | instructions | distinct insts | "
-                 "code (KiB) | ×64K | ×512K | ×2M | ×16M | code per "
-                 "process, median / max (KiB) |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+                 "code (KiB) | "
+                 + "".join(f"×{size_of(l)} | " for l, _ in end)
+                 + "code per process, median / max (KiB) |")
+    lines.append("|---|---|---|---|---|" + "---|" * (len(end) + 1))
     for r in top:
         inst = [p["code_kib"] for p in per_name.get(r["group"], [])]
         med = (f"{statistics.median(inst):,.0f} / {max(inst):,.0f}"
                if inst else "")
         lines.append(
             f"| {r['group']} | {len(inst)} | {r['insts'] / 1e6:,.1f}M "
-            f"| {r['uniq_insts']:,} | {r['code_kib']:,.0f} "
-            f"| {r['x_L1I_64K']:.1f} | {r['x_L1I_512K']:.2f} "
-            f"| {r['x_L2_2M']:.2f} | {r['x_L2_16M']:.3f} | {med} |")
+            f"| {r['uniq_insts']:,} | {r['code_kib']:,.0f} | "
+            + "".join(f"{fmt_x(r[f'x_{key_of(l)}'])} | " for l, _ in end)
+            + f"{med} |")
     lines.append("")
     mpki_table(lines, rows, "priv", "### Misses per 1,000 instructions, "
-               "private (the process name's code alone)")
+               "private (the process name's code alone)", caches)
     mpki_table(lines, rows, "shared", "### Misses per 1,000 instructions, "
-               "shared (the interleaved stream)")
+               "shared (the interleaved stream)", caches)
     branch_table(lines, rows, "### Distinct branches (taken at least once)")
 
     lines.append("## 2. By name, aggregated: same-name processes share code")
@@ -430,20 +583,20 @@ def summarize(out):
                  "little at the same addresses (different code, or ASLR).")
     lines.append("")
     lines.append("| process | processes | distinct insts | code (KiB) | "
-                 "overlap | ×64K | ×512K | ×2M | ×16M |")
-    lines.append("|---|---|---|---|---|---|---|---|---|")
+                 "overlap | " + " | ".join(f"×{size_of(l)}" for l, _ in end)
+                 + " |")
+    lines.append("|---|---|---|---|---|" + "---|" * len(end))
     for (name, m), r in zip(mrows, top):
         lines.append(
             f"| {name} | {len(per_name.get(name, []))} "
             f"| {m['uniq_insts']:,} | {m['code_kib']:,.0f} "
-            f"| {fmt(r['overlap'], 3)} | {m['x_L1I_64K']:.1f} "
-            f"| {m['x_L1I_512K']:.2f} | {m['x_L2_2M']:.2f} "
-            f"| {m['x_L2_16M']:.3f} |")
+            f"| {fmt(r['overlap'], 3)} | "
+            + " | ".join(fmt_x(m[f"x_{key_of(l)}"]) for l, _ in end) + " |")
     lines.append("")
     mpki_table(lines, mrows, "priv", "### Misses per 1,000 instructions, "
-               "private, aggregated")
+               "private, aggregated", caches)
     mpki_table(lines, mrows, "shared", "### Misses per 1,000 instructions, "
-               "shared, aggregated")
+               "shared, aggregated", caches)
     branch_table(lines, mrows, "### Distinct branches, aggregated")
 
     lines.append("## 3. By PID")
@@ -456,23 +609,25 @@ def summarize(out):
                  "all in `instances.csv`. MPKI: the process's code alone.")
     lines.append("")
     lines.append("| PID | exec | process | instructions | distinct insts | "
-                 "code (KiB) | MPKI 64K | 512K | 2M | cold | branches "
-                 "(taken) | kernel instructions |")
-    lines.append("|---|---|---|---|---|---|---|---|---|---|---|---|")
+                 "code (KiB) | "
+                 + "".join(f"MPKI {size_of(l)} | " for l, _ in end)
+                 + "cold | branches (taken) | kernel instructions |")
+    lines.append("|---|---|---|---|---|---|" + "---|" * (len(end) + 3))
     for r in pids[:30]:
         lines.append(
             f"| {r['pid']} | {r['exec']} | {r['process']} "
             f"| {r['insts'] / 1e6:,.1f}M | {r['uniq_insts']:,} "
-            f"| {r['code_kib']:,.0f} | {fmt(r['priv_mpki_L1I_64K'])} "
-            f"| {fmt(r['priv_mpki_L1I_512K'])} | {fmt(r['priv_mpki_L2_2M'])} "
-            f"| {fmt(r['cold_mpki'])} | {r['branches']:,} "
+            f"| {r['code_kib']:,.0f} | "
+            + "".join(f"{fmt(r[f'priv_mpki_{key_of(l)}'])} | " for l, _ in end)
+            + f"{fmt(r['cold_mpki'])} | {r['branches']:,} "
             f"({r['branches_taken']:,}) | {r['k_insts'] / 1e6:,.1f}M |")
     lines.append("")
     lines.append("Per name, over its processes (median / max):")
     lines.append("")
     lines.append("| process | processes | instructions | code (KiB) | "
-                 "MPKI 64K | MPKI 512K | branches |")
-    lines.append("|---|---|---|---|---|---|---|")
+                 + "".join(f"MPKI {size_of(l)} | " for l, _ in end)
+                 + "branches |")
+    lines.append("|---|---|---|---|" + "---|" * (len(end) + 1))
 
     def mm(xs, f):
         xs = [x for x in xs if x is not None]
@@ -484,10 +639,10 @@ def summarize(out):
         lines.append(
             f"| {name} | {len(ps)} "
             f"| {mm([p['insts'] / 1e6 for p in ps], lambda x: f'{x:,.1f}M')} "
-            f"| {mm([p['code_kib'] for p in ps], lambda x: f'{x:,.0f}')} "
-            f"| {mm([p['priv_mpki_L1I_64K'] for p in ps], fmt)} "
-            f"| {mm([p['priv_mpki_L1I_512K'] for p in ps], fmt)} "
-            f"| {mm([p['branches'] for p in ps], lambda x: f'{x:,.0f}')} |")
+            f"| {mm([p['code_kib'] for p in ps], lambda x: f'{x:,.0f}')} | "
+            + "".join(f"{mm([p[f'priv_mpki_{key_of(l)}'] for p in ps], fmt)} | "
+                      for l, _ in end)
+            + f"{mm([p['branches'] for p in ps], lambda x: f'{x:,.0f}')} |")
     lines.append("")
 
     kt = sorted((r for r in table if r["k_insts"]),
@@ -495,16 +650,18 @@ def summarize(out):
     lines.append("## Kernel code on behalf of each process")
     lines.append("")
     lines.append("| process | kernel instructions | distinct kernel insts "
-                 "| kernel lines (KiB) | shared MPKI L1I 64K | L2 2M |")
-    lines.append("|---|---|---|---|---|---|")
+                 "| kernel lines (KiB) | "
+                 + " | ".join(f"shared MPKI {l}" for l, _ in first) + " |")
+    lines.append("|---|---|---|---|" + "---|" * len(first))
     for r in kt:
         lines.append(f"| {r['group']} | {r['k_insts'] / 1e6:,.1f}M "
                      f"| {r['k_uniq_insts']:,} "
-                     f"| {r['k_uniq_lines'] * LINE / 1024:,.0f} "
-                     f"| {fmt(r['k_shared_mpki_L1I_64K'])} "
-                     f"| {fmt(r['k_shared_mpki_L2_2M'])} |")
-    threads = summarize_threads(out)
-    thread_section(lines, threads)
+                     f"| {r['k_uniq_lines'] * LINE / 1024:,.0f} | "
+                     + " | ".join(fmt(r[f"k_shared_mpki_{key_of(l)}"])
+                                  for l, _ in first) + " |")
+    threads = summarize_threads(out, caches)
+    thread_section(lines, threads, caches)
+    bin_section(lines, threads, summarize_bins(out))
     (out / "summary.md").write_text("\n".join(lines) + "\n")
     print(f"{out / 'summary.md'}, {out / 'footprint.csv'}, "
           f"{out / 'instances.csv'}, {out / 'threads.csv'}", file=sys.stderr)
@@ -517,13 +674,21 @@ def main():
     ap.add_argument("--vmlinux", default=DEFAULT_VMLINUX)
     ap.add_argument("--limit", type=float,
                     help="read only the first N lines of the PC trace")
+    ap.add_argument("--bins", default=",".join(str(b) for b in BINS),
+                    help="bin sizes in instructions for the per-thread bins "
+                    "(comma separated; empty for none)")
+    ap.add_argument("--caches", default=CACHES,
+                    help="cache sizes for the LRU hit rates and footprint "
+                    "multiples, LEVEL:SIZE comma separated (default: %(default)s)")
     ap.add_argument("--summary-only", action="store_true",
                     help="reformat an existing OUT without rerunning")
     args = ap.parse_args()
     out = args.out or args.run / "footprint"
     out.mkdir(parents=True, exist_ok=True)
     if not args.summary_only:
-        run_pass(args.run, out, args.vmlinux, args.limit)
+        bins = [int(float(b)) for b in args.bins.split(",") if b]
+        run_pass(args.run, out, args.vmlinux, args.limit, bins,
+                 parse_caches(args.caches))
     summarize(out)
     pc_footprint_report.write_report(out)
 

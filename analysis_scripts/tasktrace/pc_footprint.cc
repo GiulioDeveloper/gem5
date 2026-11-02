@@ -7,10 +7,14 @@
 // process of a name shares one address space, so code at the same address
 // in two git runs counts once). Per thread, the thread's whole stream (its
 // user code and the kernel code run while it was current) on its own, with
-// stack distances per instruction address as well as per line.
+// stack distances per instruction address as well as per line, and its
+// footprint per bin: distinct instructions, lines and branches in each N
+// instructions, cut either by the thread's own instruction count or by
+// the run's (global windows).
 //
-// usage: zstd -dc pc_trace.zst | pc_footprint SWITCHES EXECS OUTDIR
-//            VEC0 VEC1 CAP1 [CAP2 ...]
+// usage: zstd -dc pc_trace.zst | pc_footprint [--bins=N1,N2,...] SWITCHES
+//            EXECS OUTDIR VEC0 VEC1 CAP1 [CAP2 ...]
+//   --bins    bin sizes in instructions for thread_bins.tsv (default none)
 //   SWITCHES  global instruction count of each switch event, one per line,
 //             in trace order (the markers after the first one)
 //   EXECS     "insts tgid name" per exec event, by instruction count
@@ -314,6 +318,38 @@ struct Instance
     uint64_t kInsts = 0;
 };
 
+// Values counted per bin: distinct user and kernel instructions, distinct
+// user and kernel lines, distinct branches by type, distinct taken branches.
+constexpr int kBinVals = 4 + (NumBranch - 1) + 1;
+constexpr int kBinTaken = kBinVals - 1;
+
+// One thread's bins of one size and one cut. Bins are closed in order;
+// each closed bin adds its values weighted by its instructions.
+struct BinAcc
+{
+    uint64_t cur = kEmpty, w = 0, v[kBinVals] = {};
+    uint64_t bins = 0, sumW = 0, sumWV[kBinVals] = {}, maxV[kBinVals] = {};
+
+    void
+    close()
+    {
+        bins++;
+        sumW += w;
+        for (int i = 0; i < kBinVals; i++) {
+            sumWV[i] += w * v[i];
+            maxV[i] = std::max(maxV[i], v[i]);
+        }
+    }
+
+    void
+    start(uint64_t b)
+    {
+        cur = b;
+        w = 0;
+        memset(v, 0, sizeof v);
+    }
+};
+
 // One thread: a pid within a process instance (an exec starts a new one),
 // or a kernel thread.
 struct Thread
@@ -329,12 +365,87 @@ struct Thread
     // Distinct instructions (value: branch type | taken << 8) and lines,
     // keyed by the full PC, so kernel code (bit 63) is apart.
     FlatMap pcs{1 << 12}, uniqLines{1 << 10};
+    // Per bin size, two cuts (even: the thread's own count, odd: the run's).
+    // binPc/binLine give each distinct PC or line an index into the marks:
+    // the bin (+1) it was last counted in, per cut, and for a PC also the
+    // bin it was last counted as taken in.
+    std::vector<BinAcc> bins;
+    FlatMap binPc{1 << 10}, binLine{1 << 8};
+    std::vector<uint32_t> pcMark, lineMark;
+    uint64_t lastLine = kEmpty;
 
     Thread(int64_t tgid, int64_t pid, uint32_t instance, uint32_t group,
            bool kthread, std::string comm, size_t nc)
         : tgid(tgid), pid(pid), instance(instance), group(group),
           kthread(kthread), comm(std::move(comm)), lines(nc)
     {}
+
+    // Counts one committed instruction in every bin; own and run are the
+    // thread's and the run's instruction counts before it.
+    void
+    binStep(const std::vector<uint64_t> &sizes, uint64_t own, uint64_t run,
+            uint64_t pc, bool kernel, Branch br)
+    {
+        if (sizes.empty())
+            return;
+        const size_t nb = bins.size();
+        bool ins;
+        uint32_t pi = *binPc.get(pc, binPc.size(), &ins);
+        if (ins)
+            pcMark.resize(pcMark.size() + 2 * nb, 0);
+        uint64_t line = pc >> 6;
+        bool newLine = line != lastLine;
+        uint32_t li = 0;
+        if (newLine) {
+            li = *binLine.get(line, binLine.size(), &ins);
+            if (ins)
+                lineMark.resize(lineMark.size() + nb, 0);
+            lastLine = line;
+        }
+        for (size_t c = 0; c < nb; c++) {
+            uint64_t b = (c & 1 ? run : own) / sizes[c / 2];
+            BinAcc &a = bins[c];
+            if (a.cur != b) {
+                if (a.cur != kEmpty)
+                    a.close();
+                a.start(b);
+            }
+            a.w++;
+            uint32_t tag = b + 1;
+            uint32_t &m = pcMark[size_t(pi) * 2 * nb + 2 * c];
+            if (m != tag) {
+                m = tag;
+                a.v[kernel]++;
+                if (br != NotBranch)
+                    a.v[3 + br]++;
+            }
+            if (newLine) {
+                uint32_t &lm = lineMark[size_t(li) * nb + c];
+                if (lm != tag) {
+                    lm = tag;
+                    a.v[2 + kernel]++;
+                }
+            }
+        }
+    }
+
+    // The thread's last instruction, at pc, was a taken branch.
+    void
+    binTaken(uint64_t pc)
+    {
+        uint32_t *pi = binPc.find(pc);
+        if (!pi)
+            return;
+        const size_t nb = bins.size();
+        for (size_t c = 0; c < nb; c++) {
+            uint32_t tag = bins[c].cur + 1;
+            uint32_t &m = pcMark[size_t(*pi) * 2 * nb + 2 * c + 1];
+            if (m != tag) {
+                m = tag;
+                bins[c].v[kBinTaken]++;
+            }
+        }
+    }
 };
 
 struct Exec
@@ -441,9 +552,16 @@ writeHist(FILE *o, const std::string &name, const char *view,
 int
 main(int argc, char **argv)
 {
+    std::vector<uint64_t> binSizes;
+    if (argc > 1 && startsWith(argv[1], "--bins=")) {
+        for (char *s = strtok(argv[1] + 7, ","); s; s = strtok(nullptr, ","))
+            binSizes.push_back(strtoull(s, nullptr, 10));
+        argv++;
+        argc--;
+    }
     if (argc < 7) {
-        fprintf(stderr, "usage: %s SWITCHES EXECS OUTDIR VEC0 VEC1 CAP...\n",
-                argv[0]);
+        fprintf(stderr, "usage: %s [--bins=N,...] SWITCHES EXECS OUTDIR VEC0 "
+                "VEC1 CAP...\n", argv[0]);
         return 2;
     }
     std::vector<uint64_t> switches;
@@ -524,6 +642,7 @@ main(int argc, char **argv)
         }
         threads.push_back(std::make_unique<Thread>(tgid, pid, inst, gid,
                                                    kthread, comm, nc));
+        threads.back()->bins.resize(2 * binSizes.size());
         return threadId[k] = threads.size() - 1;
     };
 
@@ -547,6 +666,7 @@ main(int argc, char **argv)
     uint32_t curThread = 0, prevThread = 0;
     threads.push_back(std::make_unique<Thread>(-1, -1, 0, kernelGroup, true,
                                                "[before any marker]", nc));
+    threads.back()->bins.resize(2 * binSizes.size());
     bool haveMarker = false;
 
     uint64_t prevPc = 0, prevKey = kEmpty, prevNameKey = kEmpty;
@@ -653,6 +773,7 @@ main(int argc, char **argv)
                     *v |= 1u << 24;
                 if (uint32_t *v = threads[prevThread]->pcs.find(prevPc))
                     *v |= 1u << 8;
+                threads[prevThread]->binTaken(prevPc);
             }
         }
 
@@ -676,6 +797,7 @@ main(int argc, char **argv)
         grp.byName.insts++;
         if (!kernel) inst.stats.insts++;
         Thread &th = *threads[curThread];
+        th.binStep(binSizes, th.lines.insts, total, pc, kernel, br);
         th.lines.insts++;
         th.pcs.get(pc, br, &ins);
         int64_t dpc = th.pcStack.access(pc);
@@ -818,6 +940,50 @@ main(int argc, char **argv)
             fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, br[b], tk[b],
                     kbr[b]);
         fprintf(o, "\n");
+    }
+    fclose(o);
+
+    // thread_bins.tsv: per thread, bin size and cut, the bins' values
+    // weighted by their instructions. Only whole bins count (a thread's own
+    // count reached the size; the run's window ended), unless the thread has
+    // none, and then its partial bins do (partial_only).
+    o = fopen((outdir + "/thread_bins.tsv").c_str(), "w");
+    fprintf(o, "thread\tcut\tbin_insts\tbins\tpartial_only\tsum_w");
+    const char *binVal[kBinVals] = {"u_insts", "k_insts", "u_lines",
+                                    "k_lines"};
+    std::vector<std::string> brCols;
+    for (int b = 1; b < NumBranch; b++)
+        brCols.push_back(std::string("br_") + kBranchNames[b]);
+    for (int b = 1; b < NumBranch; b++)
+        binVal[3 + b] = brCols[b - 1].c_str();
+    binVal[kBinTaken] = "taken";
+    for (int i = 0; i < kBinVals; i++)
+        fprintf(o, "\tsum_wv_%s", binVal[i]);
+    for (int i = 0; i < kBinVals; i++)
+        fprintf(o, "\tmax_%s", binVal[i]);
+    fprintf(o, "\n");
+    for (size_t i = 0; i < threads.size(); i++) {
+        Thread &t = *threads[i];
+        if (!t.lines.insts)
+            continue;
+        for (size_t c = 0; c < t.bins.size(); c++) {
+            BinAcc &a = t.bins[c];
+            uint64_t size = binSizes[c / 2];
+            bool whole = c & 1 ? (a.cur + 1) * size <= total : a.w == size;
+            bool partialOnly = false;
+            if (a.cur != kEmpty && (whole || a.bins == 0)) {
+                partialOnly = !whole && a.bins == 0;
+                a.close();
+            }
+            fprintf(o, "%zu\t%s\t%" PRIu64 "\t%" PRIu64 "\t%d\t%" PRIu64,
+                    i, c & 1 ? "run" : "own", size, a.bins, partialOnly,
+                    a.sumW);
+            for (int v = 0; v < kBinVals; v++)
+                fprintf(o, "\t%" PRIu64, a.sumWV[v]);
+            for (int v = 0; v < kBinVals; v++)
+                fprintf(o, "\t%" PRIu64, a.maxV[v]);
+            fprintf(o, "\n");
+        }
     }
     fclose(o);
 

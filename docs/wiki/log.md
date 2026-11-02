@@ -377,3 +377,28 @@ All ten summaries and both five-way comparisons were regenerated.
 Result in [[2026-10-16-btb-tlb-limit-study]]: the agentic gain from both
 limits falls from +6.9% to +3.7% at k = 5 (harness +9.0% → +5.0%, replay
 infra +5.1% → +0.6%). Updated [[sweeps]] and `analysis_scripts/README.md`.
+
+## [2026-10-30] experiment | Footprint per bin: window length vs program
+
+`pc_footprint.py`/`.cc` now also count each thread's distinct code and
+branches per bin of 100M, 500M and 1G instructions, cut by the thread's
+own instructions or by run windows (`thread_bins.csv`); `report.html` can
+show the bins instead of the whole stream and plots footprint growth
+against the bin size. It also fixes the report's "All numbers" table,
+which never rendered (wrong default sort key). Checked against a
+brute-force count on a 20M prefix; the earlier outputs are unchanged. On
+rubocop cache8x, OpenCode's main thread touches 2.4 MB per 100M of its
+own work and 4.9 MB per 1G, against 7.0 MB over the whole stream; docker
+uses its full 1.2 MB in each short life. Republished
+https://claude.ai/artifact/WggFB79GWaW6x7nUsun7So. Updated
+[[2026-10-26-rubocop-instruction-footprint]], [[pc-trace]].
+
+## [2026-11-02] infrastructure | Footprint pass: cache sizes as a parameter
+
+`pc_footprint.py --caches LEVEL:SIZE,...` sets the cache sizes for the LRU
+hit rates and footprint multiples (default: the Neoverse V2 L1I and L2 at
+×1/×4/×8, as before). The pass saves them in `caches.json`; the summary
+tables and `report.html` follow the list (any number of levels). Checked
+with a three-level list on `runs/traced-test/rubocop-smoke`; the rubocop
+cache8x outputs are unchanged apart from the summary's number rounding and
+the PID tables' extra largest-size columns. Updated [[pc-trace]].
