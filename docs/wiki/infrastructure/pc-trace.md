@@ -5,7 +5,7 @@ updated: 2026-11-02
 sources:
   - analysis_scripts/tasktrace/pc_trace.py
   - run_scripts/tasktrace/pc-trace.sh
-  - runs/traced-test/
+  - runs/old-tests/traced-test/
   - src/cpu/exetrace.cc
 tags: [trace, pc, footprint, tracer]
 ---
@@ -152,7 +152,7 @@ micro-op lines (`0x….  0`, `. 1`) are dropped by the reducer anyway.
 > The full `Exec` compound flag includes `ExecFaulting`, which prints an
 > instruction that faults (e.g. a page-faulting `stp`) before the exception
 > vector; it then executes again after the handler. In the
-> `runs/traced-test` sample this added 3 instructions to 2,000,004. The lean
+> `runs/old-tests/traced-test` sample this added 3 instructions to 2,000,004. The lean
 > set leaves it out, and the live trace then matches the tracer's
 > instruction counts exactly (1,756,030 before the first switch).
 
@@ -163,7 +163,7 @@ micro-op lines (`0x….  0`, `. 1`) are dropped by the reducer anyway.
 | atomic, 2M instructions: expand the PC trace, compare with the source Exec trace | identical, 2,000,004 instructions PC for PC (`verify`) |
 | atomic: instructions between switches vs the tracer's `insts` | equal (1/1 complete slice) |
 | atomic, live pipe run vs the stored sample | identical apart from the sample's 3 faulting lines |
-| O3, 1 + 0.5M warm-up + 2M detailed (`runs/traced-test/o3-check`): expand vs Exec trace | identical, 2,538,421 instructions; both switches on `switch_pc` |
+| O3, 1 + 0.5M warm-up + 2M detailed (`runs/old-tests/traced-test/o3-check`): expand vs Exec trace | identical, 2,538,421 instructions; both switches on `switch_pc` |
 | O3: instructions between switches vs the tracer's `insts` | equal once NOPs are excluded (O3's count leaves them out; `verify` reports both) |
 | O3 on rubocop-13560 (1 + 1M + 20M), live through the pipe | 62 switch events, 62 switch markers, no warnings; all 61 complete slices equal to the tracer's count without NOPs |
 | O3, 15G instructions (rubocop, all six runs; four after the stall split): instructions between switches vs the tracer's `insts` (`check_pc_slices.sh`) | every complete slice equal without NOPs (20,213–22,631 per run, none different). The reducer's "switch ticks before their Exec tick" warning (1–68 per run) does not affect the pairing (why it appears: above) |

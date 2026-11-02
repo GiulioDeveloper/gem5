@@ -4,8 +4,8 @@ status: current
 updated: 2026-10-21
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
-  - runs/tasktrace/20261008-125928-gin-2121-o3window-read/
-  - runs/tasktrace/20261009-141720-framework-52684-o3window/
+  - runs/old-tests/tasktrace/20261008-125928-gin-2121-o3window-read/
+  - runs/old-tests/tasktrace/20261009-141720-framework-52684-o3window/
 tags: [agentic, tool-calls, context-switch, o3]
 ---
 
@@ -24,12 +24,12 @@ per checkpoint.
 - **gin-2121 cpt.0 `read`:** `o3-window.sh gin-2121 2950000000 20000000
   420000000 1000000` (2.95G atomic settle to just before the call, 20M
   warm-up, 420M O3 in 1M blocks). Run
-  `runs/tasktrace/20261008-125928-gin-2121-o3window-read`.
+  `runs/old-tests/tasktrace/20261008-125928-gin-2121-o3window-read`.
 - **framework-52684 cpt.0 `bash`** (`ls /testbed && head -20
   /testbed/composer.json`): atomic to ROUND 3 to find the call, then
   `o3-window.sh framework-52684 4330000000 20000000 400000000 250000`,
   rerun 2026-10-09 with the user/kernel split and scheduler cost
-  (`runs/tasktrace/20261009-141720-framework-52684-o3window`).
+  (`runs/old-tests/tasktrace/20261009-141720-framework-52684-o3window`).
 - Block groups aggregated from raw counts ([[aggregating-metrics]]).
 
 ## Results

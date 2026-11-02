@@ -4,8 +4,8 @@ status: current
 updated: 2026-10-22
 sources:
   - runs/sweep/20261014-110051/agentic/
-  - runs/analysis/thread_breakdown.py
-  - runs/analysis/thread_breakdown-20261014-110051.txt
+  - runs/old-tests/analysis/thread_breakdown.py
+  - runs/old-tests/analysis/thread_breakdown-20261014-110051.txt
 tags: [agentic, opencode, jit, context-switch, harness]
 ---
 
@@ -23,7 +23,7 @@ No new simulation. Re-analysed the 27 agentic windows of the
 total) from their `tasktrace.jsonl`, counting only the detailed window
 (`intervals.csv` range). A slice between two switches belongs to the first
 switch's `next`; per-class IPC = instructions / (slice ticks / 333.3).
-Script: `runs/analysis/thread_breakdown.py <sweep>/agentic`. Thread classes
+Script: `runs/old-tests/analysis/thread_breakdown.py <sweep>/agentic`. Thread classes
 are OpenCode thread names with trailing digits stripped.
 
 ## Results

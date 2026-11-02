@@ -453,3 +453,14 @@ tracer-design (the replay driver's and OpenCode's shares of switches and
 instructions), long-runs-guide (compression on other launchers, the switch
 tick explanation, footprint bins and `--caches`, geomeans, the stats-block
 cross-check).
+
+## [2026-11-02] fix | Old run outputs moved to runs/old-tests
+
+`runs/` now holds only `sweep/`, `rubocop-15G/`, `venv/` and
+`old-tests/`. Everything else (the early `tasktrace/` runs, `traced-test/`,
+`analysis/`, `btb/`, `tlbflush/`, screenshots, old sweep logs, the
+2026-11-02 `PC_TRACE` test window) moved into `runs/old-tests/`, kept
+rather than deleted. Paths updated in [[2026-10-08-tool-call-windows]],
+[[2026-10-14-event-windows]], [[2026-10-22-opencode-thread-breakdown]] and
+[[pc-trace]]; older log entries keep the paths of their time. The
+launchers still write new runs to `runs/tasktrace/<stamp>` by default.

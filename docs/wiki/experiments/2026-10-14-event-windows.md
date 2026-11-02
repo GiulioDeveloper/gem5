@@ -4,7 +4,7 @@ status: current
 updated: 2026-10-21
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
-  - runs/tasktrace/20261013-1735*
+  - runs/old-tests/tasktrace/20261013-1735*
 tags: [agentic, context-switch, events, o3]
 ---
 
@@ -20,7 +20,7 @@ move in the blocks holding a scheduling event, per kind and cause?
 Three O3 windows, 1 atomic settle instruction, 20M warm-up,
 200K-instruction blocks: `714.cpython_r` (200M, `spec-window.sh`),
 `jq-2598` and `redis-12272` (400M, `o3-window.sh`). Outputs
-`runs/tasktrace/20261013-1735*`. Event block vs the window value, mean over
+`runs/old-tests/tasktrace/20261013-1735*`. Event block vs the window value, mean over
 events, a block counted once per event. Switch causes under the rule of the
 time (`same_mm`; redis' `within docker` is 300 and `within opencode` 154
 under the current rule, [[context-switch-classification]]).
