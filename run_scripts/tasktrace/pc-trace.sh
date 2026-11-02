@@ -9,11 +9,15 @@
 # whole run is traced, settle and warm-up included.
 # GEM5_OPTS: gem5 options, placed before the config script (default
 # "--stats-file=stats.txt?desc=False", which drops stat descriptions).
-# At the end stats.txt is replaced by stats.tsv.zst (analysis_scripts/
-# tasktrace/stats_table.py); KEEP_STATS=1 keeps both.
+# At the end stats.txt is replaced by stats.tsv.zst (run_scripts/
+# compress-stats.sh; on by default here, COMPRESS_STATS=0 keeps only the
+# text); KEEP_STATS=1 keeps both.
 # OUTDIR=<dir> overrides the output directory; PY selects the interpreter
-# (Python 3.14+ for the built-in zstd).
+# (Python 3.14+ for the built-in zstd); PC_TRACE_LEVEL the trace's zstd
+# level (pc-trace-lib.sh). o3-window.sh / spec-window.sh with PC_TRACE=1
+# record the same trace on a window in stats blocks.
 set -o pipefail
+. "$(dirname "$0")/pc-trace-lib.sh"
 
 TASK=${1:?task}
 MAX=${2:?max instructions}
@@ -34,18 +38,9 @@ fi
 mkdir -p "$OUTDIR"
 echo "Output dir: $OUTDIR"
 
-FIFO="$OUTDIR/exec.fifo"
-rm -f "$FIFO"
-mkfifo "$FIFO"
-"$PY" analysis_scripts/tasktrace/pc_trace.py reduce "$FIFO" \
-    -o "$OUTDIR/pc_trace.zst" --tasktrace "$OUTDIR/tasktrace.jsonl" \
-    --vmlinux "$KERNEL" \
-    2> "$OUTDIR/pc_trace.log" &
-REDUCER=$!
+pc_trace_start "$OUTDIR" "$KERNEL" || exit 1
 
-./build/ARM/gem5.opt --outdir="$OUTDIR" "${G5[@]}" \
-    --debug-flags=ExecEnable,ExecUser,ExecKernel,ExecMacro \
-    --debug-file=exec.fifo \
+./build/ARM/gem5.opt --outdir="$OUTDIR" "${G5[@]}" "${PC_TRACE_G5[@]}" \
     configs/garfield/arm/virt_run.py \
     --restore-dir "$AGENTIC/checkpoints/agentic-$TASK/cpt.0" \
     --disk-img "$AGENTIC/images/rpoint-ubuntu-24.04-v21.img" \
@@ -59,15 +54,9 @@ REDUCER=$!
     2>&1 | tee "$OUTDIR/run.log"
 STATUS=$?
 
-wait "$REDUCER"
+pc_trace_finish
 RSTATUS=$?
-rm -f "$FIFO"
-cat "$OUTDIR/pc_trace.log"
 
-# Replace stats.txt by its values-only table (checked; kept on a mismatch).
-# KEEP_STATS=1 keeps stats.txt as well.
-if [ -f "$OUTDIR/stats.txt" ]; then
-    "$PY" analysis_scripts/tasktrace/stats_table.py "$OUTDIR/stats.txt" \
-        ${KEEP_STATS:+--keep}
-fi
+COMPRESS_STATS=${COMPRESS_STATS:-1} PY=$PY \
+    run_scripts/compress-stats.sh "$OUTDIR"
 exit $(( STATUS != 0 ? STATUS : RSTATUS ))

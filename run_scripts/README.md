@@ -16,6 +16,21 @@ an agentic checkpoint name without the `agentic-` prefix, e.g. `gin-2121`.
 Extra arguments after the positional ones go to `virt_run.py` / `fs_run.py`
 unchanged (e.g. `--disable-fdp`, `--infinite-btb`, `--infinite-tlb`).
 
+Stats compression: with `COMPRESS_STATS=1`, every launcher below (except
+`o3-pair.sh`, which diffs the text, and `landing-all.sh`, which reads only
+the task trace) replaces the run's `stats.txt` by the values-only table
+`stats.tsv.zst` when gem5 exits, through `compress-stats.sh` (every value is
+checked; `stats.txt` is kept on a mismatch, and `KEEP_STATS=1` keeps it
+anyway). The sweeps pass it to every run and record it in `sweep.conf`.
+`pc-trace.sh` compresses by default (`COMPRESS_STATS=0` turns it off). The
+analysis scripts read either form.
+
+PC trace: with `PC_TRACE=1`, `o3-window.sh`, `spec-window.sh` and the sweeps
+also record the compact PC trace that `pc-trace.sh` records
+(`pc_trace.zst`, zstd-compressed as it is written; `PC_TRACE_LEVEL` sets the
+level, default 9). The setup is shared in `tasktrace/pc-trace-lib.sh`. The
+whole run is traced, settle and warm-up included.
+
 ## Plain restores
 
 | script | purpose | output |

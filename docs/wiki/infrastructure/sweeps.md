@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-30
+updated: 2026-11-02
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -29,7 +29,11 @@ nohup run_scripts/tasktrace/smart_sweep.sh > runs/sweep.log 2>&1 &
 Environment: `PAR` (runs in parallel), `SETTLE`, `WARM`, `IVL`, `SPEC_DET`,
 `AGENTIC_DET`, `ONLY="<name> ..."`, `PY` (an interpreter with matplotlib for
 PDFs, e.g. `runs/venv/bin/python`), `EXTRA` (flags for every run),
-`BASELINE` (a sweep to compare against at the end).
+`BASELINE` (a sweep to compare against at the end), `COMPRESS_STATS=1`
+(each run's `stats.txt` becomes the checked `stats.tsv.zst` table when it
+finishes, about 75× smaller, [[stats-blocks]]; recorded in `sweep.conf`),
+`PC_TRACE=1` (each run also writes `pc_trace.zst`, [[pc-trace]]; recorded in
+`sweep.conf`).
 
 ## Use `smart_sweep.sh`
 

@@ -117,7 +117,7 @@ html { scroll-behavior: smooth; }
   <div class="eyebrow">gem5 fork · branch gfdev · Arm full system</div>
   <h1>Task Tracer Guide</h1>
   <p class="lede">How to see, inside a gem5 restore of an agentic or SPEC checkpoint, which guest process or thread is running, when it switches, forks, execs and exits, and when each OpenCode tool call starts and ends. Every event is stamped in simulated ticks and committed instructions, so it lines up with gem5's statistics.</p>
-  <div class="build">Built from the project wiki on 2026-10-21. Sources: docs/wiki/infrastructure/{running-a-traced-window, checkpoints, task-tracer, trace-format, trace-analysis, stats-blocks, viewers, sweeps, run-and-analysis-scripts}.md and docs/wiki/methodology/{window-placement, aggregating-metrics, validation-checks, instruction-counts, context-switch-classification}.md. This page is generated: fix the wiki, then rebuild.</div>
+  <div class="build">Built from the project wiki on 2026-11-02 (first built 2026-10-21). Sources: docs/wiki/infrastructure/{running-a-traced-window, checkpoints, task-tracer, trace-format, trace-analysis, stats-blocks, viewers, sweeps, run-and-analysis-scripts, run-output-compression}.md and docs/wiki/methodology/{window-placement, aggregating-metrics, validation-checks, instruction-counts, context-switch-classification}.md. This page is generated: fix the wiki, then rebuild.</div>
 </header>
 
 <h2 id="what">What you get</h2>
@@ -244,6 +244,8 @@ COMMON="--disk-img $AGENTIC/images/rpoint-ubuntu-24.04-v21.img \
 <tr><td><code>o3-pair.sh [task] [warmup] [detailed]</code></td><td>The no-perturbation check after any tracer change.</td></tr>
 <tr><td><code>landing-all.sh [insts] [parallel]</code></td><td>The landing check over every checkpoint.</td></tr>
 </tbody></table></div>
+<p><strong>Smaller outputs.</strong> Two environment variables work on the window launchers and the sweeps. <code>COMPRESS_STATS=1</code> replaces <code>stats.txt</code> by <code>stats.tsv.zst</code> when gem5 exits: the stat names once, then one row of values per block, about 75× smaller, deleted only after every value is checked (<code>KEEP_STATS=1</code> keeps the text too). <code>PC_TRACE=1</code> also records the committed instruction stream as a compact PC trace with a marker at every context switch (<code>pc_trace.zst</code>, about 0.04 bytes per instruction). Every analysis script reads either form of the stats.</p>
+<div class="codeblock"><pre><code>COMPRESS_STATS=1 PC_TRACE=1 run_scripts/tasktrace/o3-window.sh gin-2121 1 20000000 400000000 200000</code></pre></div>
 
 <h2 id="place">Placing a window on an event</h2>
 <p>Detailed simulation is slow, so find the interesting point on the atomic core first.</p>
@@ -299,10 +301,11 @@ python3 analysis_scripts/tasktrace/window_view.py  runs/o3-$TASK</code></pre></d
 <tr><td><code>PAR</code></td><td>Most runs in parallel per sweep.</td></tr>
 <tr><td><code>EXTRA</code></td><td>Flags for every run, such as <code>--infinite-btb</code>. Resuming with different flags is refused.</td></tr>
 <tr><td><code>BASELINE</code></td><td>A sweep to compare against when this one finishes.</td></tr>
+<tr><td><code>COMPRESS_STATS</code>, <code>PC_TRACE</code></td><td><code>1</code> converts each run's stats to the compact table, and records its PC trace. Both are written to <code>sweep.conf</code>.</td></tr>
 <tr><td><code>ONLY</code>, <code>SETTLE</code>, <code>WARM</code>, <code>IVL</code>, <code>SPEC_DET</code>, <code>AGENTIC_DET</code></td><td>Restrict checkpoints; window settings.</td></tr>
 <tr><td><code>RESERVE_GB</code>, <code>STAGGER</code>, <code>LOCK</code>, <code>PEAKS</code></td><td>Memory gating (defaults 8 GB, 60 s, a per-user lock, <code>runs/sweep/mem_peaks.tsv</code>).</td></tr>
 </tbody></table></div>
-<p><code>sweep_summary.py &lt;sweep&gt;</code> writes one row per checkpoint and a violin page per suite. <code>--skip-insts 100e6</code> leaves out each window's first 100M instructions without re-simulating. <code>sweep_compare.py A B [C ...]</code> pairs checkpoints across up to eight sweeps and reports each one's change against the first:</p>
+<p><code>sweep_summary.py &lt;sweep&gt;</code> writes one row per checkpoint and a violin page per suite. <code>--skip-insts 100e6</code> leaves out each window's first 100M instructions without re-simulating. Agentic windows are also split by who runs, at every context switch: <strong>harness</strong> (OpenCode), <strong>tools</strong> (the bash and rg tool processes), <strong>harness git</strong> (OpenCode's git snapshots), <strong>replay infra</strong> (the <code>run.sh</code> tree and the Docker daemons) and <strong>other</strong>. Each category gets its share of time and instructions and every metric over its slices (<code>summary/sweep_slices.csv</code>, per process in <code>sweep_processes.csv</code>), plus switch frequency, mean time between switches and scheduler instructions. An edge setting k = 1, 3 or 5 drops the blocks within k − 1 of a block holding a switch and recomputes everything over the rest, to see the indirect cost of switches; in the 27 baseline agentic windows k = 1, 3, 5 keep 72–95%, 54–88% and 42–84% of the instructions. <code>sweep_compare.py A B [C ...]</code> pairs checkpoints across up to eight sweeps and reports each one's change against the first, with a table of geometric means of the per-checkpoint ratios per suite (for IPC, the speedup; also in <code>compare_multi_geomean.csv</code>), per category and per edge setting:</p>
 <div class="codeblock"><pre><code>runs/venv/bin/python analysis_scripts/tasktrace/sweep_compare.py \
     runs/sweep/&lt;fdp&gt; runs/sweep/&lt;nofdp&gt; runs/sweep/&lt;infbtb&gt; \
     --labels FDP no-FDP inf-BTB --pdf</code></pre></div>
@@ -328,6 +331,8 @@ python3 analysis_scripts/tasktrace/window_view.py  runs/o3-$TASK</code></pre></d
 <h2 id="read">Reading the numbers</h2>
 <ul>
 <li><strong>Aggregate raw counts, never ratios.</strong> IPC over blocks is total instructions over total cycles. With equal-instruction blocks the window IPC is the harmonic mean of block IPCs: in one window 0.956 against a mean bar of 1.21. <code>trace_analysis.load_blocks()</code> gives the raw counts.</li>
+<li><strong>One number per configuration: the geometric mean of the per-checkpoint ratios</strong>, never the arithmetic mean of ratios. Keep the medians and outliers next to it; a checkpoint with a zero in either sweep has no ratio and drops out of the mean.</li>
+<li><strong><code>numCycles</code> leaves out WFI (idle) time</strong>, so ticks over the clock period differ from <code>numCycles</code> in a block where the core idled.</li>
 <li><strong>Which instruction count.</strong> <code>insts</code> is the global committed count since the restore, never reset, the same basis as <code>intervals.csv</code>. <code>uinsts</code> is its user-mode part. gem5's <code>numInsts</code> stats include NOPs and must not be mixed with <code>insts</code>. The progress line counts micro-ops, about 12% more.</li>
 <li><strong>Thread, process and kernel switches</strong> are classified by <code>tgid</code>, not by address space. A change of process through a kernel thread (<code>opencode -&gt; rcu_preempt -&gt; cc1plus</code>) also counts as a process switch, marked <code>via kernel</code>.</li>
 <li><strong>The replay driver is in the measurement.</strong> About a fifth of agentic instructions are the host's <code>docker inspect</code> polling (the <code>run.sh</code> launch tree). Report shares with and without it.</li>

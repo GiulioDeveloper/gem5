@@ -116,7 +116,7 @@ html { scroll-behavior: smooth; }
   <div class="eyebrow">gem5 fork · branch gfdev · LinuxTaskTracer</div>
   <h1>Task Tracer Design</h1>
   <p class="lede">A gem5 SimObject that watches a restored Linux guest from outside: every context switch, fork, exec, exit and OpenCode tool call, stamped in ticks and committed instructions, without changing a single simulated statistic and without recapturing any checkpoint. This page explains how it works and how we know it is right.</p>
-  <div class="build">Built from the project wiki on 2026-10-21. Sources: docs/wiki/infrastructure/{task-tracer, trace-format, trace-analysis, checkpoints}.md, docs/wiki/methodology/{validation-checks, instruction-counts, context-switch-classification}.md, docs/wiki/pitfalls/{gem5-tracing-under-kaslr, functional-translation-perturbs, replay-polling-in-measurement}.md, docs/wiki/findings/switch-cost-is-around-the-switch.md, docs/wiki/workloads/opencode-harness.md. This page is generated: fix the wiki, then rebuild. For running it, see the Task Tracer Guide.</div>
+  <div class="build">Built from the project wiki on 2026-11-02. Sources: docs/wiki/infrastructure/{task-tracer, trace-format, trace-analysis, checkpoints}.md, docs/wiki/methodology/{validation-checks, instruction-counts, context-switch-classification}.md, docs/wiki/pitfalls/{gem5-tracing-under-kaslr, functional-translation-perturbs, replay-polling-in-measurement}.md, docs/wiki/findings/switch-cost-is-around-the-switch.md, docs/wiki/workloads/opencode-harness.md. This page is generated: fix the wiki, then rebuild. For running it, see the Task Tracer Guide.</div>
 </header>
 
 <h2 id="why">The problem</h2>
@@ -241,10 +241,10 @@ html { scroll-behavior: smooth; }
 <h2 id="shown">What it has shown so far</h2>
 <div class="note"><strong>Provisional.</strong> These come from a few windows and one sweep per configuration; they are working hypotheses in the project wiki and may change with new runs.</div>
 <ul>
-<li><strong>About a fifth of agentic instructions are the benchmark's own polling.</strong> The model-free replay driver runs <code>docker inspect</code> every 50 ms of guest time while it waits, each a fresh Go process of about 40M instructions sharing the vCPU with the agent. The tracer made it visible; analyses now report shares with and without it.</li>
+<li><strong>About a fifth of agentic instructions are the benchmark's own polling.</strong> The model-free replay driver runs <code>docker inspect</code> every 50 ms of guest time while it waits, each a fresh Go process of about 40M instructions sharing the vCPU with the agent. Its Docker CLI threads cause over half of all context switches across the 27 baseline windows (7,557 of 18,112 within <code>docker</code> alone). The tracer made it visible; analyses now report shares with and without it.</li>
 <li><strong>The scheduler is cheap; what surrounds a switch is not.</strong> The scheduler path takes a median of ~1,800 instructions and ~1,700 cycles. Blocks containing a switch run at IPC 0.60 against 1.00, with three times the kernel share, and the same scheduler code takes 4,705 cycles instead of 1,650 during a tool's process churn: cold state, not scheduling.</li>
 <li><strong>The cost depends on who runs.</strong> Pipe hand-offs between two small processes raise IPC; short-lived shells, forks and execs cut it by a third to a half.</li>
-<li><strong>A tool call is mostly harness work.</strong> A 45-line file read takes about 170M instructions from running to completed, most of it OpenCode persisting state and its JavaScript runtime; a two-command <code>bash</code> call took 1.02G instructions, of which the tool processes ran about 70M.</li>
+<li><strong>A tool call is mostly harness work.</strong> A 45-line file read takes about 170M instructions from running to completed, most of it OpenCode persisting state and its JavaScript runtime; a two-command <code>bash</code> call took 1.02G instructions, of which the tool processes ran about 70M. Over the 27 baseline windows OpenCode itself runs 42.5% of the instructions (its main JavaScript thread 35.2% at IPC 0.89, <code>JITWorker</code>s 7.2%) but causes only 14% of the context switches.</li>
 <li><strong>The tools fence is inactive in the replay guests</strong>: no <code>cgroup.procs</code> writes, and fenced tools share OpenCode's cgroup set.</li>
 </ul>
 

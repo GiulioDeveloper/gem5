@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-27
+updated: 2026-11-02
 sources:
   - run_scripts/README.md
   - analysis_scripts/README.md
@@ -32,6 +32,19 @@ this page is the reference.
 | `tasktrace/o3-pair.sh [task] [warmup] [detailed]` | same window without and with `--task-trace`, diff `stats.txt`; `PAIR_ON_ARGS=` for a determinism check | after any tracer change |
 | `tasktrace/pc-trace.sh TASK MAX_INSTS [args]` | atomic restore (or an O3 window with `O3=`) streaming the Exec trace into `pc_trace.py`, storing only the compact PC trace; converts the stats to a table at the end | footprint, branch and repeat-distance studies ([[pc-trace]]); long runs ([[long-runs]]) |
 | `tasktrace/landing-all.sh [insts] [parallel]` | landing check over every checkpoint (`TASKS=` limits) | new checkpoints, slide or task-reading changes |
+
+`compress-stats.sh OUTDIR` is the shared end-of-run step: with
+`COMPRESS_STATS=1` it replaces `stats.txt` by the checked `stats.tsv.zst`
+table ([[stats-blocks]]; `KEEP_STATS=1` keeps the text too). `run_agent.sh`,
+`run_spec.sh`, `atomic.sh`, `o3-window.sh`, `spec-window.sh` and the sweeps
+honour it; `pc-trace.sh` has it on by default (`COMPRESS_STATS=0` turns it
+off); `o3-pair.sh` (diffs the text) and `landing-all.sh` (no stats used)
+ignore it. Each launcher still exits with gem5's status. Overview of both
+switches: [[run-output-compression]].
+
+`PC_TRACE=1` makes `o3-window.sh`, `spec-window.sh` and the sweeps also
+record the compact PC trace ([[pc-trace]]) through
+`tasktrace/pc-trace-lib.sh`, the pipe-and-reducer setup `pc-trace.sh` uses.
 
 How to choose the window numbers: [[running-a-traced-window]].
 

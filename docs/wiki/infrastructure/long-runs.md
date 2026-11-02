@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-27
+updated: 2026-11-02
 sources:
   - run_scripts/tasktrace/pc-trace.sh
   - analysis_scripts/tasktrace/stats_table.py
@@ -54,6 +54,10 @@ usual (how `normal` and `infbtbtlb` were stopped; both converted and
 checked).
 
 ## 2. Compact (automatic)
+
+The same two compactions are available to every launcher and sweep:
+[[run-output-compression]].
+
 
 - **Stats → `stats.tsv.zst`.** At the end of the run the launcher calls
   `stats_table.py`: the stat names once, then one row of values per block,
@@ -149,4 +153,6 @@ own processes too.
 - **Window IPC, not mean block IPC.** Sum instructions and cycles over
   blocks ([[aggregating-metrics]]).
 - The PC trace reducer's "switch ticks before their Exec tick" warning
-  (46–68 per 15G run) is expected on O3 and does not affect the join.
+  (1–68 per 15G run) is expected on O3 and does not affect the join: the
+  switch event fires when the call into `__switch_to` commits, which can be
+  before a late fetch of `__switch_to` ([[pc-trace#How the join works: by PC]]).

@@ -2,6 +2,8 @@
 # Task-tracer dev loop: restore one agentic checkpoint on the ATOMIC core
 # only and trace guest task events for a bounded number of instructions.
 # usage: [GEM5_OPTS="--debug-flags=..."] run_scripts/tasktrace/atomic.sh [task] [max-insts] [extra virt_run args...]
+# COMPRESS_STATS=1 replaces stats.txt by stats.tsv.zst at the end
+# (run_scripts/compress-stats.sh).
 set -o pipefail
 
 TASK=${1:-gin-2121}
@@ -24,3 +26,6 @@ echo "Output dir: $OUTDIR"
     --task-trace \
     "$@" \
     2>&1 | tee "$OUTDIR/run.log"
+STATUS=$?
+run_scripts/compress-stats.sh "$OUTDIR"
+exit $STATUS

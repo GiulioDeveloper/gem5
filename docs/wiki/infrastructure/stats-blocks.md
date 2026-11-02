@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-28
+updated: 2026-11-02
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
   - configs/garfield/arm/virt_run.py
@@ -59,6 +59,8 @@ so they work unchanged on converted runs.
 
 Checked on fmt-3901: `trace_analysis.py`, `window_view.py` and
 `sweep_summary.py` produce identical outputs from either form (apart from
-the run path). `pc-trace.sh` converts at the end of every run.
+the run path). `pc-trace.sh` converts at the end of every run; the other
+launchers and the sweeps do with `COMPRESS_STATS=1`
+(`run_scripts/compress-stats.sh`, [[run-and-analysis-scripts]]).
 
 How to combine blocks into window values: [[aggregating-metrics]].

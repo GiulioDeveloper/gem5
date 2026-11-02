@@ -1,6 +1,8 @@
 #!/bin/bash
 # Restore a SPEC FS checkpoint on the detailed O3 core.
 # usage: runs/run_spec.sh <benchmark> <inv> <simpoint> [warmup] [detailed]
+# COMPRESS_STATS=1 replaces stats.txt by stats.tsv.zst at the end
+# (run_scripts/compress-stats.sh).
 set -o pipefail
 B=${1:-777.zstd_r}; INV=${2:-0}; SP=${3:-1}
 WARM=${4:-10000000}; DET=${5:-50000000}
@@ -14,3 +16,6 @@ mkdir -p "$OUTDIR"; echo "Output dir: $OUTDIR"
     --disk-img $R/restore_resources/spec_shared_root.img \
     --progress-interval 10kHz \
     --warmup-insts $WARM --detailed-insts $DET 2>&1 | tee "$OUTDIR/run.log"
+STATUS=$?
+run_scripts/compress-stats.sh "$OUTDIR"
+exit $STATUS

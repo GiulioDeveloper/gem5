@@ -44,6 +44,15 @@
 #       BASELINE=runs/sweep/<ts>        also compare this sweep with
 #                                       BASELINE (sweep_compare.py), into
 #                                       BASE/compare-<baseline name>
+#       COMPRESS_STATS=1                replace each run's stats.txt by
+#                                       stats.tsv.zst once it finishes
+#                                       (run_scripts/compress-stats.sh;
+#                                       the analysis reads either form)
+#       PC_TRACE=1                      also record each run's compact
+#                                       PC trace, pc_trace.zst
+#                                       (pc-trace-lib.sh; the whole run
+#                                       is traced, settle and warm-up
+#                                       included)
 #       RESERVE_GB=8                    memory kept free beyond a run's need
 #       STAGGER=60                      seconds the lock is held after a launch
 #       LOCK=/tmp/gem5-smart-sweep-$UID.lock   shared by concurrent sweeps
@@ -56,6 +65,7 @@ export PAR=${PAR:-12} SETTLE=${SETTLE:-1} WARM=${WARM:-20000000}
 export IVL=${IVL:-200000} SPEC_DET=${SPEC_DET:-200000000}
 export AGENTIC_DET=${AGENTIC_DET:-400000000} BASE
 export EXTRA=${EXTRA:-}
+export COMPRESS_STATS=${COMPRESS_STATS:-0} PC_TRACE=${PC_TRACE:-0}
 export RESERVE_GB=${RESERVE_GB:-8} STAGGER=${STAGGER:-60}
 export LOCK=${LOCK:-/tmp/gem5-smart-sweep-$UID.lock}
 export STATE=${STATE:-/tmp/gem5-smart-sweep-$UID.d}
@@ -92,6 +102,8 @@ started $(date -Is)
 commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo -dirty)
 SETTLE=$SETTLE WARM=$WARM IVL=$IVL SPEC_DET=$SPEC_DET AGENTIC_DET=$AGENTIC_DET
 extra $EXTRA
+compress_stats $COMPRESS_STATS
+pc_trace $PC_TRACE
 runs ${#jobs[@]}
 EOF
 

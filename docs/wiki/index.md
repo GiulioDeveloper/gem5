@@ -1,7 +1,7 @@
 ---
 type: meta
 status: current
-updated: 2026-10-27
+updated: 2026-11-02
 ---
 
 # Index
@@ -43,6 +43,7 @@ Human-facing outputs: [[publish]].
 - [[running-a-traced-window]]: step-by-step commands
 - [[pc-trace]]: compact committed-PC trace with task markers, from gem5's Exec trace through a pipe
 - [[long-runs]]: multi-billion-instruction runs: launch, compaction, stall split, checks, multi-config and per-process analysis
+- [[run-output-compression]]: `COMPRESS_STATS` (stats table) and `PC_TRACE` (compact PC trace) for every launcher and sweep
 
 ## Experiments
 

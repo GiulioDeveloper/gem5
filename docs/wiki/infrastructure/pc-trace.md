@@ -39,6 +39,14 @@ Exec trace into a named pipe in the output directory and
 `KEEP_STATS=1` also keeps `stats.txt`). Measured: about **560K instructions/s** on the host (the plain
 atomic core is about 1.7M/s), so roughly 12 minutes per 400M instructions.
 
+The same trace on a window in stats blocks, or on every run of a sweep:
+`PC_TRACE=1` with `o3-window.sh`, `spec-window.sh`, `sweep.sh` or
+`smart_sweep.sh` (all share `run_scripts/tasktrace/pc-trace-lib.sh`;
+`PC_TRACE_LEVEL` sets the zstd level, default 9). The whole run is traced,
+settle and warm-up included. Checked on a gin-2121 O3 window (200K warm-up,
+1M detailed, 2026-11-02): 1.22M instructions in a 77 KB trace. Its speed cost
+on O3 has not been measured.
+
 On an existing Exec trace file (plain, `.gz` or `.zst`):
 
 ```sh
@@ -95,8 +103,9 @@ fffffbfffddf6488 b            ← jump target; the line before it jumped
 
 ## How the join works: by PC
 
-The tracer reports a switch when the first instruction of `__switch_to`
-commits, and the Exec trace holds only committed instructions. So the n-th
+The tracer reports a switch once per pass through `__switch_to`, when its
+first instruction is next to commit, and the Exec trace holds only
+committed instructions. So the n-th
 line at `__switch_to`'s address (its link address from `nm` on the guest
 vmlinux, plus the KASLR slide from the task trace's `start` event; written
 into the header as `switch_pc`) is the n-th switch, and the marker goes
@@ -105,8 +114,26 @@ between them. The reducer warns about a switch PC with no event, events
 left over at the end, or a switch tick earlier than its Exec line's tick.
 
 Ticks cannot be used on O3: its Exec lines carry the **fetch** tick, while
-the tracer stamps the commit tick (4 ns and 99 ns earlier for the two
+the tracer stamps a commit-time tick (4 ns and 99 ns later for the two
 switches of the O3 check below). On the atomic core the two ticks are equal.
+
+**Why some switch ticks are earlier than their Exec tick (O3).** O3's commit
+stage services PC events after it commits an instruction and advances its
+PC ([[task-tracer]]; `src/cpu/o3/commit.cc`, the `pcEventQueue.service` call
+after `advancePC`). So the `__switch_to` hook fires when the `bl` into it
+commits, while `__switch_to`'s first instruction is the next to commit. That
+instruction is normally fetched long before, but when the fetch of the call
+target is late (an L1I, iTLB or BTB miss on `__switch_to`, cold after
+roughly 0.7M instructions of other code) the `bl` can commit before it is
+fetched, and the switch tick is earlier than the Exec (fetch) tick. The
+reducer counts these as "switch ticks before their Exec tick". They are rare
+and follow the front end: on the 15G rubocop runs 68 (baseline), 46
+(infinite BTB + L2 TLB), 38 (×4 caches), 16 (×8), 17 (both + ×4) and 1
+(both + ×8) of about 20K switches each. The join is by PC count, so it is
+unaffected (every slice still matches, see Validation); only a marker's tick
+can be a few cycles before its instruction's fetch. The cause is read from
+the code and fits the per-configuration counts; no individual case was
+traced.
 
 Streaming: the tracer writes and flushes the switch event before the
 instruction commits and gem5 prints its Exec line, so the event is in
@@ -139,7 +166,8 @@ micro-op lines (`0x….  0`, `. 1`) are dropped by the reducer anyway.
 | O3, 1 + 0.5M warm-up + 2M detailed (`runs/traced-test/o3-check`): expand vs Exec trace | identical, 2,538,421 instructions; both switches on `switch_pc` |
 | O3: instructions between switches vs the tracer's `insts` | equal once NOPs are excluded (O3's count leaves them out; `verify` reports both) |
 | O3 on rubocop-13560 (1 + 1M + 20M), live through the pipe | 62 switch events, 62 switch markers, no warnings; all 61 complete slices equal to the tracer's count without NOPs |
-| O3, 15G instructions (rubocop, all six runs; four after the stall split): instructions between switches vs the tracer's `insts` (`check_pc_slices.sh`) | every complete slice equal without NOPs (20,213–22,631 per run, none different). The reducer's "switch ticks before their Exec tick" warning (46–68 per run) does not affect the pairing |
+| O3, 15G instructions (rubocop, all six runs; four after the stall split): instructions between switches vs the tracer's `insts` (`check_pc_slices.sh`) | every complete slice equal without NOPs (20,213–22,631 per run, none different). The reducer's "switch ticks before their Exec tick" warning (1–68 per run) does not affect the pairing (why it appears: above) |
+| rechecked 2026-11-02 | o3-check `verify`: identical, 2,538,421 instructions, its complete slice equal; rubocop-smoke: 61/61 slices equal, 62/62 markers on `switch_pc`; rubocop-15G `normal` (68 warnings): 20,213 slices equal, 0 different |
 | footprint pass, 2026-10-27: count check at every marker | 0 off on O3 (o3-check, rubocop-smoke, launcher-check, rubocop cache8x) and on the atomic `fifo-check`; the stored atomic sample is off at its first switch by its 3 faulting lines (see the warning above) |
 | size | 2.3 MB of raw text with no mnemonics (run-length) → this format 10.6 MB raw, 138 KB zstd-9 (113 KB zstd-19) |
 

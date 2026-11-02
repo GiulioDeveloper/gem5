@@ -24,10 +24,14 @@ Output format (text, one line per committed instruction):
                         ran as that task (tick: the tracer's switch tick)
 
 Task markers come from the task trace's switch events. The tracer reports
-a switch when the first instruction of __switch_to commits, so the n-th
-committed instruction at that PC (link address + KASLR slide) is the n-th
-switch: the marker goes right before it. This join works on every CPU
-model; ticks cannot be used, because O3's Exec lines carry the fetch tick.
+a switch once per pass through __switch_to, when its first instruction is
+next to commit, so the n-th committed instruction at that PC (link address
++ KASLR slide) is the n-th switch: the marker goes right before it. This
+join works on every CPU model; ticks cannot be used, because O3's Exec
+lines carry the fetch tick. On O3 the event fires when the call into
+__switch_to commits, which can precede the fetch of __switch_to's first
+instruction (a late fetch of the call target): the "switch ticks before
+their Exec tick" count, which does not affect the join.
 The first switch's prev owns everything before the first switch.
 """
 
@@ -106,7 +110,7 @@ class TaskFeed:
 
     The trace may still be growing (gem5 writing it while the reducer reads
     the Exec trace from a pipe). The tracer writes and flushes a switch
-    when __switch_to's first instruction is about to commit, before gem5
+    when __switch_to's first instruction is next to commit, before gem5
     prints that instruction's Exec line, so the event is in the file by
     the time the reducer reads the line.
     """

@@ -7,6 +7,8 @@ KERNEL=$AGENTIC/kernel/arm64-linux-kernel-6.8.12-1.0.0   # the vmlinux, NOT the 
 BOOTLOADER=$AGENTIC/bootloader/boot_v2_qemu_virt.arm64
 
 # Extra args go straight to virt_run.py, e.g. ./run_scripts/run_agent.sh --disable-fdp
+# COMPRESS_STATS=1 replaces stats.txt by stats.tsv.zst at the end
+# (run_scripts/compress-stats.sh).
 OUTDIR=runs/$(date +%Y%m%d-%H%M%S)
 mkdir -p "$OUTDIR"
 echo "Output dir: $OUTDIR"
@@ -21,3 +23,6 @@ echo "Output dir: $OUTDIR"
     --settle-insts 0 --warmup-insts 10000000 --detailed-insts 50000000 \
     "$@" \
     2>&1 | tee "$OUTDIR/run.log"
+STATUS=$?
+run_scripts/compress-stats.sh "$OUTDIR"
+exit $STATUS

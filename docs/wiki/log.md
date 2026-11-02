@@ -402,3 +402,54 @@ tables and `report.html` follow the list (any number of levels). Checked
 with a three-level list on `runs/traced-test/rubocop-smoke`; the rubocop
 cache8x outputs are unchanged apart from the summary's number rounding and
 the PID tables' extra largest-size columns. Updated [[pc-trace]].
+
+## [2026-11-02] fix | Stats compression flag for every launcher
+
+`COMPRESS_STATS=1` makes the launchers replace a run's `stats.txt` by the
+checked `stats.tsv.zst` table when gem5 exits, through the new
+`run_scripts/compress-stats.sh` (the step `pc-trace.sh` already ran, now
+shared). `run_agent.sh`, `run_spec.sh`, `atomic.sh`, `o3-window.sh`,
+`spec-window.sh` and both sweeps honour it (the sweeps record it in
+`sweep.conf`); `pc-trace.sh` keeps it on by default. Off by default
+elsewhere, so `o3-window.sh` no longer converts unconditionally. The
+launchers keep gem5's exit status. Checked on a synthetic `stats.txt`
+(off, on, `KEEP_STATS`, no stats file). Updated
+[[run-and-analysis-scripts]], [[sweeps]], [[stats-blocks]].
+
+## [2026-11-02] fix | PC trace option for windows and sweeps
+
+`PC_TRACE=1` makes `o3-window.sh`, `spec-window.sh`, `sweep.sh` and
+`smart_sweep.sh` also record the compact, zstd-compressed PC trace
+(`pc_trace.zst`). The named-pipe and reducer setup moved from `pc-trace.sh`
+into `run_scripts/tasktrace/pc-trace-lib.sh`, which all of them source; it
+also releases a reducer left waiting when gem5 dies before opening the pipe.
+`PC_TRACE_LEVEL` sets the zstd level. The sweeps record the flag in
+`sweep.conf`. Checked with a fake trace (normal and gem5-died cases) and a
+real gin-2121 O3 window with `PC_TRACE=1 COMPRESS_STATS=1`. Updated
+[[pc-trace]], [[run-and-analysis-scripts]], [[sweeps]].
+
+## [2026-11-02] fix | O3 switch ticks before their fetch, explained
+
+The reducer's "switch ticks before their Exec tick" warning now has a cause
+on [[pc-trace]]: O3 commit services PC events after it commits an
+instruction and advances its PC, so the `__switch_to` hook fires when the
+`bl` into it commits; when `__switch_to` is fetched late (a front-end miss),
+that is before its fetch tick, which O3 Exec prints. Read from the code; the
+per-configuration counts (68 baseline … 1 with inf BTB+TLB and ×8 caches)
+fit it. The join is unaffected; rechecked on o3-check (`verify`),
+rubocop-smoke and the 15G `normal` run (20,213 slices, 0 different).
+`pc_trace.py`'s docstrings say "next to commit" instead of "commits". Also
+corrected the direction of the O3 tick offset on [[pc-trace]] (the tracer's
+tick is the later one). Updated [[long-runs]].
+
+## [2026-11-02] publish | Rebuilt the three guides; compression page
+
+New page [[run-output-compression]] (`COMPRESS_STATS`, `PC_TRACE`, sizes,
+readers, checks), in [[index]] and as a source of tracer-guide and
+long-runs-guide. Rebuilt and republished all three outputs at their URLs
+(registry in [[publish]]): tracer-guide (compression switches, sweep slice
+categories, scheduling metrics, edge blocks, geometric means, WFI cycles),
+tracer-design (the replay driver's and OpenCode's shares of switches and
+instructions), long-runs-guide (compression on other launchers, the switch
+tick explanation, footprint bins and `--caches`, geomeans, the stats-block
+cross-check).
