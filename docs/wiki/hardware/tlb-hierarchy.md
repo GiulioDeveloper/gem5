@@ -1,7 +1,7 @@
 ---
 type: concept
 status: current
-updated: 2026-10-21
+updated: 2026-10-28
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - "[[legacy-log/garfield/infinite-tlb]]"
@@ -28,6 +28,16 @@ Walk descriptors are read through an 8 KiB MMU cache and the L2.
   copied into the L1 with no added latency. Only an L2 miss starts a walk,
   which has real latency. That is why an unbounded L2 TLB is effectively a
   perfect TLB ([[infinite-l2-tlb]]).
+- **The L1I is physically indexed and tagged, translated first.** O3 fetch
+  translates the fetch block (`translateTiming`, `src/cpu/o3/fetch.cc`) and
+  sends the I-cache request with the physical address from
+  `finishTranslation`. There is no virtually indexed lookup. A TLB hit
+  (L1 or L2) completes inside `translateTiming` (`src/arch/arm/mmu.cc`,
+  `translation->finish` when there is no delay), so it costs no time, as
+  in a VIPT design. Physical tags let code shared through the page cache
+  (libc, ld.so, a binary run again) stay in the L1I and L2 across
+  processes, while TLB entries are per ASID and a new process starts
+  cold.
 - **Connected only since 2026-10-13.** Before, `NeoverseMMU` overrode
   `itb`/`dtb` without `next_level`, so every L1 miss walked
   ([[l2-tlb-disconnected]]).

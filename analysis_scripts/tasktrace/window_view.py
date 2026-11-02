@@ -256,6 +256,7 @@ def block_metrics(outdir, extra, skip_insts=0):
     blocks = []
     for iv, d in zip(intervals, dumps):
         b = {"s": iv["insts_start"], "e": iv["insts_end"],
+             "t0": iv["tick_start"],
              "insts": iv["insts_end"] - iv["insts_start"],
              "ticks": iv["tick_end"] - iv["tick_start"],
              "cycles": d.get(CORE + "numCycles", 0), "stats": d}

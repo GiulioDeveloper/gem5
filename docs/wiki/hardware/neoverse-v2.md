@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-10-25
+updated: 2026-10-29
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - configs/garfield/arm/cache_hierarchy.py
@@ -49,15 +49,18 @@ wrong ([[garfield-overview]]).
 Private per core (`NeoverseV2CacheHierarchy`, a classic
 `PrivateL1PrivateL2CacheHierarchy`; [[memory-system]]):
 
-| level | size | assoc | latency (tag/data/response) | prefetchers |
-|---|---|---|---|---|
-| L1I | 64 KiB | 8 | 2/2/2 | FDP (fetch-directed, from the FTQ) + tagged (virtual addresses) |
-| L1D | 64 KiB | 8 | 4/4/4 | Stride (degree 8) + SMS |
-| L2 | 2 MiB | 8 | 11/11/11 | BOP |
-| memory | single-channel DDR5-6400 (`--mem-type`), 16 GiB | | | |
+| level | size | assoc | latency (tag/data/response) | MSHRs | replacement | prefetchers |
+|---|---|---|---|---|---|---|
+| L1I | 64 KiB | 8 | 2/2/2 | 12 | LRU | FDP (fetch-directed, from the FTQ) + tagged (degree 2) |
+| L1D | 64 KiB | 8 | 4/4/4 | 12 | LRU | Stride (degree 8) + SMS |
+| L2 | 2 MiB | 8 | 11/11/11 | 96 | BRRIP | BOP (degree 1) |
+| MMU cache | 8 KiB | 4 | 1/1/1 | 20 | LRU | – |
+| memory | one DDR5-6400 DIMM (`--mem-type`, two 32-bit subchannels as two controllers, 64 B interleaved), 16 GiB | | | | | |
 
-There is no L3. An 8 KiB MMU cache sits in front of the L2 for page-table
-walks. TLBs: [[tlb-hierarchy]] (48-entry L1 iTLB and dTLB, 2,048-entry
+There is no L3. The MMU cache sits in front of the L2 for page-table
+walks. Values checked against a baseline sweep's `config.ini`
+(2026-10-29). The indirect predictor is `SimpleIndirectPredictor`, 256
+sets × 2 ways. TLBs: [[tlb-hierarchy]] (48-entry L1 iTLB and dTLB, 2,048-entry
 8-way shared L2 TLB, zero-latency L2 hits).
 
 ## Switches (`sim_opts.py`, shared by `virt_run.py`, `fs_run.py`, `se_run.py`)

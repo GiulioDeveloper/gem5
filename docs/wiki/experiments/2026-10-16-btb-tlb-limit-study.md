@@ -1,7 +1,7 @@
 ---
 type: experiment
 status: current
-updated: 2026-10-21
+updated: 2026-10-30
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-16-infinite-btb]]"
   - "[[legacy-log/garfield/infinite-btb]]"
@@ -84,6 +84,78 @@ agentic), agentic median, full → skip:
 
 Combined after the skip: IQR +4.8% to +9.4%, max +15.4%; more than the sum
 of the singles (6.3%). Baseline IPC 0.991 → 0.997.
+
+**Geometric means** (2026-10-28, `compare_multi_geomean.csv` in both
+comparison directories): baseline FDP IPC is the geomean of its window
+values; every other entry is the geomean of the per-checkpoint ratio to
+FDP. Full window → skip 100M:
+
+| | FDP IPC | no-FDP | inf-BTB | inf-TLB | inf-BTB+TLB |
+|---|---|---|---|---|---|
+| agentic | 0.995 → 1.003 | 0.969× → 0.971× | 1.028× → 1.028× | 1.036× → 1.039× | **1.069× → 1.075×** |
+| SPEC | 1.468 → 1.468 | 0.973× → 0.973× | 1.003× → 1.002× | 1.004× → 1.004× | 1.008× → 1.006× |
+
+They agree with the medians above. SPEC no-FDP is −2.7% by geomean against
+a −0.2% median: a few large-code benchmarks lose a lot. In the skip
+summary, SPEC BTB-miss mispredicts with the infinite BTB fall to zero in 8
+of 26 windows; those have no ratio and are left out, so the 0.19× geomean
+understates the drop.
+
+**Per slice category** (2026-10-29, `compare_multi_geomean_slices.csv`;
+categories in [[sweeps]]). These are agentic
+IPC geomeans over the windows where the category ran (at least 1M
+instructions), full window → skip 100M:
+
+| category | n | FDP IPC | no-FDP | inf-BTB | inf-TLB | inf-BTB+TLB |
+|---|---|---|---|---|---|---|
+| harness (OpenCode) | 21 → 19 | 0.878 → 0.893 | −2.4 → −2.9% | +2.2 → +2.1% | **+5.3 → +5.4%** | **+9.0 → +9.6%** |
+| tools | 13 → 11 | 1.039 → 1.079 | −2.7 → −1.4% | +2.3 → +2.2% | +2.0 → +2.5% | +4.6 → +5.0% |
+| harness git | 13 → 12 | 0.944 → 0.941 | −3.4 → −3.5% | +2.3 → +2.2% | +0.1 → −0.3% | +2.3 → +2.4% |
+| replay infra | 27 | 0.916 → 0.914 | −3.0 → −2.5% | +3.1 → +4.3% | +1.9 → +2.5% | +5.1 → +6.6% |
+
+- The harness gains most, and mostly from the TLB: its completed walks are
+  1.69 PKI, against 0.65 for the whole window.
+- Its git snapshots gain nothing from the TLB.
+- "Other" (IPC 0.20) is left out: its cycles include idle WFI time.
+
+Time shares (baseline, median / mean over 27 windows):
+- harness 58% / 41%;
+- tools 0% / 25%: zero in most windows, about 75% in 9;
+- harness git 0% / 7%;
+- replay infra 21% / 21%;
+- other 0.6% / 6%.
+
+Most windows are mainly harness or mainly tools, rarely both. axios and
+bat spend 74% and 71% of their time idle, with under 1% of the
+instructions.
+
+**Away from context switches** (2026-10-30,
+`compare_multi_geomean_edges.csv`; edge blocks in [[sweeps]]). These are
+agentic IPC geomeans with the first and last k stats blocks of every
+thread run dropped (k = 0 is the full window):
+
+| slices | k | FDP IPC | no-FDP | inf-BTB | inf-TLB | inf-BTB+TLB |
+|---|---|---|---|---|---|---|
+| all | 0 / 1 / 3 / 5 | 0.995 / 1.07 / 1.11 / 1.13 | −3.1 / −2.5 / −2.4 / −2.6% | +2.8 / +1.9 / +1.7 / +1.6% | +3.6 / +3.0 / +2.7 / +2.7% | **+6.9 / +4.9 / +4.1 / +3.7%** |
+| harness | 0 / 1 / 3 / 5 | 0.878 / 0.941 / 0.975 / 1.007 | −2.4 / −2.0 / −1.8 / −2.5% | +2.2 / +1.5 / +1.7 / +1.1% | +5.3 / +4.2 / +3.7 / +3.6% | **+9.0 / +6.7 / +5.3 / +5.0%** |
+| tools | 0 / 1 / 3 / 5 | 1.04 / 1.08 / 1.12 / 1.15 | −2.7 / −3.1 / −2.8 / −3.5% | +2.3 / +1.4 / +1.8 / +1.5% | +2.0 / +1.5 / +1.6 / +1.1% | +4.6 / +3.3 / +2.9 / +2.7% |
+| harness git | 0 / 1 / 3 / 5 | 0.944 / 0.998 / 1.05 / 1.09 | −3.4 / −3.9 / −3.1 / −2.0% | +2.3 / +1.4 / +0.1 / −0.2% | +0.1 / −0.3 / −0.7 / −0.9% | +2.3 / +0.9 / +0.6 / 0.0% |
+| replay infra | 0 / 1 / 3 / 5 | 0.916 / 1.01 / 1.03 / 1.06 | −3.0 / −2.4 / −2.1 / −2.2% | +3.1 / +1.4 / +0.8 / +0.6% | +1.9 / +1.5 / +1.2 / +0.8% | +5.1 / +2.0 / +0.8 / +0.6% |
+
+- Baseline IPC rises as blocks near switches are dropped: agentic
+  0.995 → 1.13 at k = 5. L1I MPKI falls 1.49 → 0.64 and iTLB MPKI
+  34 → 20.
+- About half of the limits' agentic gain sits within one block of a
+  switch: +6.9% → +3.7% at k = 5. Replay infra's gain almost vanishes,
+  while the harness keeps +5%, mostly the TLB.
+- So a large BTB and TLB help mostly by surviving context switches, plus
+  the harness's own TLB pressure. This is provisional: the dropped
+  stretches are also the switch-heavy phases (work mix), and each sweep
+  drops the blocks around its own switches.
+
+Switch frequency in the baseline is 4.0 kHz (geomean; 248 µs between
+switches). The scheduler path (`__schedule` → `__switch_to`) takes 0.26%
+of agentic instructions.
 
 Memory: nushell-13831 22.2 GB peak, docusaurus ~11 GB, others 2.5–6 GB.
 

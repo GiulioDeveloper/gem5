@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-10-23
+updated: 2026-10-28
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
   - configs/garfield/arm/virt_run.py
@@ -18,6 +18,13 @@ so `stats.txt` holds one block per interval, and write `intervals.csv`
 on events. Blocks and events therefore join exactly. `0` (default) dumps
 once.
 
+- **Checked end to end** (rubocop 15G `normal`, 2026-10-28): every
+  block's `simInsts` and `numInstsNotNOP` equal its `intervals.csv`
+  instruction range, `simTicks` its tick range, and a recount of the PC
+  trace gives the same instructions per block. The counts leave out NOPs
+  (`commitStats0.numInsts` and `numUserInsts` include them).
+- **`numCycles` leaves out WFI time**, so ticks / period ≠ `numCycles` in
+  a block with WFI ([[numcycles-excludes-wfi]]).
 - **Chunking does not change timing**: the same region with and without
   intervals has the same IPC ([[validation-checks]]).
 - **Size:** with `--stats-file=stats.txt?desc=False` (drops descriptions) a

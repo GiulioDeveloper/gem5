@@ -1,7 +1,7 @@
 ---
 type: method
 status: current
-updated: 2026-10-25
+updated: 2026-10-28
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-16-infinite-btb]]"
@@ -14,7 +14,13 @@ tags: [methodology, comparison, statistics]
 **Rule:** run a full sweep of each configuration with identical window
 settings, pair runs by checkpoint, and report the **median per-checkpoint
 change** (B / A − 1) per suite with its quartiles, plus the outliers.
-`sweep_compare.py` does this ([[sweeps]]).
+`sweep_compare.py` does this ([[sweeps]]). For a headline number per
+configuration, as computer-architecture results usually give it, use the
+**geometric mean of the per-checkpoint ratios** (speedup for IPC) beside
+the baseline's geomean value; the multi-sweep page and
+`compare_multi_geomean.csv` give both. Geomeans hide spread and drop
+checkpoints where a value is zero, so keep the medians, quartiles and
+outliers alongside.
 
 - **Pairing works because restores are deterministic**: the same
   checkpoint and settings give the same instruction window in both sweeps.

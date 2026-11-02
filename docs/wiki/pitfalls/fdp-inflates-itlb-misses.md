@@ -1,7 +1,7 @@
 ---
 type: pitfall
 status: current
-updated: 2026-10-21
+updated: 2026-10-28
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
 tags: [tlb, fdp, prefetch, front-end]
@@ -18,6 +18,14 @@ rate.
 **Size:** median agentic iTLB MPKI 37 with FDP, 2.9 without (−92%); SPEC
 0.16 → 0.02. A quarter of agentic L2 misses are FDP prefetch traffic too
 ([[2026-10-14-fdp-off-sweep]]).
+
+**Decomposition** (rubocop 15G `normal`, 11.3–11.7G instructions, 2,000
+blocks): `mmu.itb.misses` 39.1 PKI = `itb.inserts` 5.9 +
+`mmu.prefetchFaults` 33.0. Short-lived tools are the worst: bash 71 = 6.5
++ 64, tail 73 = 6.3 + 66, cat 54 = 4.5 + 49, against L1I misses of 3.4–3.9
+PKI. `inserts` is not demand-only either: a prefetch lookup that hits the
+L2 TLB is copied into the L1 iTLB (`TLB::multiLookup`). Completed
+instruction walks are 0.2–0.4 PKI, below the L1I miss rate.
 
 **Use instead:** completed page walks for the demand side
 ([[walk-requests-vs-completed]]); compare iTLB MPKI only between runs with

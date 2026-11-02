@@ -264,3 +264,116 @@ RNG-reseed / TRNG-HVC mechanism is a hypothesis from one checkpoint's PC
 trace. Cutting the hang off is a workaround. Updated [[long-runs]],
 [[2026-10-23-rubocop-15g-cache-btb-tlb]], [[questions]], and the Long Runs
 Guide.
+
+## [2026-10-28] tool | Geometric means in the multi-sweep comparison
+
+The user asked for the five-way comparison to report standard
+computer-architecture summaries: the baseline as an absolute value, every
+other configuration as the geometric mean of per-checkpoint ratios.
+`sweep_compare.py` (three or more sweeps) now writes
+`compare_multi_geomean.csv`, and the page has a geomean table per suite
+with the geomean IPC speedups in its summary strip. Its "Change against A"
+mode became "Ratio to A (×)", and so did `violins_multi_change`. Zeros have
+no ratio and are left out (counted); a mean over fewer than half the
+checkpoints is left empty. Regenerated `runs/sweep/20261019-compare-5way/`
+and `runs/sweep/20261020-skip100M/compare-5way/`; the per-checkpoint data
+is unchanged. Agentic inf-BTB+TLB is 1.069× (1.075× after the skip). At the user's request the page's
+tables and strip show each geomean ratio as a percentage change against
+the baseline (one decimal); the CSV keeps the ratios.
+Updated [[2026-10-16-btb-tlb-limit-study]], [[sweeps]],
+[[comparing-configurations]], [[aggregating-metrics]],
+`analysis_scripts/README.md`.
+
+## [2026-10-28] query | iTLB misses above L1I misses around bash and cat
+
+The user asked why iTLB misses exceed L1I misses near 11.5G instructions of
+the rubocop 15G `normal` run, and whether gem5's L1I is VIPT. Over
+11.3–11.7G, `itb.misses` = `inserts` + `prefetchFaults` (39.1 = 5.9 +
+33.0 PKI). FDP prefetch translations dominate, and dominate most in the
+short-lived tools (bash 64 of 71). Completed instruction walks (0.2–0.4
+PKI) are below the L1I miss rate. Fetch translates first and accesses a
+physically indexed, physically tagged L1I, and TLB hits are free. Updated
+[[fdp-inflates-itlb-misses]] and [[tlb-hierarchy]].
+
+## [2026-10-28] lint | Stats blocks vs schedule and trace (rubocop 15G `normal`)
+
+Checked that the window view's stats blocks line up with the guest
+schedule and the PC trace. All 67,338 blocks (main and stall) match
+`intervals.csv` exactly: block numbers, contiguous ticks and instructions,
+`simTicks`, `simInsts` and `numInstsNotNOP` equal the interval deltas.
+Of 23,894 tracer events inside the blocks, all but one fall in the same
+block by instruction count and by tick; the exception is a switch whose
+instruction is the last of its block and commits at the dump tick.
+Recounting the 13.6G-instruction PC trace per block gives the same
+non-NOP count in every block, the same NOP-inclusive and user counts up
+to NOPs at block boundaries, and its 20,215 task markers sit exactly at
+the tracer's instruction counts, ticks and PIDs. The window page's
+segments are the switches one for one. Found that `numCycles` leaves out
+WFI time, which breaks the miss-latency conversion:
+[[numcycles-excludes-wfi]].
+
+## [2026-10-29] query | Baseline core configuration table
+
+The user asked for a summary table of the baseline core for a recap
+presentation. Checked [[neoverse-v2]] against the baseline sweep's
+`config.ini` (gin-2121): all values match. Added MSHRs, replacement
+policies, prefetcher degrees, the MMU cache geometry, the DDR5
+subchannels and the indirect predictor to [[neoverse-v2]].
+
+## [2026-10-29] tool | Slice categories in the sweep pages
+
+The user asked for the sweep and comparison pages to switch between all
+slices, the harness, its tools, its own git and the rest (replay infra,
+other), with the time share of each as violins on top. The user chose
+these definitions:
+- Slices are cut at context switches.
+- Cycles come from ticks.
+- Events are shared out by instruction overlap.
+- Kernel and idle go in "other".
+
+`sweep_summary.py` writes per-category values and shares (`sweep_slices.csv`).
+`sweep_compare.py` writes them per sweep and geomeans per category over the
+windows where it ran. `sweep_view.html` has the slice switch and the share
+violins. `window_view.block_metrics` now also returns each block's start
+tick. All five limit-study summaries (full and skip 100M) and both five-way
+comparisons were regenerated with `runs/sweep/resummarise-slices.sh`.
+Whole-window values and geomeans are byte-identical to the previous ones.
+Results are in [[2026-10-16-btb-tlb-limit-study]]: harness +9.0% with both
+limits (TLB +5.3%), tools +4.6%, git +2.3%. Updated [[sweeps]] and
+`analysis_scripts/README.md`.
+
+## [2026-10-30] tool | Per-process split under the slice categories
+
+`sweep_summary.py` now sums each agentic window's slices per process (tgid)
+first, and then sums the processes per category. A category's value is its
+processes' values weighted by each metric's denominator. The category
+values are unchanged: `sweep.csv`, `sweep_slices.csv` and `sweep.view.json`
+are byte-identical on the baseline sweep. The new `sweep_processes.csv`
+keeps every process (509 rows over the 27 baseline windows); the pages
+still show categories only. Per-category event counts remain an estimate,
+prorated from the 200K-instruction blocks by instruction overlap.
+Regenerated all ten summaries with `runs/sweep/resummarise-slices.sh`.
+Updated [[sweeps]] and `analysis_scripts/README.md`.
+
+## [2026-10-30] tool | Edge blocks and scheduling metrics in the sweep pages
+
+`sweep_summary.py`:
+- New scheduling metrics: switch frequency (kHz), mean time between
+  switches (µs), and scheduler instructions (Σ `sched_insts` ÷
+  instructions, counted for the category switched out of).
+- Edge settings k = 1, 3, 5: drop the stats blocks within k − 1 of a block
+  holding a switch, then recompute every metric (window, categories,
+  processes) over the rest.
+- A kept block lies in one slice, so nothing is prorated.
+- An all-blocks mask reproduces every window value exactly.
+- New `sweep_edges.csv`; `sweep_processes.csv` gains `edge_blocks`.
+
+`sweep_compare.py` carries the settings and their geomeans
+(`compare_multi_geomean_edges.csv`). `sweep_view.html` has a 0/1/3/5
+switch and a kept-instructions hint.
+
+All ten summaries and both five-way comparisons were regenerated.
+
+Result in [[2026-10-16-btb-tlb-limit-study]]: the agentic gain from both
+limits falls from +6.9% to +3.7% at k = 5 (harness +9.0% → +5.0%, replay
+infra +5.1% → +0.6%). Updated [[sweeps]] and `analysis_scripts/README.md`.

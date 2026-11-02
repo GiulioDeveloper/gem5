@@ -30,15 +30,32 @@ With three or more sweeps (at most 8), checkpoints present in every sweep
 are compared against the first. It writes <out>/compare_multi.csv (each
 metric's value per sweep, and its change against the first for the
 others), compare_multi.view.json and compare_multi.html: one panel per
-metric with a violin per suite and sweep, of the values, the change B / A
-- 1 or the difference B - A. --pdf also writes violins_multi.pdf/.png (the
-values) and violins_multi_change.pdf/.png. The output directory defaults
-to <A>/compare-multi.
+metric with a violin per suite and sweep, of the values, the ratio B / A or
+the difference B - A. The page and compare_multi_geomean.csv summarise each
+suite as computer-architecture results usually are: the geometric mean of
+the first sweep's window values, and for every other sweep the geometric
+mean of its per-checkpoint ratio to the first (for IPC, the speedup).
+Checkpoints where either value is zero have no ratio and are left out of
+that mean (counted); a mean over fewer than half the checkpoints is left
+empty. When the summaries have slice categories (sweep_summary.py), every
+view can be restricted to one category's slices of the agentic runs, the
+page starts with each category's share of time per sweep, and
+compare_multi_slices.csv and compare_multi_geomean_slices.csv hold the
+per-category values and geometric means (a category's means over the
+checkpoints where it ran in the baseline).
+When the summaries have edge settings (sweep_summary.py: stats blocks
+dropped at each end of every thread run), every view and geometric mean is
+also available at each setting, and compare_multi_geomean_edges.csv holds
+the geometric means at all of them.
+--pdf also writes violins_multi.pdf/.png (the values)
+and violins_multi_change.pdf/.png (the ratios). The output directory
+defaults to <A>/compare-multi.
 """
 
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -85,7 +102,59 @@ def change(a, b):
     return ss.r4(b - a), ss.r4(rel)
 
 
+def paired(ra, rb, defs):
+    """{metric_a, _b, _diff, _rel} of two runs' values (and the share of
+    instructions kept, at an edge setting)."""
+    out = {}
+    for m in defs:
+        k = m["key"]
+        a, b = ra.get(k), rb.get(k)
+        out[k + "_a"], out[k + "_b"] = a, b
+        out[k + "_diff"], out[k + "_rel"] = change(a, b)
+    if "kept" in ra:
+        out["kept_a"], out["kept_b"] = ra["kept"], rb.get("kept")
+    return out
+
+
 MAX_SWEEPS = 8   # categorical colour slots in sweep_view.html
+CATS = [c for c, _, _ in ss.CATEGORIES]
+
+
+def geomean(xs, n):
+    """Geometric mean of xs, out of n checkpoints; none when fewer than
+    half of them have a value (e.g. switch rates, zero in most SPEC
+    windows)."""
+    if not xs or 2 * len(xs) < n:
+        return None
+    return math.exp(sum(math.log(x) for x in xs) / len(xs))
+
+
+def geomeans(rows, defs, n, suites=ss.SUITES, get=lambda r: r):
+    """Per suite and metric: the geometric mean of the first sweep's window
+    values, and for each other sweep the geometric mean of its per-checkpoint
+    ratio to the first. Checkpoints where either value is zero or missing
+    have no ratio and are left out of that sweep's mean (counted in
+    `excluded`); the baseline mean uses the checkpoints with a positive
+    value. A mean over fewer than half the checkpoints is left empty.
+    get(row) gives the {metric: values per sweep} to use (a slice
+    category's)."""
+    out = {}
+    for suite in suites:
+        rs = [get(r) for r in rows if r["suite"] == suite]
+        per = {}
+        for m in defs:
+            k = m["key"]
+            base = [r[k][0] for r in rs if (r[k][0] or 0) > 0]
+            ratios, excluded = [], []
+            for i in range(1, n):
+                xs = [r[k][i] / r[k][0] for r in rs
+                      if (r[k][0] or 0) > 0 and (r[k][i] or 0) > 0]
+                ratios.append(ss.r4(geomean(xs, len(rs))))
+                excluded.append(len(rs) - len(xs))
+            per[k] = {"base": ss.r4(geomean(base, len(rs))), "n": len(rs),
+                      "ratio": ratios, "excluded": excluded}
+        out[suite] = per
+    return out
 
 
 def compare_multi(dirs, labels, out, pdf):
@@ -104,6 +173,7 @@ def compare_multi(dirs, labels, out, pdf):
     keys = set.intersection(*({m["key"] for m in defs}
                               for _, defs in loaded))
     defs = [m for m in loaded[0][1] if m["key"] in keys]
+    keys_kept = [m["key"] for m in defs] + ["kept"]
     by = [{(r["suite"], r["name"]): r for r in rows} for rows, _ in loaded]
     common = set.intersection(*(set(b) for b in by))
     for lab, b in zip(labels, by):
@@ -123,9 +193,28 @@ def compare_multi(dirs, labels, out, pdf):
                          + " instructions")
         for m in defs:
             row[m["key"]] = [r.get(m["key"]) for r in rs]
+        if all("cat" in r for r in rs):
+            row["cat"] = {c: {m["key"]: [r["cat"][c].get(m["key"])
+                                         for r in rs] for m in defs}
+                          for c in CATS}
+            row["share"] = {c: {q: [r["share"][c][q] for r in rs]
+                                for q in ("time", "insts")} for c in CATS}
+        if all("edge" in r for r in rs):
+            row["edge"] = {}
+            for k in map(str, ss.EDGES):
+                es = [r["edge"][k] for r in rs]
+                e = {x: [v.get(x) for v in es] for x in keys_kept}
+                if all("cat" in v for v in es):
+                    e["cat"] = {c: {x: [v["cat"][c].get(x) for v in es]
+                                    for x in keys_kept} for c in CATS}
+                row["edge"][k] = e
         rows.append(row)
     if not rows:
         raise SystemExit("no checkpoint is in every sweep")
+    sliced = [r for r in rows if "cat" in r]
+    if sliced and len(sliced) < sum(r["suite"] == "agentic" for r in rows):
+        notes.append("slice categories missing in some agentic runs: "
+                     "rerun sweep_summary.py on every sweep")
 
     out.mkdir(parents=True, exist_ok=True)
     cols = ["suite", "name"]
@@ -144,11 +233,39 @@ def compare_multi(dirs, labels, out, pdf):
                 for lab, v in zip(labels[1:], vals[1:]):
                     flat[f"{m['key']}:{lab}:rel"] = change(vals[0], v)[1]
             w.writerow(flat)
-    model = {"version": 2, "multi": True,
+    gm = geomeans(rows, defs, len(labels))
+    with open(out / "compare_multi_geomean.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["suite", "metric", "n", labels[0]]
+                   + [f"{lab}:ratio" for lab in labels[1:]]
+                   + [f"{lab}:excluded" for lab in labels[1:]])
+        for suite in ss.SUITES:
+            for m in defs:
+                g = gm[suite][m["key"]]
+                w.writerow([suite, m["key"], g["n"], g["base"]]
+                           + g["ratio"] + g["excluded"])
+    gm_cat = category_geomeans(sliced, defs, len(labels), lambda r: r)
+    if sliced:
+        write_multi_slices(sliced, defs, labels, gm_cat, out)
+    # The same at every edge setting (sweep_summary.EDGES).
+    gm_edge = {}
+    if all("edge" in r for r in rows):
+        for k in map(str, ss.EDGES):
+            get = lambda r, k=k: r["edge"][k]  # noqa: E731
+            gm_edge[k] = {"all": geomeans(rows, defs, len(labels), get=get),
+                          "cat": category_geomeans(
+                              [r for r in sliced if "cat" in get(r)], defs,
+                              len(labels), get)}
+        write_multi_edges(gm, gm_cat, gm_edge, defs, labels, out)
+    model = {"version": 4, "multi": True,
              "name": " · ".join(str(d) for d in dirs),
              "sweeps": [{"dir": str(d), "label": lab}
                         for d, lab in zip(dirs, labels)],
-             "notes": notes, "metrics": defs, "runs": rows}
+             "notes": notes, "metrics": defs,
+             "categories": ss.category_defs(sliced), "runs": rows,
+             "geomean": gm, "geomean_cat": gm_cat,
+             "edges": list(ss.EDGES) if gm_edge else [],
+             "geomean_edge": gm_edge}
     ss.write_page(model, out, "compare_multi")
     if pdf:
         write_multi_pdfs(rows, defs, labels, out)
@@ -159,6 +276,67 @@ def compare_multi(dirs, labels, out, pdf):
           f"({counts['spec']} spec, {counts['agentic']} agentic) in "
           f"{len(dirs)} sweeps against {labels[0]}"
           + (", violins_multi*.pdf/.png" if pdf else ""))
+
+
+def category_geomeans(rows, defs, n, get):
+    """Per slice category, geomeans() of the agentic rows' category values
+    (get(row)["cat"]), over the checkpoints where the category ran in the
+    baseline (it has an IPC there): an absent category is not a zero."""
+    return {c: geomeans([r for r in rows
+                         if get(r)["cat"][c]["ipc"][0] is not None],
+                        defs, n, ("agentic",),
+                        lambda r, c=c: get(r)["cat"][c])["agentic"]
+            for c in CATS} if rows else {}
+
+
+def write_multi_edges(gm, gm_cat, gm_edge, defs, labels, out):
+    """compare_multi_geomean_edges.csv: the geometric means at every edge
+    setting, 0 (the whole window) included, per suite and per slice
+    category."""
+    with open(out / "compare_multi_geomean_edges.csv", "w",
+              newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["edge_blocks", "suite", "category", "metric", "n",
+                    labels[0]]
+                   + [f"{lab}:ratio" for lab in labels[1:]]
+                   + [f"{lab}:excluded" for lab in labels[1:]])
+        for k, (a, c) in [("0", (gm, gm_cat))] + [
+                (k, (v["all"], v["cat"])) for k, v in gm_edge.items()]:
+            parts = [(su, "all", a[su]) for su in ss.SUITES]
+            parts += [("agentic", cat, c[cat]) for cat in c]
+            for su, cat, g in parts:
+                for m in defs:
+                    x = g[m["key"]]
+                    w.writerow([k, su, cat, m["key"], x["n"], x["base"]]
+                               + x["ratio"] + x["excluded"])
+
+
+def write_multi_slices(rows, defs, labels, gm_cat, out):
+    """compare_multi_slices.csv (per agentic checkpoint and slice category:
+    time and instruction shares and every metric, per sweep) and
+    compare_multi_geomean_slices.csv (the geometric means per category)."""
+    with open(out / "compare_multi_slices.csv", "w", newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["suite", "name", "category"]
+                   + [f"{q}_share:{lab}" for q in ("time", "insts")
+                      for lab in labels]
+                   + [f"{m['key']}:{lab}" for m in defs for lab in labels])
+        for r in rows:
+            for c in CATS:
+                w.writerow([r["suite"], r["name"], c]
+                           + r["share"][c]["time"] + r["share"][c]["insts"]
+                           + [v for m in defs for v in r["cat"][c][m["key"]]])
+    with open(out / "compare_multi_geomean_slices.csv", "w",
+              newline="") as f:
+        w = csv.writer(f)
+        w.writerow(["category", "metric", "n", labels[0]]
+                   + [f"{lab}:ratio" for lab in labels[1:]]
+                   + [f"{lab}:excluded" for lab in labels[1:]])
+        for c in CATS:
+            for m in defs:
+                g = gm_cat[c][m["key"]]
+                w.writerow([c, m["key"], g["n"], g["base"]]
+                           + g["ratio"] + g["excluded"])
 
 
 def write_multi_pdfs(rows, defs, labels, out):
@@ -175,7 +353,7 @@ def write_multi_pdfs(rows, defs, labels, out):
               "#008300", "#6250d6", "#e34948"]
     for fsuffix, title, first in (
             ("", "Window value per checkpoint", 0),
-            ("_change", f"Relative change against {labels[0]} (%)", 1)):
+            ("_change", f"Ratio to {labels[0]} (×)", 1)):
         n = len(defs)
         cols = 4
         nrows = math.ceil(n / cols)
@@ -183,7 +361,7 @@ def write_multi_pdfs(rows, defs, labels, out):
                                                        nrows * 3.0))
         for ax, dfn in zip(axes.flat, defs):
             k = dfn["key"]
-            scale = 100 if first or dfn["unit"].startswith("%") else 1
+            scale = 1 if first or not dfn["unit"].startswith("%") else 100
             pos, ticks, tlabels = 0, [], []
             for si, suite in enumerate(ss.SUITES):
                 for i in range(first, len(labels)):
@@ -193,7 +371,7 @@ def write_multi_pdfs(rows, defs, labels, out):
                             continue
                         a, v = r[k][0], r[k][i]
                         if first:
-                            v = change(a, v)[1]
+                            v = v / a if a and v is not None else None
                         if v is not None:
                             xs.append(v * scale)
                     if len(xs) > 1:
@@ -216,8 +394,8 @@ def write_multi_pdfs(rows, defs, labels, out):
             ax.set_xticklabels(tlabels, fontsize=7)
             ax.set_xlabel("SPEC  |  agentic", fontsize=7)
             if first:
-                ax.axhline(0, color="#85909a", linewidth=0.6)
-            ax.set_title(f"{dfn['label']} ({'%' if first else dfn['unit']})",
+                ax.axhline(1, color="#85909a", linewidth=0.6)
+            ax.set_title(f"{dfn['label']} ({'×' if first else dfn['unit']})",
                          fontsize=9)
             ax.tick_params(axis="y", labelsize=8)
             ax.grid(axis="y", color="#e9ecef", linewidth=0.6)
@@ -295,11 +473,23 @@ def main():
         if abs(ra["insts"] - rb["insts"]) > 1e-3 * ra["insts"]:
             notes.append(f"{key[1]}: window of {ra['insts']} instructions "
                          f"in A, {rb['insts']} in B")
-        for m in defs:
-            k = m["key"]
-            a, b = ra.get(k), rb.get(k)
-            row[k + "_a"], row[k + "_b"] = a, b
-            row[k + "_diff"], row[k + "_rel"] = change(a, b)
+        row.update(paired(ra, rb, defs))
+        if "cat" in ra and "cat" in rb:
+            row["cat"] = {c: paired(ra["cat"][c], rb["cat"][c], defs)
+                          for c in CATS}
+            row["share"] = {c: {f"{q}_{s}": r["share"][c][q]
+                                for q in ("time", "insts")
+                                for s, r in (("a", ra), ("b", rb))}
+                            for c in CATS}
+        if "edge" in ra and "edge" in rb:
+            row["edge"] = {}
+            for k in map(str, ss.EDGES):
+                ea, eb = ra["edge"][k], rb["edge"][k]
+                e = paired(ea, eb, defs)
+                if "cat" in ea and "cat" in eb:
+                    e["cat"] = {c: paired(ea["cat"][c], eb["cat"][c], defs)
+                                for c in CATS}
+                row["edge"][k] = e
         rows.append(row)
     if not rows:
         raise SystemExit("no checkpoint is in both sweeps")
@@ -312,11 +502,14 @@ def main():
         w = csv.DictWriter(f, fieldnames=cols, extrasaction="ignore")
         w.writeheader()
         w.writerows(rows)
-    model = {"version": 1, "compare": True,
+    model = {"version": 3, "compare": True,
              "name": f"A {args.a} · B {args.b}",
              "a": {"dir": str(args.a), "label": labels[0]},
              "b": {"dir": str(args.b), "label": labels[1]},
-             "notes": notes, "metrics": defs, "runs": rows}
+             "notes": notes, "metrics": defs,
+             "categories": ss.category_defs(rows),
+             "edges": list(ss.EDGES) if all("edge" in r for r in rows)
+             else [], "runs": rows}
     ss.write_page(model, out, "compare")
     if args.pdf:
         pct = lambda d: d["unit"].startswith("%")  # noqa: E731

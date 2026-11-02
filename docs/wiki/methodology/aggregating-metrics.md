@@ -1,7 +1,7 @@
 ---
 type: method
 status: current
-updated: 2026-10-21
+updated: 2026-10-28
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -32,7 +32,9 @@ occupancy-style averages are cycle-weighted. The window value in
 - **Across checkpoints:** report medians and quartiles of per-checkpoint
   window values, or of paired per-checkpoint changes
   ([[comparing-configurations]]). One window is one window, not a
-  whole-checkpoint average.
+  whole-checkpoint average. For one summary number per configuration, use
+  the geometric mean of the per-checkpoint ratios. Never take the
+  arithmetic mean of ratios.
 - **Event-aligned averages** (`aligned.csv`, the window view's "around
   events") count a block once per event and need a control: a metric shift
   near an event is not evidence of an effect

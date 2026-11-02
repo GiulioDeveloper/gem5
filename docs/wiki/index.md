@@ -82,6 +82,7 @@ Human-facing outputs: [[publish]].
 - [[functional-translation-perturbs]]: `TranslatingPortProxy` changes TLB state
 - [[btb-miss-stat-zero-decoupled]]: `btb.misses` is 0 with the decoupled front end
 - [[walk-requests-vs-completed]]: `walker.walks` is ~4× the real walks
+- [[numcycles-excludes-wfi]]: WFI time is not in `numCycles`; window-view miss latencies come out too small in WFI blocks
 - [[fdp-inflates-itlb-misses]]: FDP-on iTLB MPKI is mostly dropped prefetch lookups
 - [[replay-polling-in-measurement]]: ~1/5 of agentic instructions are Docker polling
 - [[metric-shift-is-not-event-effect]]: phase changes and mixed causes
