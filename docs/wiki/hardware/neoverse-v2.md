@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-10-29
+updated: 2026-11-02
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - configs/garfield/arm/cache_hierarchy.py
@@ -71,7 +71,10 @@ sets × 2 ways. TLBs: [[tlb-hierarchy]] (48-entry L1 iTLB and dTLB, 2,048-entry
 | `--disable-l1d-prefetch`, `--disable-l2-prefetch` | detach those prefetchers |
 | `--infinite-btb` | [[infinite-btb-model]] instead of the 12K BTB |
 | `--infinite-tlb` | [[infinite-l2-tlb]] instead of the 2K L2 TLB |
+| `--perfect-tlb` | every demand TLB miss of the O3 core is served by a zero-time functional walk (`ArmMMU.perfect_tlb`), so translations always hit, cold and post-`TLBI` misses included; prefetch translations still drop on a miss; counted in `mmu.perfectWalks`; exclusive with `--infinite-tlb`. See [[2026-11-02-perfect-l2]] |
 | `--cache-scale N` (1, 2, 4, 8, 16) | multiplies the L1I, L1D and L2 sizes by N (more sets; associativity and latencies unchanged); first used in [[2026-10-23-rubocop-15g-cache-btb-tlb]] |
+| `--perfect-l2` (`--perfect-l2-cycles N`, default 11) | no L2 and no per-core L2 crossbar: the L1s and MMU cache sit on a membus timed like the L2 crossbar, in front of a `SimpleMemory` of N core cycles, so every L1 miss costs an L2 hit, cold misses included; replaces `--mem-type`. See [[2026-11-02-perfect-l2]] |
+| `--perfect-l1i` (`--perfect-l1i-cycles N`, default 2) | O3 fetch reads every fetch block functionally and delivers it after N cycles (`perfectICache`), so the L1I always hits, cold misses included; the caches see no instruction traffic, so data gets the whole L2; the FDP prefetcher is detached, the decoupled front end stays on; counted in `fetch.perfectICacheReads`. See [[2026-11-03-perfect-l1i]] |
 | `--clk-freq`, `--mem-type`, `--mem-size` | clock, DRAM preset, guest RAM (must match the checkpoint) |
 | `--progress-interval` | heartbeat with IPC and KIPS; always use `10kHz` on restores |
 

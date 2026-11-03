@@ -85,6 +85,15 @@ class BaseO3CPU(BaseCPU):
     commitToFetchDelay = Param.Cycles(1, "Commit to fetch delay")
     fetchWidth = Param.Unsigned(8, "Fetch width")
     fetchBufferSize = Param.Unsigned(64, "Fetch buffer size in bytes")
+    perfectICache = Param.Bool(
+        False,
+        "Serve every I-cache access with a functional read delivered "
+        "after perfectICacheLatency: an L1I that always hits (limit "
+        "study). The caches see no instruction fetches.",
+    )
+    perfectICacheLatency = Param.Cycles(
+        2, "Latency of a perfectICache read (the L1I hit latency)"
+    )
     fetchQueueSize = Param.Unsigned(
         32, "Fetch queue size in micro-ops per-thread"
     )

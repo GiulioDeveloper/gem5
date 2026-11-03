@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-02
+updated: 2026-11-03
 sources:
   - run_scripts/compress-stats.sh
   - run_scripts/tasktrace/pc-trace-lib.sh
@@ -72,6 +72,23 @@ succeeded and the reducer failed).
   releases the waiting reducer instead of hanging the run (or a sweep).
   Format, join and validation: [[pc-trace]].
 
+## Converting existing runs
+
+`runs/compress-existing.sh [TREE...]` (gitignored, in `runs/`) applies the
+same `stats_table.py` step to every `stats.txt` under the given trees
+(default `runs/sweep`, `runs/old-tests`, `runs/perfect-l2`,
+`runs/perfect-l1i`). It is a dry run unless `APPLY=1`; `JOBS` (default 4)
+conversions run in parallel at `nice 19` and idle I/O priority, and files
+modified in the last `MIN_AGE` (30) minutes are skipped so a live run is
+never touched. Results go to `runs/compress-existing.log` (`OK`/`FAIL` per
+file). Throughput: about 4.5 GB of text per wall-clock minute with 4 jobs.
+
+On 2026-11-03 every existing run was converted: 352 files, ~121 GB of
+text → 1.8 GB of tables (73–234× per file), 0 failures, ~27 minutes;
+`runs/` went from 122 GB to 9.0 GB. `stats.txt` no longer exists for any
+of these runs, including the five `o3-pair` directories in
+`runs/old-tests/tasktrace` (their `stats.diff` was kept).
+
 ## Reading compressed runs
 
 - `stats_table.dumps(run)` reads `stats.txt` if present, otherwise
@@ -96,5 +113,10 @@ succeeded and the reducer failed).
   detailed, with `COMPRESS_STATS=1`): exit 0, 1.22M instructions in a 77 KB
   trace, stats converted and checked. That window had no switch; the join
   itself is the one validated in [[pc-trace#Validation (2026-10-23, gin-2121 cpt.0)]].
+- Retro-conversion, 2026-11-03: `sweep_summary.py` on
+  `runs/sweep/20261014-110051` rebuilt from the tables gives byte-identical
+  `sweep.csv`, `sweep_slices.csv`, `sweep_edges.csv`,
+  `sweep_processes.csv`, `sweep.view.json` and `sweep.html` to the summary
+  built from the text on 2026-11-02.
 - Not measured yet: the speed cost of `PC_TRACE=1` on O3 windows (on the
   atomic core tracing runs at about a third of the plain speed).

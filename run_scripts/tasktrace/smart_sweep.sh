@@ -14,19 +14,41 @@
 # How: every launch, across all smart sweeps sharing LOCK, takes the lock,
 # waits until there is room for the run, starts it, and holds the lock
 # STAGGER seconds while the restore ramps up. Room means
-#   MemAvailable - headroom of the runs already going >= need + RESERVE_GB
-# where a running run's headroom is its expected peak minus its current RSS
-# (still to come), and a run's need / expected peak is
+#   MemAvailable - headroom of the gem5 runs already going >= need + RESERVE_GB
+#   and memory pressure (/proc/pressure/memory, "some" avg10) <= PSI_MAX %
+# A running run's headroom is its expected peak minus its current RSS
+# (still to come). Every gem5.opt on the host counts, whoever started it
+# (another user, a sweep.sh, a hand-run window): its task is read from its
+# --restore-dir, and its expected peak is that task's need (below), and at
+# least its own VmHWM; a gem5 without --restore-dir counts at its VmHWM.
+# A task's need / expected peak is
 #   - the task's peak RSS measured in an earlier run (PEAKS file), +15% and
 #     0.5 GB, when there is one;
 #   - otherwise a conservative estimate from the checkpoint's compressed
 #     memory images (*.pmem): 2 GB + 6 x their size. The gzip ratio varies:
 #     docusaurus-9897 and nushell-13831 both have 3.7 GB of images, but
 #     hold 10.7 GB and more than 21 GB.
+# The pressure check is there because a machine already short of memory
+# shows it as stall time before MemAvailable looks low; a full swap alone
+# (idle pages swapped out long ago) does not stop launches.
+#
+# Containment: each run goes in its own systemd user scope
+# (systemd-run --user --scope) with MemoryMax = need + max(need/4, 2 GB)
+# and no swap. A run that grows past it is OOM-killed alone: the kernel
+# kills the largest process of the scope (gem5), the launcher finishes
+# (OOMPolicy=continue), and the run is marked failed "out of memory". Its
+# cap is recorded in PEAKS as a lower bound on its peak, so a resume asks
+# for more. Without the scopes, an overrun pushed the whole machine into
+# swap and systemd-oomd killed the terminal scope holding every run, the
+# shell and Claude (2026-10-19). CAP=0 turns the scopes off.
+#
 # While a run goes, its gem5 peak RSS (VmHWM) is sampled and written to
-# PEAKS (per checkpoint, the maximum over runs), so later launches of the
-# same task, in any sweep, use the measured value. Each launch is logged to
-# BASE/launch.log.
+# PEAKS every 5 minutes and at the end (per checkpoint, the maximum over
+# runs, with the date and the run that set it), so later launches of the
+# same task, in any sweep, use the measured value. PEAKS is tracked in git
+# (run_scripts/tasktrace/mem_peaks.tsv) so every clone and user gets the
+# measurements: commit it after a sweep. It is left out of sweep.conf's
+# -dirty check. Each launch is logged to BASE/launch.log.
 #
 # usage: run_scripts/tasktrace/smart_sweep.sh [BASE]
 #   BASE      output root (default runs/sweep/<timestamp>); rerunning with
@@ -54,10 +76,16 @@
 #                                       is traced, settle and warm-up
 #                                       included)
 #       RESERVE_GB=8                    memory kept free beyond a run's need
+#       PSI_MAX=10                      no launch while memory pressure
+#                                       ("some" avg10, %) is above this
+#       RAMP_MIN=10                     minutes after which a running gem5
+#                                       is taken to be at its peak (VmHWM)
+#       CAP=1                           run each run in its own memory-
+#                                       capped scope (0: no cap)
 #       STAGGER=60                      seconds the lock is held after a launch
 #       LOCK=/tmp/gem5-smart-sweep-$UID.lock   shared by concurrent sweeps
-#       STATE=/tmp/gem5-smart-sweep-$UID.d     running runs (gem5 pid, peak)
-#       PEAKS=runs/sweep/mem_peaks.tsv  measured peak RSS per checkpoint
+#       PEAKS=run_scripts/tasktrace/mem_peaks.tsv
+#                                       measured peak RSS per checkpoint
 set -o pipefail
 cd "$(dirname "$0")/../.." || exit 1
 BASE=${1:-runs/sweep/$(date +%Y%m%d-%H%M%S)}
@@ -67,11 +95,17 @@ export AGENTIC_DET=${AGENTIC_DET:-400000000} BASE
 export EXTRA=${EXTRA:-}
 export COMPRESS_STATS=${COMPRESS_STATS:-0} PC_TRACE=${PC_TRACE:-0}
 export RESERVE_GB=${RESERVE_GB:-8} STAGGER=${STAGGER:-60}
+export PSI_MAX=${PSI_MAX:-10} CAP=${CAP:-1} RAMP_MIN=${RAMP_MIN:-10}
 export LOCK=${LOCK:-/tmp/gem5-smart-sweep-$UID.lock}
-export STATE=${STATE:-/tmp/gem5-smart-sweep-$UID.d}
-export PEAKS=${PEAKS:-runs/sweep/mem_peaks.tsv}
-mkdir -p "$STATE"
-touch "$PEAKS"
+export PEAKS=${PEAKS:-run_scripts/tasktrace/mem_peaks.tsv}
+[ -f "$PEAKS" ] || { echo "no peaks file $PEAKS" >&2; exit 1; }
+if [ "$CAP" = 1 ] &&
+   ! systemd-run --user --scope -q -p MemoryMax=64M true 2>/dev/null; then
+    echo "systemd-run --user --scope does not work here (no user manager" \
+        "or no memory delegation), so runs cannot be capped; set CAP=0 to" \
+        "run them uncapped" >&2
+    exit 1
+fi
 PY=${PY:-python3}
 export SPEC=${CKPTS:-/home/snapshots/gem5-ckpts}/fs_ckpts/spec26/ckpts
 export AGENTIC=${CKPTS:-/home/snapshots/gem5-ckpts}/rpoint_ckpts/agentic/checkpoints
@@ -99,7 +133,8 @@ fi
 
 cat > "$BASE/sweep.conf" <<EOF
 started $(date -Is)
-commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD || echo -dirty)
+commit $(git rev-parse --short HEAD)$(git diff --quiet HEAD -- . \
+    ':(exclude)run_scripts/tasktrace/mem_peaks.tsv' || echo -dirty)
 SETTLE=$SETTLE WARM=$WARM IVL=$IVL SPEC_DET=$SPEC_DET AGENTIC_DET=$AGENTIC_DET
 extra $EXTRA
 compress_stats $COMPRESS_STATS
@@ -118,31 +153,70 @@ estimate_mb() {
 # Expected peak of a run of task $1: the measured peak +15% +512 MB, or
 # nothing when the task has not been measured yet.
 measured_mb() {
-    awk -v t="$1" '$1 == t {print int($2 * 1.15) + 512}' "$PEAKS"
+    awk -F'\t' -v t="$1" '$1 == t {print int($2 * 1.15) + 512}' "$PEAKS"
 }
-# Record peak $2 (MB) for task $1, keeping the maximum over runs.
+# Record peak $2 (MB) for task $1, set by run $3, keeping the maximum over
+# runs. The rows stay sorted by task under the header comment, so the git
+# diff of an update shows only the rows that changed.
 record_peak() {
     (
         flock 8
-        awk -v t="$1" -v p="$2" '
-            $1 == t { if ($2 > p) p = $2; next } { print }
-            END { print t "\t" p }' "$PEAKS" > "$PEAKS.tmp" &&
-            mv "$PEAKS.tmp" "$PEAKS"
-    ) 8>"$PEAKS.lock"
+        { grep '^#' "$PEAKS"
+          awk -F'\t' -v OFS='\t' -v t="$1" -v p="$2" -v r="$3" \
+              -v d="$(date +%F)" '
+              /^#/ { next }
+              $1 == t { if ($2 >= p) kept = 1; else next }
+              { print }
+              END { if (!kept) print t, p, d, r }' "$PEAKS" | LC_ALL=C sort
+        } > "$PEAKS.tmp.$$" && mv "$PEAKS.tmp.$$" "$PEAKS"
+    ) 8>"$LOCK.peaks"
 }
-# Memory still to come from the runs already going: the sum over STATE
-# entries ("<gem5 pid> <expected peak MB>") of expected peak - current RSS.
+# Need of a run of the task restored from checkpoint directory $1: the
+# measured peak +15% +512 MB, or the image estimate. The task is the
+# agentic-<task>/cpt.N or ckpts/<bench>/<inv>/cpt.N name.
+need_mb() {
+    local d=${1%/} task need
+    d=${d%/cpt.*}
+    case ${d##*/} in
+        agentic-*) task=${d##*/agentic-} ;;
+        *) task=${d%/*}; task=${task##*/} ;;
+    esac
+    need=$(measured_mb "$task")
+    echo "${need:-$(estimate_mb "$1")}"
+}
+# Memory still to come on the host: over every gem5.opt process, whoever
+# runs it, expected peak - current RSS. A run takes nearly all its memory
+# in the restore and then stays flat, so past RAMP_MIN minutes its expected
+# peak is its own VmHWM; before that, it is also at least the need of its
+# --restore-dir checkpoint (a gem5 without --restore-dir counts at its
+# VmHWM). Swapped-out pages (VmHWM above VmRSS) count as still to come.
 headroom_mb() {
-    local f pid exp rss sum=0
-    for f in "$STATE"/*; do
-        [ -f "$f" ] || continue
-        read -r pid exp < "$f"
-        rss=$(awk '/^VmRSS:/ {print int($2 / 1024)}' /proc/"$pid"/status \
-              2>/dev/null) || { rm -f "$f"; continue; }
-        [ -n "$rss" ] || { rm -f "$f"; continue; }
+    local p rss hwm age cpt exp sum=0
+    for p in $(pgrep -x gem5.opt); do
+        read -r rss hwm < <(awk '/^VmRSS:/ {r = int($2 / 1024)}
+            /^VmHWM:/ {h = int($2 / 1024)} END {print r, h}' \
+            /proc/"$p"/status 2>/dev/null)
+        age=$(ps -o etimes= -p "$p" 2>/dev/null)
+        [ -n "$rss" ] && [ -n "$hwm" ] && [ -n "$age" ] ||
+            continue   # exited meanwhile
+        cpt=""
+        [ "$age" -lt $((RAMP_MIN * 60)) ] &&
+            cpt=$(tr '\0' '\n' < /proc/"$p"/cmdline 2>/dev/null | awk '
+                f {print; exit}
+                $0 == "--restore-dir" {f = 1}
+                sub(/^--restore-dir=/, "") {print; exit}')
+        exp=$hwm
+        if [ -n "$cpt" ]; then
+            exp=$(need_mb "$cpt")
+            [ "$exp" -lt "$hwm" ] && exp=$hwm
+        fi
         [ "$exp" -gt "$rss" ] && sum=$((sum + exp - rss))
     done
     echo "$sum"
+}
+# Memory pressure, "some" avg10 of /proc/pressure/memory, in whole %.
+pressure_pct() {
+    awk '/^some/ {sub(/avg10=/, "", $2); print int($2)}' /proc/pressure/memory
 }
 # The gem5 process of the run writing to outdir $1 (empty if none yet).
 gem5_pid() {
@@ -152,11 +226,12 @@ gem5_pid() {
             grep -q -- "--outdir=$1 " && { echo "$p"; return; }
     done
 }
-export -f estimate_mb measured_mb record_peak headroom_mb gem5_pid
+export -f estimate_mb measured_mb record_peak need_mb headroom_mb \
+    pressure_pct gem5_pid
 
 one() {
     local suite=$1 name=$2 out=$BASE/$1/$2 det t0 cpt need src avail head pid
-    local waited=0
+    local psi cap waited=0 run=()
     [ -e "$out/done" ] && return 0
     rm -rf "$out"   # an unfinished run from an interrupted sweep
     mkdir -p "$out"
@@ -178,35 +253,49 @@ one() {
           avail=$(awk '/^MemAvailable:/ {print int($2 / 1024)}' \
                   /proc/meminfo)
           head=$(headroom_mb)
-          [ $((avail - head)) -lt $((need + RESERVE_GB * 1024)) ]; do
+          psi=$(pressure_pct)
+          [ $((avail - head)) -lt $((need + RESERVE_GB * 1024)) ] ||
+          [ "$psi" -gt "$PSI_MAX" ]; do
         sleep 15
         waited=$((waited + 15))
     done
+    cap=$((need + (need / 4 > 2048 ? need / 4 : 2048)))
     echo "$(date -Is) start $suite/$name: needs ~$(((need + 512) / 1024)) GB" \
         "($src), $((avail / 1024)) GB available, $(((head + 512) / 1024)) GB" \
-        "still to come from running runs, waited ${waited}s" \
-        >> "$BASE/launch.log"
+        "still to come from running gem5s, pressure ${psi}%," \
+        "$([ "$CAP" = 1 ] && echo "cap $(((cap + 512) / 1024)) GB," ||
+           echo "no cap,") waited ${waited}s" >> "$BASE/launch.log"
     t0=$(date +%s)
-    # 9>&- so the run does not inherit (and hold) the lock.
     if [ "$suite" = spec ]; then
         det=$SPEC_DET
-        OUTDIR=$out run_scripts/tasktrace/spec-window.sh "$name" \
-            "$SETTLE" "$WARM" "$det" "$IVL" o3window $EXTRA \
-            > /dev/null 2>&1 9>&- &
+        run=(run_scripts/tasktrace/spec-window.sh "$name"
+             "$SETTLE" "$WARM" "$det" "$IVL" o3window $EXTRA)
     else
         det=$AGENTIC_DET
-        OUTDIR=$out run_scripts/tasktrace/o3-window.sh "$name" \
-            "$SETTLE" "$WARM" "$det" "$IVL" $EXTRA > /dev/null 2>&1 9>&- &
+        run=(run_scripts/tasktrace/o3-window.sh "$name"
+             "$SETTLE" "$WARM" "$det" "$IVL" $EXTRA)
+    fi
+    # In its own scope, the run is capped at $cap MB with no swap; after
+    # the launcher returns, the scope's OOM-kill count goes to
+    # $out/oom_kill. 9>&- so the run does not inherit (and hold) the lock.
+    if [ "$CAP" = 1 ]; then
+        systemd-run --user --scope -q -p MemoryMax="${cap}M" \
+            -p MemorySwapMax=0 -p OOMPolicy=continue -- \
+            env OUTDIR="$out" bash -c '"${@:2}"; s=$?
+                ev=/sys/fs/cgroup$(cut -d: -f3 /proc/self/cgroup)/memory.events
+                awk "/^oom_kill / {print \$2}" "$ev" > "$1/oom_kill"
+                exit $s' _ "$out" "${run[@]}" > /dev/null 2>&1 9>&- &
+    else
+        OUTDIR=$out "${run[@]}" > /dev/null 2>&1 9>&- &
     fi
     pid=$!
-    # Register the run's gem5 with its expected peak, then let it ramp up.
-    local g="" state=$STATE/$$-$suite-$name i
+    # Find the run's gem5, then let it ramp up.
+    local g="" i
     for i in $(seq 1 30); do
         g=$(gem5_pid "$out")
         [ -n "$g" ] && break
         sleep 1
     done
-    [ -n "$g" ] && echo "$g $need" > "$state"
     # Sample the run's peak RSS (gem5 VmHWM): every 5 s while holding the
     # lock during the ramp-up, then every 30 s; record it every 5 minutes
     # and at the end.
@@ -227,14 +316,22 @@ one() {
     while kill -0 "$pid" 2>/dev/null; do
         sample
         if [ $((SECONDS - last)) -ge 300 ] && [ "$peak" -gt 0 ]; then
-            record_peak "$name" "$peak"
+            record_peak "$name" "$peak" "$out"
             last=$SECONDS
         fi
         sleep 30
     done
     wait "$pid"
-    rm -f "$state"
-    [ "$peak" -gt 0 ] && record_peak "$name" "$peak"
+    [ "$peak" -gt 0 ] && record_peak "$name" "$peak" "$out"
+    # Killed at its cap: the peak is at least the cap, so a resume asks
+    # for more.
+    if [ "$(cat "$out/oom_kill" 2>/dev/null || echo 0)" -gt 0 ]; then
+        record_peak "$name" "$cap" "oom-cap $out"
+        echo "out of memory: over its $cap MB cap" > "$out/failed"
+        echo "OOM $suite/$name after $((($(date +%s) - t0) / 60)) min" \
+            "(cap $(((cap + 512) / 1024)) GB)"
+        return 1
+    fi
     # Complete when every detailed block was dumped.
     local blocks=0
     [ -f "$out/intervals.csv" ] && blocks=$(($(wc -l < "$out/intervals.csv") - 1))

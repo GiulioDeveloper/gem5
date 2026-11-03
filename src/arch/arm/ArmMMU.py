@@ -116,6 +116,13 @@ class ArmMMU(BaseMMU):
 
     walker = Param.ArmTableWalker(ArmTableWalker(), "HW Table walker")
 
+    perfect_tlb = Param.Bool(
+        False,
+        "Serve every demand TLB miss of a timing translation with a "
+        "functional table walk that takes no time (limit study). "
+        "Prefetch translations still fault on a miss.",
+    )
+
     sys = Param.System(Parent.any, "system object parameter")
 
     release_se = Param.ArmRelease(

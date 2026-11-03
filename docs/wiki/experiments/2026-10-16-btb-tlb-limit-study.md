@@ -1,7 +1,7 @@
 ---
 type: experiment
 status: current
-updated: 2026-10-30
+updated: 2026-11-02
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-16-infinite-btb]]"
   - "[[legacy-log/garfield/infinite-btb]]"
@@ -60,7 +60,8 @@ branches −67%. fmt-3901 (400M): +3.0% (1.049 → 1.080), BTB-miss mispredicts
 
 - With both limits **every agentic task gains** (+0.3% to +13.2%; IQR
   +4.8% to +9.9%); SPEC moves 0.1%.
-- BTB part: largest nushell +5.5%, prometheus +5.1%, jq +4.8%; carbon −0.9%.
+- BTB part: largest nushell +5.5%, prometheus +5.1%, jq +4.8%; carbon −0.9%
+  (a work-mix effect, probably not a real loss; see below).
 - TLB part: completed walks 0.62 → 0.15 PKI (−76%), the rest are first
   touches; iTLB MPKI −27% because more FDP prefetch translations hit;
   largest nushell +7.7%, prometheus +7.6%, redis +6.7%; smallest preact
@@ -157,6 +158,38 @@ Switch frequency in the baseline is 4.0 kHz (geomean; 248 µs between
 switches). The scheduler path (`__schedule` → `__switch_to`) takes 0.26%
 of agentic instructions.
 
+**carbon-2752, the one agentic loss with the infinite BTB** (2026-11-02;
+from each sweep's `analysis/blocks.csv` and `tasktrace.jsonl`). It is −0.9%
+on the full window and −1.8% after the 100M skip. The likely cause is
+that the two runs do different work in the same instruction window, not
+that the BTB slows the core:
+
+- The front end improves as on the other tasks: BTB-miss mispredicts
+  −77%, L1I MPKI −26%, iTLB MPKI −32%. Stale entries are negligible
+  (28 `staleTargets`, no `staleEncodings`), so JIT rewrites do not explain it.
+- Wherever the work matches, the BTB run is faster. Up to ~180M
+  instructions OpenCode-only blocks gain +2.2%, and the run is up to 5%
+  ahead in cycles. Over the whole window docker gains +6.7%, git +4.3% and
+  Bun's `JITWorker` thread +4.9% (IPC per thread from switch segments).
+- After ~180M the guest schedule diverges. The harness's git snapshots
+  start at 204.9M instead of 246.3M instructions and overlap the docker tool
+  run. From there OpenCode-only blocks run 7% slower (0.971 → 0.904) with
+  dTLB MPKI +28% (4.50 → 5.74). The main OpenCode thread runs 16M fewer
+  instructions (IPC −4.8%), and `JITWorker` compiles 4× more (22.4M against
+  5.8M after 200M).
+- Simulated-time milestones confirm it. `exec docker` and `sleep` land at
+  the same time in every configuration (~58 ms, ~74 ms, ~142 ms), so the
+  replay clock paces them ([[replay-polling-in-measurement]]). The git
+  snapshots after them come 14–26% earlier with the infinite BTB (git #2
+  at 74.8 against 90.2 ms) and 22–41% earlier with both limits. That is far
+  more than any IPC change, so the clocked replay shifts how the window's
+  work is laid out.
+
+It is a case of [[comparing-configurations]]' "same window is not the
+same work". Not ruled out: part of the main thread's −4.8% could be a
+real slowdown on code that runs in both. A PC-matched comparison of the
+two runs ([[pc-trace]]) would settle it.
+
 Memory: nushell-13831 22.2 GB peak, docusaurus ~11 GB, others 2.5–6 GB.
 
 ## Conclusions
@@ -186,6 +219,7 @@ Memory: nushell-13831 22.2 GB peak, docusaurus ~11 GB, others 2.5–6 GB.
 ## Open
 
 - 714.cpython_r −3.4% with the infinite BTB.
+- carbon-2752: PC-matched comparison to confirm the work-mix explanation.
 - Pass-1/pass-2 oracle to remove compulsory BTB misses.
 - `--disable-fdp --infinite-tlb` to separate the TLB and FDP effects.
 - More tasks / checkpoints per task to see how the ceiling varies.

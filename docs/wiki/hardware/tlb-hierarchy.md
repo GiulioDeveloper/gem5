@@ -1,7 +1,7 @@
 ---
 type: concept
 status: current
-updated: 2026-10-28
+updated: 2026-11-02
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - "[[legacy-log/garfield/infinite-tlb]]"
@@ -27,7 +27,9 @@ Walk descriptors are read through an 8 KiB MMU cache and the L2.
   (`src/arch/arm/tlb.cc`) looks up `l2_shared` synchronously; a hit is
   copied into the L1 with no added latency. Only an L2 miss starts a walk,
   which has real latency. That is why an unbounded L2 TLB is effectively a
-  perfect TLB ([[infinite-l2-tlb]]).
+  perfect TLB ([[infinite-l2-tlb]]). The truly perfect one, which also
+  removes compulsory and post-`TLBI` misses, is `--perfect-tlb`
+  ([[2026-11-02-perfect-l2]]).
 - **The L1I is physically indexed and tagged, translated first.** O3 fetch
   translates the fetch block (`translateTiming`, `src/cpu/o3/fetch.cc`) and
   sends the I-cache request with the physical address from

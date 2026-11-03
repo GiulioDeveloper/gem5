@@ -122,6 +122,8 @@ Fetch::Fetch(CPU *_cpu, const BaseO3CPUParams &params)
       bac(nullptr),
       ftq(nullptr),
       decoupledFrontEnd(params.decoupledFrontEnd),
+      perfectICache(params.perfectICache),
+      perfectICacheLatency(params.perfectICacheLatency),
       decodeToFetchDelay(params.decodeToFetchDelay),
       renameToFetchDelay(params.renameToFetchDelay),
       iewToFetchDelay(params.iewToFetchDelay),
@@ -215,6 +217,9 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
                "Number of cache lines fetched"),
       ADD_STAT(icacheSquashes, statistics::units::Count::get(),
                "Number of outstanding Icache misses that were squashed"),
+      ADD_STAT(perfectICacheReads, statistics::units::Count::get(),
+               "Number of Icache accesses served by a functional read "
+               "(perfect Icache)"),
       ADD_STAT(tlbSquashes, statistics::units::Count::get(),
                "Number of outstanding ITLB misses that were squashed"),
       ADD_STAT(wrappedFtqFaults, statistics::units::Count::get(),
@@ -240,6 +245,7 @@ Fetch::FetchStatGroup::FetchStatGroup(CPU *cpu, Fetch *fetch)
     pendingDrainCycles.prereq(pendingDrainCycles);
     noActiveThreadStallCycles.prereq(noActiveThreadStallCycles);
     icacheSquashes.prereq(icacheSquashes);
+    perfectICacheReads.prereq(perfectICacheReads);
     tlbSquashes.prereq(tlbSquashes);
     wrappedFtqFaults.prereq(wrappedFtqFaults);
     ftNumber.init(0, fetch->maxFTPerCycle, 1);
@@ -454,9 +460,11 @@ Fetch::isDrained() const
 
     /* The pipeline might start up again in the middle of the drain
      * cycle if the finish translation event is scheduled, so make
-     * sure that's not the case.
+     * sure that's not the case. A perfect I-cache read squashed while
+     * in flight leaves fetch idle but must still be delivered (and
+     * dropped) before the CPU can switch out.
      */
-    return !finishTranslationEvent.scheduled();
+    return !finishTranslationEvent.scheduled() && perfectReadsInFlight == 0;
 }
 
 void
@@ -628,7 +636,9 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
         fetchStats.cacheLines++;
 
         // Access the cache.
-        if (!icachePort.sendTimingReq(data_pkt)) {
+        const bool sent = perfectICache ? sendPerfectICacheRead(data_pkt)
+                                        : icachePort.sendTimingReq(data_pkt);
+        if (!sent) {
             assert(retryPkt == NULL);
             assert(retryTid == InvalidThreadID);
             DPRINTF(Fetch, "[tid:%i] Out of MSHRs!\n", tid);
@@ -689,6 +699,24 @@ Fetch::finishTranslation(const Fault &fault, const RequestPtr &mem_req)
                 tid, fault->name(), *pc[tid]);
     }
     _status = updateFetchStatus();
+}
+
+bool
+Fetch::sendPerfectICacheRead(PacketPtr pkt)
+{
+    // The functional read snoops every cache, so code still dirty in the
+    // L1D is fetched correctly. The caches see no instruction traffic.
+    icachePort.sendFunctional(pkt);
+    ++fetchStats.perfectICacheReads;
+    ++perfectReadsInFlight;
+    cpu->schedule(new EventFunctionWrapper(
+                      [this, pkt] {
+                          --perfectReadsInFlight;
+                          processCacheCompletion(pkt);
+                      },
+                      name() + ".perfectICacheRead", true),
+                  cpu->clockEdge(perfectICacheLatency));
+    return true;
 }
 
 void

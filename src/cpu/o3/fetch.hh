@@ -300,6 +300,11 @@ class Fetch
     bool fetchCacheLine(Addr vaddr, ThreadID tid, Addr pc);
     void finishTranslation(const Fault &fault, const RequestPtr &mem_req);
 
+    /** Reads pkt functionally and schedules its delivery to
+     * processCacheCompletion after perfectICacheLatency. Always succeeds,
+     * so it stands in for icachePort.sendTimingReq. */
+    bool sendPerfectICacheRead(PacketPtr pkt);
+
 
     /** Check if an interrupt is pending and that we need to handle
      */
@@ -470,6 +475,14 @@ class Fetch
     /** Enables the decoupled front-end */
     const bool decoupledFrontEnd;
 
+    /** Limit study: serve every I-cache access with a functional read
+     * that returns after perfectICacheLatency, so the L1I always hits. */
+    const bool perfectICache;
+    const Cycles perfectICacheLatency;
+
+    /** Perfect I-cache reads scheduled but not yet delivered. */
+    unsigned perfectReadsInFlight = 0;
+
     /** Decode to fetch delay. */
     const Cycles decodeToFetchDelay;
 
@@ -584,6 +597,8 @@ class Fetch
          * due to a squash.
          */
         statistics::Scalar icacheSquashes;
+        /** Number of I-cache accesses served by a perfect I-cache read. */
+        statistics::Scalar perfectICacheReads;
         /** Total number of outstanding tlb accesses that were dropped
          * due to a squash.
          */

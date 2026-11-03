@@ -34,7 +34,9 @@ than the run mode lives here so the drivers cannot drift apart:
   * the DRAM model presets (``MEM_FACTORIES``) and ``--clk-freq`` /
     ``--mem-type`` / ``--mem-size``,
   * the front-end / prefetcher ablation switches (``--disable-fdp``,
-    ``--disable-l1d-prefetch``, ``--disable-l2-prefetch``),
+    ``--disable-l1d-prefetch``, ``--disable-l2-prefetch``) and the limit
+    studies (``--infinite-btb``, ``--infinite-tlb``, ``--perfect-tlb``,
+    ``--cache-scale``, ``--perfect-l2``, ``--perfect-l1i``),
   * ``--progress-interval``,
   * the garfield knobs (``--ghost-exec`` and the ``--use-mrn`` / ``--mrn-*``
     memory-rename-predictor family).
@@ -55,11 +57,16 @@ from m5.objects import (
     VtageVP,
 )
 
+from m5.util.convert import toFrequency
+
 from garfield.arm.neoverse_v2 import (
+    L1I,
+    L2,
     NeoverseV2_InfiniteBTB,
     NeoverseV2_InfiniteL2TLB,
 )
 
+from gem5.components.memory.simple import SingleChannelSimpleMemory
 from gem5.components.memory.single_channel import (
     DIMM_DDR5_4400,
     DIMM_DDR5_6400,
@@ -132,12 +139,52 @@ def add_common_args(
         "study; docs/wiki/hardware/infinite-l2-tlb.md).",
     )
     prefetch.add_argument(
+        "--perfect-tlb",
+        action="store_true",
+        help="Serve every demand TLB miss with a zero-time functional "
+        "walk: translations always hit (limit study; "
+        "docs/wiki/experiments/2026-11-02-perfect-l2.md). Prefetch "
+        "translations still drop on a miss.",
+    )
+    prefetch.add_argument(
         "--cache-scale",
         type=int,
         default=1,
         choices=(1, 2, 4, 8, 16),
         help="Multiply the L1I, L1D and L2 sizes by N, keeping their "
         "associativity and latencies (capacity limit study).",
+    )
+    prefetch.add_argument(
+        "--perfect-l2",
+        action="store_true",
+        help="Remove the L2 and serve every L1 miss from a fixed-latency "
+        "memory at --perfect-l2-cycles, behind a bus timed like the L2 "
+        "crossbar: an L2 that always hits (limit study; "
+        "docs/wiki/experiments/2026-11-02-perfect-l2.md). Replaces "
+        "--mem-type.",
+    )
+    prefetch.add_argument(
+        "--perfect-l2-cycles",
+        type=int,
+        default=max(L2.tag_latency, L2.data_latency),
+        help="Latency of the --perfect-l2 memory in core cycles "
+        "(default: the L2 hit latency).",
+    )
+    prefetch.add_argument(
+        "--perfect-l1i",
+        action="store_true",
+        help="Serve every fetch with a functional read delivered after "
+        "--perfect-l1i-cycles: an L1I that always hits, leaving all L2 "
+        "capacity and bandwidth to data (limit study; "
+        "docs/wiki/experiments/2026-11-03-perfect-l1i.md). Detaches the "
+        "FDP prefetcher; the decoupled front end stays on.",
+    )
+    prefetch.add_argument(
+        "--perfect-l1i-cycles",
+        type=int,
+        default=max(L1I.tag_latency, L1I.data_latency),
+        help="Latency of a --perfect-l1i read in core cycles "
+        "(default: the L1I hit latency).",
     )
     prefetch.add_argument(
         "--disable-l1d-prefetch",
@@ -354,7 +401,18 @@ def _vtage_hist_lengths(text):
 
 
 def make_memory(args):
-    """The single-channel DRAM selected by --mem-type / --mem-size."""
+    """The single-channel DRAM selected by --mem-type / --mem-size, or the
+    fixed-latency memory standing in for the L2 under --perfect-l2."""
+    if args.perfect_l2:
+        # Whole ticks per cycle, as gem5 rounds the clock period, so
+        # responses land on clock edges.
+        period_ps = round(1e12 / toFrequency(args.clk_freq))
+        return SingleChannelSimpleMemory(
+            latency=f"{args.perfect_l2_cycles * period_ps}ps",
+            latency_var="0ns",
+            bandwidth="1TiB/s",
+            size=args.mem_size,
+        )
     return MEM_FACTORIES[args.mem_type](size=args.mem_size)
 
 
@@ -365,10 +423,13 @@ def cache_kwargs(args):
     them to a subclass (the FS restore wraps the hierarchy to rebind FDP).
     """
     return {
-        "enable_fdp": not args.disable_fdp,
+        # Under --perfect-l1i nothing reads the L1I; FDP would only push
+        # instruction lines into the L2.
+        "enable_fdp": not (args.disable_fdp or args.perfect_l1i),
         "enable_l1d_prefetch": not args.disable_l1d_prefetch,
         "enable_l2_prefetch": not args.disable_l2_prefetch,
         "cache_scale": args.cache_scale,
+        "perfect_l2": args.perfect_l2,
     }
 
 
@@ -444,8 +505,16 @@ def apply_core_knobs(cpu, args):
         cpu.decoupledFrontEnd = False
     if args.infinite_btb:
         cpu.branchPred.btb = NeoverseV2_InfiniteBTB()
+    if args.infinite_tlb and args.perfect_tlb:
+        raise SystemExit(
+            "--infinite-tlb has no effect under --perfect-tlb: no TLB "
+            "lookup misses"
+        )
     if args.infinite_tlb:
         cpu.mmu.l2_shared = NeoverseV2_InfiniteL2TLB()
+    cpu.mmu.perfect_tlb = args.perfect_tlb
+    cpu.perfectICache = args.perfect_l1i
+    cpu.perfectICacheLatency = args.perfect_l1i_cycles
     cpu.progress_interval = args.progress_interval
     cpu.ghostExec = args.ghost_exec
     mrn = make_mrn(args)
@@ -489,17 +558,37 @@ def _vp_banner(args):
     return f"{args.use_vp} ({scope}) confThreshold={args.vp_conf_threshold}"
 
 
+def _l2tlb_banner(args):
+    """L2 TLB banner fragment."""
+    if args.perfect_tlb:
+        return "perfect"
+    return "1M" if args.infinite_tlb else "2K"
+
+
 def describe(args):
     """The machine banner lines implied by the shared knobs."""
+    if args.perfect_l2:
+        l2 = f"L2 perfect ({args.perfect_l2_cycles} cyc)"
+        l2pf = "none"
+        dram = f"perfect-L2 SimpleMemory @ {args.mem_size}"
+    else:
+        l2 = f"L2 {2 * args.cache_scale}MiB"
+        l2pf = "off" if args.disable_l2_prefetch else "on"
+        dram = f"{args.mem_type} @ {args.mem_size}"
+    l1d = f"{64 * args.cache_scale}KiB"
+    if args.perfect_l1i:
+        l1 = f"L1I perfect ({args.perfect_l1i_cycles} cyc), L1D {l1d}"
+    else:
+        l1 = f"L1I/L1D {l1d}"
+    fdp_off = args.disable_fdp or args.perfect_l1i
     return [
-        f"  caches   : L1I/L1D {64 * args.cache_scale}KiB, "
-        f"L2 {2 * args.cache_scale}MiB | "
-        f"FDP={'off' if args.disable_fdp else 'on'}, "
+        f"  caches   : {l1}, {l2} | "
+        f"FDP={'off' if fdp_off else 'on'}, "
         f"L1Dpf={'off' if args.disable_l1d_prefetch else 'on'}, "
-        f"L2pf={'off' if args.disable_l2_prefetch else 'on'}, "
+        f"L2pf={l2pf}, "
         f"BTB={'infinite' if args.infinite_btb else 'neoverse-v2'}, "
-        f"L2TLB={'1M' if args.infinite_tlb else '2K'}",
-        f"  dram     : {args.mem_type} @ {args.mem_size}",
+        f"L2TLB={_l2tlb_banner(args)}",
+        f"  dram     : {dram}",
         f"  mrn      : "
         f"{_mrn_banner(args)}"
         f"  ghostExec={args.ghost_exec}",

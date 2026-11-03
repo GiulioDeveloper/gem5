@@ -31,12 +31,20 @@ the Stride+SMS stack from the L1D class), a private L2 (with the BOP
 prefetcher from the L2 class), and an MMU/page-table-walker cache, all
 behind a per-core L2 crossbar. Prefetching is controlled by the three
 constructor flags (enable_fdp / enable_l1d_prefetch / enable_l2_prefetch).
+
+With perfect_l2 the L2 and the per-core L2 crossbars are dropped: the L1s
+and the MMU cache connect straight to a memory bus with the L2 crossbar's
+timing. Paired with a fixed-latency memory set to the L2 hit latency
+(sim_opts.make_memory), every L1 miss costs an L2 hit.
 """
 
 from m5.objects import (
+    BadAddr,
     FetchDirectedPrefetcher,
     L2XBar,
     MultiPrefetcher,
+    SnoopFilter,
+    SystemXBar,
     TaggedPrefetcher,
 )
 from m5.params import NULL
@@ -62,14 +70,21 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         enable_l1d_prefetch: bool = True,
         enable_l2_prefetch: bool = True,
         cache_scale: int = 1,
+        perfect_l2: bool = False,
     ) -> None:
         # Sizes here are unused (incorporate_cache builds the real caches
         # from the neoverse_v2 classes); passed for documentation only.
-        super().__init__(l1d_size="64KiB", l1i_size="64KiB", l2_size="2MiB")
+        super().__init__(
+            l1d_size="64KiB",
+            l1i_size="64KiB",
+            l2_size="2MiB",
+            membus=_l2xbar_timed_membus() if perfect_l2 else None,
+        )
         self._enable_fdp = enable_fdp
         self._enable_l1d_prefetch = enable_l1d_prefetch
         self._enable_l2_prefetch = enable_l2_prefetch
         self._cache_scale = cache_scale
+        self._perfect_l2 = perfect_l2
 
     def incorporate_cache(self, board: AbstractBoard) -> None:
         num_cores = board.get_processor().get_num_cores()
@@ -80,13 +95,18 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
 
         self.l1icaches = [neoverse_v2.L1I() for _ in range(num_cores)]
         self.l1dcaches = [neoverse_v2.L1D() for _ in range(num_cores)]
-        self.l2buses = [L2XBar() for _ in range(num_cores)]
-        self.l2caches = [neoverse_v2.L2() for _ in range(num_cores)]
+        scaled = self.l1icaches + self.l1dcaches
+        # A SimObject vector cannot be empty, so perfect_l2 leaves
+        # l2buses and l2caches unset.
+        if not self._perfect_l2:
+            self.l2buses = [L2XBar() for _ in range(num_cores)]
+            self.l2caches = [neoverse_v2.L2() for _ in range(num_cores)]
+            scaled += self.l2caches
         self.mmucaches = [MMUCache(size="8KiB") for _ in range(num_cores)]
 
         # Capacity limit study: more sets, same associativity and latency.
         if self._cache_scale != 1:
-            for cache in self.l1icaches + self.l1dcaches + self.l2caches:
+            for cache in scaled:
                 size = toMemorySize(str(cache.size))
                 cache.size = f"{size * self._cache_scale}B"
         self.mmubuses = [L2XBar(width=64) for _ in range(num_cores)]
@@ -115,27 +135,50 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
 
             # L2 BOP prefetcher is defined on the L2 class; detach it for
             # ablation.
-            if not self._enable_l2_prefetch:
+            if not self._enable_l2_prefetch and not self._perfect_l2:
                 self.l2caches[i].prefetcher = NULL
 
         if board.has_coherent_io():
             self._setup_io_cache(board)
 
         for i, cpu in enumerate(board.get_processor().get_cores()):
+            # Without an L2 the caches sit on the memory bus themselves:
+            # behind a shared crossbar the bus's snoop filter would see
+            # L1I and L1D misses to one line as a double request.
+            if self._perfect_l2:
+                l1_bus = self.membus
+            else:
+                l1_bus = self.l2buses[i]
+                self.l2buses[i].mem_side_ports = self.l2caches[i].cpu_side
+                self.membus.cpu_side_ports = self.l2caches[i].mem_side
+
             cpu.connect_icache(self.l1icaches[i].cpu_side)
-            self.l1icaches[i].mem_side = self.l2buses[i].cpu_side_ports
+            self.l1icaches[i].mem_side = l1_bus.cpu_side_ports
 
             cpu.connect_dcache(self.l1dcaches[i].cpu_side)
-            self.l1dcaches[i].mem_side = self.l2buses[i].cpu_side_ports
+            self.l1dcaches[i].mem_side = l1_bus.cpu_side_ports
 
-            self.mmucaches[i].mem_side = self.l2buses[i].cpu_side_ports
+            self.mmucaches[i].mem_side = l1_bus.cpu_side_ports
             self.mmubuses[i].mem_side_ports = self.mmucaches[i].cpu_side
-
-            self.l2buses[i].mem_side_ports = self.l2caches[i].cpu_side
-            self.membus.cpu_side_ports = self.l2caches[i].mem_side
 
             cpu.connect_walker_ports(
                 self.mmubuses[i].cpu_side_ports,
                 self.mmubuses[i].cpu_side_ports,
             )
             cpu.connect_interrupt()
+
+
+def _l2xbar_timed_membus() -> SystemXBar:
+    """A memory bus with the L2 crossbar's width and latencies, standing
+    in for it under perfect_l2 so the L1 miss path keeps its timing."""
+    membus = SystemXBar(
+        width=L2XBar.width,
+        frontend_latency=L2XBar.frontend_latency,
+        forward_latency=L2XBar.forward_latency,
+        response_latency=L2XBar.response_latency,
+        snoop_response_latency=L2XBar.snoop_response_latency,
+        snoop_filter=SnoopFilter(lookup_latency=0),
+    )
+    membus.badaddr_responder = BadAddr()
+    membus.default = membus.badaddr_responder.pio
+    return membus

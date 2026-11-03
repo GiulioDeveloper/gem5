@@ -464,3 +464,99 @@ rather than deleted. Paths updated in [[2026-10-08-tool-call-windows]],
 [[2026-10-14-event-windows]], [[2026-10-22-opencode-thread-breakdown]] and
 [[pc-trace]]; older log entries keep the paths of their time. The
 launchers still write new runs to `runs/tasktrace/<stamp>` by default.
+
+## [2026-11-02] experiment | Perfect-L2 switch, validated
+
+New switch `--perfect-l2` (`--perfect-l2-cycles`, default 11) in
+`sim_opts.py` and `cache_hierarchy.py`. It removes the L2 and the per-core
+L2 crossbar; the L1s and MMU cache sit on a memory bus with the L2
+crossbar's timing, in front of a fixed-latency `SimpleMemory` at the L2
+hit latency. Decided with the user: build the perfect L2 as a
+fixed-latency memory under the L1s rather than a zero-latency DRAM under
+the L2, and stop after validation for now. A shared crossbar in front of
+the memory bus panicked the snoop filter (double request), so the L1s
+connect to the bus directly. Validated on jq-2598 (5M): restore into
+`SimpleMemory` works, results are deterministic, and L1 misses take about
+17–21 cycles. New page [[2026-11-02-perfect-l2]]; updated
+[[neoverse-v2]] and [[index]]. The 1B sweep is still to do.
+
+## [2026-11-02] experiment | Perfect-TLB switch, validated
+
+New switch `--perfect-tlb`: `ArmMMU.perfect_tlb` makes `MMU::getTE` serve
+a timing translation's TLB miss with a functional table walk, which fills
+the TLBs and takes no time; counted in the new stat `mmu.perfectWalks`.
+Decided with the user: prefetch translations still drop on a miss, so FDP
+reach does not mix into the TLB effect. Validated on the perfect-L2
+window (jq-2598, 5M): switch-off run identical to the earlier baseline,
+deterministic, no timed walks and no MMU cache traffic; +2.6% IPC alone,
++45% together with `--perfect-l2`. Added to [[2026-11-02-perfect-l2]];
+updated [[neoverse-v2]], [[tlb-hierarchy]] and [[index]].
+
+## [2026-11-02] query | Why carbon-2752 loses with the infinite BTB
+
+Investigated the one agentic window that loses with `--infinite-btb`
+(−0.9% full, −1.8% after the 100M skip). The front end improves as
+elsewhere and stale BTB entries are negligible. Up to ~180M instructions,
+and in every process whose work matches (docker, git, `JITWorker`), the BTB
+run is faster. After that the clocked replay lays out the work differently:
+git snapshots start 41M instructions earlier, the main OpenCode thread runs
+a data-heavier stretch (dTLB +28%), and the JIT thread compiles 4× more.
+Probably a work-mix effect, not a real loss. A PC-matched check is still
+open. Added to [[2026-10-16-btb-tlb-limit-study]].
+
+## [2026-11-03] experiment | Perfect-L1I switch, validated
+
+New switch `--perfect-l1i` (`--perfect-l1i-cycles`, default 2, the L1I
+hit latency) in `sim_opts.py`. It sets the new O3 params `perfectICache`
+and `perfectICacheLatency`: `Fetch::sendPerfectICacheRead` reads the fetch
+block with `sendFunctional` and delivers it to `processCacheCompletion`
+after N cycles. The new stat is `fetch.perfectICacheReads`, and
+`isDrained` waits for reads in flight. Decided with the user: the caches
+see no instruction traffic, so data gets the whole L2; a shadow timed
+request was set aside. The FDP prefetcher is detached (the decoupled front
+end stays). Validated on jq-2598 (5M): switch-off baseline unchanged,
+deterministic, no L1I accesses; IPC +11.2%, with L2 accesses −56% and L1D
+miss latency 84 → 75 cycles. Fetch still waits about one cycle per line.
+New page [[2026-11-03-perfect-l1i]]; updated [[neoverse-v2]] and [[index]].
+
+## [2026-11-03] fix | smart_sweep: host-wide memory gate and per-run caps
+
+`smart_sweep.sh` now counts every `gem5.opt` on the host in its launch
+gate, other users' included (the machine is shared). It reads the task
+from `--restore-dir`, and past `RAMP_MIN` (10) minutes it takes a run's
+own `VmHWM` as its peak. It holds launches while memory pressure is above
+`PSI_MAX` (10%). Each run goes in its own systemd user scope, capped at
+need + max(need/4, 2 GB), with no swap. A run that outgrows its cap is
+OOM-killed alone and marked failed "out of memory", and its cap goes into
+`PEAKS`. The per-UID `STATE` directory is gone. Decided with the user:
+improve the smart sweep now; Slurm (configs drafted in `runs/slurm/`) is
+set aside for now.
+Tested with 1M + 2M windows: jq-2598 completes under its cap, with
+compression, analysis and summary. babel-15649 given a 2.5 GB cap against
+its ~6 GB footprint is killed 16 s into the restore, with nothing else
+touched. Its sweep marks it failed and records the cap.
+Updated [[sweeps]], [[sweep-memory-exhaustion]], [[index]] and
+`run_scripts/README.md`.
+
+## [2026-11-03] fix | Existing runs converted to stats tables
+
+Freed disk space by converting every `stats.txt` under `runs/` to its
+checked `stats.tsv.zst` table with the new `runs/compress-existing.sh`
+(dry run by default). The user asked for this and approved a one-sweep
+pilot first. 352 files, ~121 GB → 1.8 GB, 0 failures; `runs/` 122 GB →
+9.0 GB. Pilot check: `sweep_summary.py` outputs for
+`runs/sweep/20261014-110051` are identical from either form.
+Updated [[run-output-compression]].
+
+## [2026-11-03] fix | Peaks file tracked in git
+
+At the user's request, the smart sweep's peak-RSS table moved from
+`runs/sweep/mem_peaks.tsv` (gitignored) to
+`run_scripts/tasktrace/mem_peaks.tsv` (tracked), so the other user's clone
+gets it on merge. Rows now hold task, peak MB, date and the run that set
+it. OOM-killed runs are marked `oom-cap`, and the rows stay sorted for
+clean diffs. Its lock moved to `$LOCK.peaks` in `/tmp`, and `sweep.conf`'s
+`-dirty` check ignores the file. The 20 existing rows were carried over
+(dated 2026-10-20, their runs not recorded). The old file is left in
+place, unused. Updated [[sweeps]], [[sweep-memory-exhaustion]] and
+`run_scripts/README.md`.

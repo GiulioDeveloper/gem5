@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-02
+updated: 2026-11-03
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -37,16 +37,65 @@ finishes, about 75× smaller, [[stats-blocks]]; recorded in `sweep.conf`),
 
 ## Use `smart_sweep.sh`
 
-Same arguments and outputs as `sweep.sh`, with memory-aware launching. A
-run holds 2.5–22 GB, and unguarded parallel sweeps got the whole terminal
-scope OOM-killed ([[sweep-memory-exhaustion]]). Each launch, under a lock
-shared by all smart sweeps (`LOCK`): wait until
-`MemAvailable − (memory still to come from running runs) ≥ need +
-RESERVE_GB` (default 8), start, register in `STATE`, hold the lock
-`STAGGER` s (default 60). *need* = the task's measured peak RSS +15% +0.5 GB
-from `PEAKS` (`runs/sweep/mem_peaks.tsv`, updated by every run from gem5's
-`VmHWM`), or 2 GB + 6× the compressed `*.pmem` size for a task never
-measured. Launches are logged in `BASE/launch.log`.
+Same arguments and outputs as `sweep.sh`, with memory-aware launching and
+per-run memory caps. A run holds 2.5–22 GB, and unguarded parallel sweeps
+got the whole terminal scope OOM-killed ([[sweep-memory-exhaustion]]).
+
+**Launch gate.** Each launch takes a lock shared by all of this user's smart
+sweeps (`LOCK`), waits until both hold, starts the run, and keeps the lock
+`STAGGER` s (default 60):
+- `MemAvailable − headroom ≥ need + RESERVE_GB` (default 8);
+- memory pressure (`/proc/pressure/memory`, `some` avg10) ≤ `PSI_MAX`
+  (default 10%). A full swap alone does not block: it can hold idle pages
+  swapped out long ago, with no pressure.
+
+*need* is the task's measured peak RSS +15% +0.5 GB from `PEAKS`, or
+2 GB + 6× the compressed `*.pmem` size for a task never measured.
+
+**The peaks file** is `run_scripts/tasktrace/mem_peaks.tsv`, **tracked in
+git** since 2026-11-03 so every clone and user gets the measurements (it
+was `runs/sweep/mem_peaks.tsv`, gitignored). One row per task: peak MB,
+date set, and the run that set it. The peak is the largest gem5 `VmHWM`
+over all smart-sweep runs of the task, whatever the configuration or
+window length.
+- **Updated continuously:** every running run writes its peak every 5
+  minutes and at the end, under a lock. A row only goes up. An OOM-killed
+  run writes its cap as `oom-cap <run>`, a lower bound.
+- **Commit it after a sweep** (`git-commit`). Until then the update lives
+  only in the working tree of the clone that ran the sweep. Another
+  user's sweeps read their own clone's copy, so they see the update only
+  after they merge it.
+- It is left out of the `-dirty` check in `sweep.conf`, so a sweep running
+  while the file changes doesn't mark the next sweep dirty.
+- Rows are sorted by task, so a diff shows only the rows that changed.
+- Hand-run windows and `sweep.sh` don't update it.
+
+*headroom* is memory still to come from **every `gem5.opt` on the host**,
+whoever started it: another user's runs, `sweep.sh`, a hand-run window
+(2026-11-03; before that only this user's smart-sweep runs counted). Per
+process it is expected peak − `VmRSS`:
+- younger than `RAMP_MIN` minutes (default 10): the expected peak is the
+  need of its `--restore-dir` checkpoint, and at least its `VmHWM`;
+- older: its `VmHWM`. A run takes nearly all its memory in the restore and
+  then stays flat, so this drops the conservative estimate of unmeasured
+  tasks once they are past it;
+- pages swapped out since the peak (`VmHWM` above `VmRSS`) count as still
+  to come.
+
+**Per-run cap** (`CAP=1`, default; 2026-11-03). Each run goes in its own
+systemd user scope (`systemd-run --user --scope`), with `MemoryMax = need
++ max(need/4, 2 GB)`, no swap and `OOMPolicy=continue`. A run that grows
+past its cap is OOM-killed alone: the kernel kills gem5, the launcher
+finishes (stats compression included), the scope's `oom_kill` count goes to
+the run's `oom_kill` file, and the run is marked `failed` "out of memory".
+Its cap goes into `PEAKS` as a lower bound on its peak, so a resume asks for
+more. Separate scopes also mean systemd-oomd, which watches each user's
+service tree for pressure, would kill one run's scope, not the terminal's.
+The sweep refuses to start if user scopes don't work; `CAP=0` runs
+uncapped.
+
+Launches are logged in `BASE/launch.log` with the need, available memory,
+headroom, pressure, cap and wait.
 
 ## Summaries: `sweep_summary.py`
 

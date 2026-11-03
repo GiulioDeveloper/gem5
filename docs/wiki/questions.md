@@ -24,6 +24,10 @@ here when answered, with a link.
   ([[infinite-l2-tlb]], [[fdp-inflates-itlb-misses]])
 - **Why does 714.cpython_r lose 3.4% with the infinite BTB?**
   ([[2026-10-16-btb-tlb-limit-study]])
+- **Is carbon-2752's −0.9% with the infinite BTB only a work-mix effect?**
+  The clocked replay lays the window out differently after ~180M. A
+  PC-matched comparison of the main OpenCode thread would settle it.
+  ([[2026-10-16-btb-tlb-limit-study]], [[pc-trace]])
 - **Where does the rest of the agentic IPC gap come from?** A top-down
   breakdown (the window view shows top-down L1 when the build has it);
   check the back end (L1D miss latency 112 vs 54 cycles, L2 MPKI).

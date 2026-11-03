@@ -72,6 +72,7 @@ MMU::MMU(const ArmMMUParams &p)
       _attr(0),
       _release(nullptr),
       _hasWalkCache(false),
+      perfectTlb(p.perfect_tlb),
       stats(this)
 {
     // Cache system-level properties
@@ -1729,10 +1730,21 @@ MMU::getTE(TlbEntry **te, const RequestPtr &req, ThreadContext *tc, Mode mode,
                vaddr_tainted, ArmFault::PrefetchTLBMiss, state.isStage2);
         }
 
+        // A perfect TLB walks functionally: the walk fills the TLBs and
+        // takes no time, so the timing translation completes as a hit.
+        const bool perfect_walk = perfectTlb && timing;
+        if (perfect_walk) {
+            stats.perfectWalks++;
+            timing = false;
+            functional = true;
+            translation = nullptr;
+        }
+
         // start translation table walk, pass variables rather than
         // re-retreaving in table walker for speed
         DPRINTF(MMU,
-                "TLB Miss: Starting hardware table walker for %#x(%d:%d)\n",
+                "TLB Miss: Starting %s table walker for %#x(%d:%d)\n",
+                perfect_walk ? "functional" : "hardware",
                 vaddr_tainted, state.asid, state.vmid);
 
         Fault fault;
@@ -1895,7 +1907,10 @@ MMU::Stats::Stats(statistics::Group *parent)
     ADD_STAT(domainFaults, statistics::units::Count::get(),
              "Number of MMU faults due to domain restrictions"),
     ADD_STAT(permsFaults, statistics::units::Count::get(),
-             "Number of MMU faults due to permissions restrictions")
+             "Number of MMU faults due to permissions restrictions"),
+    ADD_STAT(perfectWalks, statistics::units::Count::get(),
+             "Number of TLB misses served by a zero-time functional walk "
+             "(perfect TLB)")
 {
 }
 

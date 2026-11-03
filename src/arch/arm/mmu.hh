@@ -412,6 +412,8 @@ class MMU : public BaseMMU
 
     bool _hasWalkCache;
 
+    const bool perfectTlb;
+
     struct Stats : public statistics::Group
     {
         Stats(statistics::Group *parent);
@@ -420,6 +422,7 @@ class MMU : public BaseMMU
         mutable statistics::Scalar prefetchFaults;
         mutable statistics::Scalar domainFaults;
         mutable statistics::Scalar permsFaults;
+        statistics::Scalar perfectWalks;
     } stats;
 
 };

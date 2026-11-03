@@ -1,0 +1,27 @@
+# Peak gem5 RSS per checkpoint, in MB: the largest VmHWM over all
+# smart_sweep.sh runs of the task, any configuration or window length.
+# smart_sweep.sh updates it while runs go (every 5 minutes and at the end)
+# and sizes each launch and memory cap from it; commit it after a sweep so
+# every clone gets the measurements. Columns, tab-separated: task, peak MB,
+# date set, run that set it ("oom-cap <run>": the run was killed at that
+# cap, so the true peak is at least this).
+babel-15649	6144	2026-10-20	runs/sweep (400M windows; run not recorded)
+carbon-2752	3482	2026-10-20	runs/sweep (400M windows; run not recorded)
+core-11870	4198	2026-10-20	runs/sweep (400M windows; run not recorded)
+docusaurus-9897	10957	2026-10-20	runs/sweep (400M windows; run not recorded)
+fastlane-20958	3072	2026-10-20	runs/sweep (400M windows; run not recorded)
+fmt-3901	3277	2026-10-20	runs/sweep (400M windows; run not recorded)
+gson-2134	2772	2026-10-20	runs/sweep (400M windows; run not recorded)
+immutable-js-2006	5403	2026-10-20	runs/sweep (400M windows; run not recorded)
+jekyll-8167	3255	2026-10-20	runs/sweep (400M windows; run not recorded)
+jq-2598	2770	2026-10-20	runs/sweep (400M windows; run not recorded)
+json-4237	4240	2026-10-20	runs/sweep (400M windows; run not recorded)
+lombok-3479	3775	2026-10-20	runs/sweep (400M windows; run not recorded)
+micropython-13039	3931	2026-10-20	runs/sweep (400M windows; run not recorded)
+nushell-13831	22215	2026-10-20	runs/sweep (400M windows; run not recorded)
+php-cs-fixer-8064	3457	2026-10-20	runs/sweep (400M windows; run not recorded)
+preact-3763	4652	2026-10-20	runs/sweep (400M windows; run not recorded)
+prometheus-10720	4207	2026-10-20	runs/sweep (400M windows; run not recorded)
+redis-12272	4457	2026-10-20	runs/sweep (400M windows; run not recorded)
+ripgrep-2209	4457	2026-10-20	runs/sweep (400M windows; run not recorded)
+rubocop-13560	3183	2026-10-20	runs/sweep (400M windows; run not recorded)

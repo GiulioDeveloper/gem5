@@ -38,7 +38,7 @@ Human-facing outputs: [[publish]].
 - [[trace-analysis]]: `trace_analysis.py` outputs, who-ran-when, process labels, tool calls
 - [[stats-blocks]]: `--stats-interval-insts`, `intervals.csv`, block size
 - [[viewers]]: schedule timeline and window-metrics pages
-- [[sweeps]]: `sweep.sh`/`smart_sweep.sh`, summaries, multi-sweep comparisons, known sweeps
+- [[sweeps]]: `sweep.sh`/`smart_sweep.sh` (host-wide memory gate, per-run caps), summaries, multi-sweep comparisons, known sweeps
 - [[run-and-analysis-scripts]]: catalog of the launchers and readers
 - [[running-a-traced-window]]: step-by-step commands
 - [[pc-trace]]: compact committed-PC trace with task markers, from gem5's Exec trace through a pipe
@@ -55,6 +55,8 @@ Human-facing outputs: [[publish]].
 - [[2026-10-22-opencode-thread-breakdown]]: instruction share, IPC and switches by OpenCode thread vs Docker vs tools
 - [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process and thread; per-bin footprint, window length vs program (rubocop, 15G)
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
+- [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep pending
+- [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, sweep pending
 
 ## Findings
 
@@ -88,7 +90,7 @@ Human-facing outputs: [[publish]].
 - [[replay-polling-in-measurement]]: ~1/5 of agentic instructions are Docker polling
 - [[metric-shift-is-not-event-effect]]: phase changes and mixed causes
 - [[restore-silent-failures]]: restores that run and give wrong numbers
-- [[sweep-memory-exhaustion]]: parallel sweeps and the OOM killer
+- [[sweep-memory-exhaustion]]: parallel sweeps and the OOM killer; how a gem5 run dies of memory
 - [[gem5-tracing-under-kaslr]]: why gem5's own tracing features do not work here
 - [[o3-wrong-path-counting]]: verify-site counters and training see doomed instructions
 - [[simulation-hangs]]: the ROB-head watchdog, the FDP MaxAddr hang, how to tell a hang from a livelock
