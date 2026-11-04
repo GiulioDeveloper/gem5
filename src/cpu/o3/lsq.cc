@@ -448,6 +448,21 @@ LSQ::sendRetryResp()
     dcachePort.sendRetryResp();
 }
 
+int
+LSQ::deepestOutstandingLoad()
+{
+    int deepest = -1;
+    for (LSQUnit &unit : thread) {
+        for (auto &entry : unit.loadQueue) {
+            if (entry.valid() && entry.hasRequest() &&
+                entry.request()->isAnyOutstandingRequest()) {
+                deepest = std::max(deepest, entry.request()->accessDepth());
+            }
+        }
+    }
+    return deepest;
+}
+
 bool
 LSQ::recvTimingResp(PacketPtr pkt)
 {

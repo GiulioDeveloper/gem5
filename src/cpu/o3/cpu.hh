@@ -67,6 +67,7 @@
 #include "cpu/o3/rename.hh"
 #include "cpu/o3/rob.hh"
 #include "cpu/o3/scoreboard.hh"
+#include "cpu/o3/tdm.hh"
 #include "cpu/o3/thread_state.hh"
 #include "cpu/simple_thread.hh"
 #include "cpu/timebuf.hh"
@@ -629,6 +630,9 @@ class CPU : public BaseCPU
         return iew.ldstQueue.getDataPort();
     }
 
+    /** Leave idle cycles out of the top-down analysis. */
+    const bool subtractIdleCycles;
+
     struct CPUStats : public statistics::Group
     {
         CPUStats(CPU *cpu);
@@ -640,6 +644,9 @@ class CPU : public BaseCPU
         /** Stat for total number of cycles the CPU spends descheduled due to a
          * quiesce operation or waiting for an interrupt. */
         statistics::Scalar quiesceCycles;
+        /** Top-down accounting. */
+        TopDownStats topDown;
+
     } cpuStats;
 
   public:

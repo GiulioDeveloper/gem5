@@ -6,7 +6,9 @@
 # date set, run that set it ("oom-cap <run>": the run was killed at that
 # cap, so the true peak is at least this).
 babel-15649	6144	2026-10-20	runs/sweep (400M windows; run not recorded)
-carbon-2752	3482	2026-10-20	runs/sweep (400M windows; run not recorded)
+bat-2835	5591	2026-11-03	runs/sweep/20261103-1456-base/agentic/bat-2835
+caddy-4774	3581	2026-11-03	runs/sweep/20261103-1456-base/agentic/caddy-4774
+carbon-2752	3486	2026-11-03	runs/sweep/20261103-1456-base/agentic/carbon-2752
 core-11870	4198	2026-10-20	runs/sweep (400M windows; run not recorded)
 docusaurus-9897	10957	2026-10-20	runs/sweep (400M windows; run not recorded)
 fastlane-20958	3072	2026-10-20	runs/sweep (400M windows; run not recorded)

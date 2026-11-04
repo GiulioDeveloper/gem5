@@ -29,6 +29,7 @@ Human-facing outputs: [[publish]].
 - [[tlb-hierarchy]]: L1/L2 TLBs, zero-latency L2 hits, walk metrics
 - [[infinite-btb-model]]: `InfiniteBTB` design, stats, validation
 - [[infinite-l2-tlb]]: the 1M-entry L2 TLB, why stock `ArmTLB`, validation
+- [[top-down-accounting]]: the O3 top-down slot breakdown (`core.topDown.*`): definitions, conventions, fixes vs upstream PR #2392
 
 ## Infrastructure
 
@@ -37,8 +38,8 @@ Human-facing outputs: [[publish]].
 - [[trace-format]]: `tasktrace.jsonl` fields and events
 - [[trace-analysis]]: `trace_analysis.py` outputs, who-ran-when, process labels, tool calls
 - [[stats-blocks]]: `--stats-interval-insts`, `intervals.csv`, block size
-- [[viewers]]: schedule timeline and window-metrics pages
-- [[sweeps]]: `sweep.sh`/`smart_sweep.sh` (host-wide memory gate, per-run caps), summaries, multi-sweep comparisons, known sweeps
+- [[viewers]]: schedule timeline and window-metrics pages (with the stacked top-down breakdown)
+- [[sweeps]]: `sweep.sh`/`smart_sweep.sh` (host-wide memory gate, per-run caps), summaries, multi-sweep comparisons (per-checkpoint top-down breakdown), known sweeps
 - [[run-and-analysis-scripts]]: catalog of the launchers and readers
 - [[running-a-traced-window]]: step-by-step commands
 - [[pc-trace]]: compact committed-PC trace with task markers, from gem5's Exec trace through a pipe
@@ -56,6 +57,7 @@ Human-facing outputs: [[publish]].
 - [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process and thread; per-bin footprint, window length vs program (rubocop, 15G)
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
 - [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep pending
+- [[2026-11-03-top-down-validation]]: top-down accounting (PR #2392) merged and fixed; 3 SPEC + 2 agentic 30M windows; front-end bound ~50% for both, much of it the fetch model
 - [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, sweep pending
 
 ## Findings

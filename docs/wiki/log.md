@@ -560,3 +560,94 @@ clean diffs. Its lock moved to `$LOCK.peaks` in `/tmp`, and `sweep.conf`'s
 (dated 2026-10-20, their runs not recorded). The old file is left in
 place, unused. Updated [[sweeps]], [[sweep-memory-exhaustion]] and
 `run_scripts/README.md`.
+
+## [2026-11-03] experiment | Perfect L1I / L2 / TLB sweeps launched
+
+Launched nine agentic-only smart sweeps of 1B-instruction windows at commit
+`f15bdb37f0`, `runs/sweep/20261103-1456-*`: base, nofdp, ptlb, pl1i, pl1i-ptlb, pl2, pl2-ptlb,
+pl2-nofdp, pl2-nofdp-ptlb. Decided with the user: "FDP off" means
+`--disable-fdp`; new 1B baselines (base, nofdp); a perfect-TLB-only sweep
+added. `base`, `pl2` and `pl1i` go first. Updated
+[[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]] and [[sweeps]].
+
+## [2026-11-03] experiment | Perfect L1I / L2 / TLB sweeps stopped
+
+Stopped by the user about 40 minutes after launch. Only three `base` runs
+(bat, caddy, carbon) had started, and none finished. Their peaks went into
+`mem_peaks.tsv`: bat 5.6 GB against an 8 GB estimate, caddy 3.6 GB,
+carbon 3.5 GB. Updated [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]]
+and [[sweeps]].
+
+## [2026-11-03] experiment | Perfect-sweep leftovers removed
+
+Deleted the stopped sweep's directories and logs
+(`runs/sweep/20261103-1456-{base,pl1i,pl2}`). `runs/perfect-sweep/launch.sh`
+and `compare.sh` are kept for the relaunch. The user stopped the sweep to
+first add top-down counters to gem5 (another session), so the results can
+be analysed with them. The three peaks measured before the stop stay in
+`mem_peaks.tsv`. Updated [[2026-11-02-perfect-l2]],
+[[2026-11-03-perfect-l1i]] and [[sweeps]].
+
+## [2026-11-03] experiment | Top-down accounting merged, fixed and validated
+
+Merged branch `topdown-pr2392` (upstream gem5 PR #2392 plus the fork fix)
+into `gfdev`, left uncommitted for review with the user. Its two commit
+notes went to `legacy-log/commit-notes/` (the directory moved since). Fixed
+the accounting: load stalls need an outstanding load, front-end L2 from
+rename, no L3 bins, execution stalls need work in the ROB, bubbles capped
+by free ROB/IQ, idle cycles charged consistently, dead counters removed;
+stats now under `core.topDown.*`. No timing change. Five 30M windows
+(3 SPEC, 2 agentic): front-end bound ~0.5 for SPEC int and agentic alike;
+fetch waits on L1I hits 22-31% of cycles. Created [[top-down-accounting]]
+and [[2026-11-03-top-down-validation]]; updated [[questions]],
+[[overview]], [[agentic-front-end-bound]] and `index.md`.
+
+## [2026-11-03] fix | Top-down breakdown in the window and sweep pages
+
+The analysis scripts now show the top-down counters ([[top-down-accounting]]).
+`window_view.py` computes every node (Level 1 to 3) from the raw counters
+rather than reading gem5's formulas, so the shares sum over blocks, slice
+categories and edge settings like the other metrics. It checks them against
+the formulas block by block: they match to within 1e-4 on the five
+validation windows ([[2026-11-03-top-down-validation]]), and the window values
+match `runs/topdown/fixed.csv`. This replaces the earlier lookup of the four
+Level 1 formulas by suffix. `window.html` gets a stacked breakdown panel showing
+one level at a time: Level 1, or the parts of one chosen Level 1 (Level 2)
+or Level 2 (Level 3) category, as the user asked. `sweep_summary.py` carries
+every node (`td_*` columns); `sweep.html`, `compare.html` and
+`compare_multi.html` get a collapsible per-checkpoint breakdown, one bar per
+sweep, filtered by slice category, edge setting and search. Updated
+[[viewers]], [[sweeps]], [[top-down-accounting]] and `index.md`.
+
+## [2026-11-03] experiment | Top-down on 400M windows
+
+727.cppcheck_r and rubocop-13560 (median checkpoints), 50M + 400M, each
+also with `--perfect-l1i` at 2 and 1 cycles (`runs/topdown/long/`).
+Agentic is more front-end bound than SPEC (0.41 vs 0.31), all in fetch
+latency; L1I misses are about 8 points of it; L1I hit latency costs both
+alike. The 30M SPEC picks overstated SPEC front-end bound. Updated
+[[2026-11-03-top-down-validation]].
+
+## [2026-11-04] fix | Back-end split by stall cause and ROB head removed
+
+The direct back-end split (`topDown.backendSlotsByCause`,
+`backendSlotsByRobHead`, added 2026-11-03) is not in Yasin's paper; removed
+at the user's request, who wants only the paper's categories for now. Its
+2M-instruction readings (cppcheck: physical registers full with a DRAM
+load at the ROB head; rubocop: dispatch blocked and serialize) were not
+recorded as results. Updated [[top-down-accounting]].
+
+## [2026-11-04] experiment | Top-down merge does not perturb the simulation
+
+Pre-merge `gfdev` vs the merged tree on two agentic and two SPEC windows
+(5M + 20M): every simulated stat identical, host time +1-4%. The top-down
+results themselves are still under review by the user. Updated
+[[2026-11-03-top-down-validation]].
+
+## [2026-11-04] fix | Top-down merge committed
+
+The user decided to commit the merge with every active change (the
+top-down viewers, the perfect-sweep notes, `mem_peaks.tsv`), with the
+caveat that top-down results are still under review. Removed leftovers:
+the pre-merge worktree and the run outputs of the removed back-end split.
+Updated [[top-down-accounting]] and [[2026-11-03-top-down-validation]].

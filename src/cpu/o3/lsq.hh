@@ -42,6 +42,7 @@
 #ifndef __CPU_O3_LSQ_HH__
 #define __CPU_O3_LSQ_HH__
 
+#include <algorithm>
 #include <cassert>
 #include <cstdint>
 #include <list>
@@ -392,6 +393,17 @@ class LSQ
 
         RequestPtr req(int idx = 0) { return _reqs.at(idx); }
         const RequestPtr req(int idx = 0) const { return _reqs.at(idx); }
+
+        /** Cache misses so far of the deepest of this request's accesses
+         * (each fragment of a split access is counted on its own). */
+        int
+        accessDepth() const
+        {
+            int depth = 0;
+            for (const auto &r: _reqs)
+                depth = std::max(depth, r->getAccessDepth());
+            return depth;
+        }
 
         Addr getVaddr(int idx = 0) const { return req(idx)->getVaddr(); }
         virtual void initiateTranslation() = 0;
@@ -927,6 +939,11 @@ class LSQ
     RequestPort &getDataPort() { return dcachePort; }
 
     void sendRetryResp();
+
+    /** Top-down: the cache misses so far of the deepest load with a
+     * translation or memory access outstanding (0 = none has missed the
+     * L1D), or -1 when no load has one. */
+    int deepestOutstandingLoad();
 
   protected:
     /** D-cache is blocked */

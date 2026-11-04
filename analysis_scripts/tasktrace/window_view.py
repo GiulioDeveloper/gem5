@@ -19,7 +19,9 @@ point. A metric is dropped when it is zero in every block.
 
 Metrics come from METRICS below; a metric is also dropped when none of
 its stats appears in the run (e.g. the top-down ones outside the top-down
-build). --metric adds any other stat: KEY=STAT plots it raw per block,
+build). The top-down shares are recomputed from gem5's counters and
+checked against its formulas; the page stacks them per block, Level 1 to
+3. --metric adds any other stat: KEY=STAT plots it raw per block,
 KEY=STAT/insts per 1000 committed instructions and KEY=STAT/cycles as a
 share of the block's cycles. Process labels and event kinds are the ones
 of trace_analysis.py.
@@ -28,6 +30,7 @@ of trace_analysis.py.
 import argparse
 import csv
 import json
+import sys
 from pathlib import Path
 
 import stats_table
@@ -192,25 +195,146 @@ METRICS = [
      per_commit(CORE + "commit.committedVpPredicted")),
 ]
 
-# Top-down Level 1 (gem5 PR #2392, branch topdown-pr2392): found by suffix,
-# since the stat group differs between versions of the PR.
-TOPDOWN = [
-    ("td_frontend", "frontendBound", "Front-end bound"),
-    ("td_badspec", "badSpeculation", "Bad speculation"),
-    ("td_backend", "backendBound", "Back-end bound"),
-    ("td_retiring", "retiring", "Retiring"),
+# Top-down accounting (src/cpu/o3/tdm.cc). Every share is recomputed from
+# the counters behind gem5's formulas rather than read from the formulas,
+# so that it can be summed over blocks, slices and edge settings like any
+# other metric; block_metrics checks the result against gem5's formulas
+# block by block. Keep topdown() in step with tdm.cc.
+TD = CORE + "topDown."
+RN = CORE + "rename."
+TD_SLOTS = TD + "level1.slots"
+TD_STATS = (
+    TD_SLOTS, TD + "cycles", CORE + "commitStats0.numOps",
+    RN + "renamedInsts", RN + "fetchBubbles", RN + "fetchLatencyBubbles",
+    RN + "resteerBubbles", RN + "refillBubbles", RN + "status::Squashing",
+    RN + "status::SerializeStall", CORE + "iew.branchMispredicts",
+    CORE + "iew.memOrderViolationEvents", TD + "execStallCycles",
+    TD + "loadStallCycles", TD + "loadStallL1Miss", TD + "loadStallL2Miss",
+    TD + "storeStallCycles")
+
+
+def topdown(s):
+    """Every node of TOPDOWN_TREE as a share of the rename slots, from
+    s(stat). A split whose events are all zero puts its parent's share in
+    its last part, so every level adds up to 1."""
+    slots = s(TD_SLOTS)
+    width = slots / s(TD + "cycles")
+    ops = s(CORE + "commitStats0.numOps")
+    fe = s(RN + "fetchBubbles") / slots
+    bs = (s(RN + "renamedInsts") - ops + s(RN + "refillBubbles")
+          + width * s(RN + "status::Squashing")) / slots
+    ret = ops / slots
+    be = 1 - fe - bs - ret
+    lat = s(RN + "fetchLatencyBubbles") / slots
+    resteer = s(RN + "resteerBubbles") / slots
+    br, mo = (s(CORE + "iew.branchMispredicts"),
+              s(CORE + "iew.memOrderViolationEvents"))
+    branch = bs * br / (br + mo) if br + mo else 0.0
+    ser = width * s(RN + "status::SerializeStall") / slots
+    load, store = s(TD + "loadStallCycles"), s(TD + "storeStallCycles")
+    l1miss, l2miss = s(TD + "loadStallL1Miss"), s(TD + "loadStallL2Miss")
+    stalls = load + store
+    execs = s(TD + "execStallCycles")
+    mem = (be - ser) * stalls / execs if execs else 0.0
+    part = (lambda n: mem * n / stalls) if stalls else (lambda n: 0.0)
+    return {
+        "td_retiring": ret, "td_badspec": bs, "td_frontend": fe,
+        "td_backend": be,
+        "td_bs_branch": branch, "td_bs_clears": bs - branch,
+        "td_fe_latency": lat, "td_fe_bandwidth": fe - lat,
+        "td_fe_resteer": resteer, "td_fe_lat_other": lat - resteer,
+        "td_be_serialize": ser, "td_be_memory": mem,
+        "td_be_core": be - ser - mem,
+        "td_mem_l1": part(load - l1miss), "td_mem_l2": part(l1miss - l2miss),
+        "td_mem_ext": part(l2miss), "td_mem_store": part(store),
+    }
+
+
+# The breakdown: (key, label, gem5 formula it matches or None, description,
+# children). The children of a node add up to it. Level 1 is stacked
+# bottom up from Retiring.
+TOPDOWN_TREE = [
+    ("td_retiring", "Retiring", "level1.retiring",
+     "Slots of committed micro-ops", []),
+    ("td_badspec", "Bad speculation", "level1.badSpeculation",
+     "Slots of squashed micro-ops, of rename's squashing cycles and of the "
+     "refill after a squash", [
+         ("td_bs_branch", "Branch mispredicts", "badSpec.branchMispredicts",
+          "Bad speculation split by event count: branch mispredicts "
+          "resolved at execute", []),
+         ("td_bs_clears", "Machine clears", "badSpec.machineClears",
+          "Bad speculation split by event count: memory-order violations "
+          "and squashes from commit", []),
+     ]),
+    ("td_frontend", "Front-end bound", "level1.frontendBound",
+     "Slots the back end could take but the front end left empty", [
+         ("td_fe_latency", "Fetch latency", "frontend.fetchLatency",
+          "Front-end bound slots of cycles where nothing reached rename", [
+              ("td_fe_resteer", "Branch resteers",
+               "frontend.branchResteers",
+               "After a squash's refill, before the first correct-path "
+               "micro-op reached rename", []),
+              ("td_fe_lat_other", "Other fetch latency", None,
+               "Fetch latency outside resteers: I-cache, iTLB, FTQ and "
+               "decode stalls", []),
+          ]),
+         ("td_fe_bandwidth", "Fetch bandwidth", "frontend.fetchBandwidth",
+          "Front-end bound slots of cycles where too few micro-ops reached "
+          "rename", []),
+     ]),
+    ("td_backend", "Back-end bound", "level1.backendBound",
+     "Slots lost to back-end stalls", [
+         ("td_be_serialize", "Serialize", "backend.serializeBound",
+          "Slots of cycles rename waited to serialize an instruction", []),
+         ("td_be_memory", "Memory bound", "backend.memoryBound",
+          "Back-end bound by the share of execution stalls waiting on "
+          "loads or a full store queue", [
+              ("td_mem_l1", "L1D bound", "memory.l1Bound",
+               "No outstanding load past the L1D (hits, translations)", []),
+              ("td_mem_l2", "L2 bound", "memory.l2Bound",
+               "The deepest outstanding load in the L2", []),
+              ("td_mem_ext", "Past L2", "memory.extMemBound",
+               "The deepest outstanding load past the L2", []),
+              ("td_mem_store", "Store bound", "memory.storeBound",
+               "Store queue full", []),
+          ]),
+         ("td_be_core", "Core bound", "backend.coreBound",
+          "The other execution stalls", []),
+     ]),
 ]
 
 
-def read_dumps(run, wanted, suffixes):
-    """Per stats dump, {stat: float} restricted to `wanted` and to stats
-    ending in one of `suffixes`. Reads stats.txt or its values-only table
-    (stats_table)."""
+def td_nodes(tree=TOPDOWN_TREE, level=1):
+    """(key, label, formula, description, level) of every node, depth
+    first."""
+    for key, label, formula, desc, kids in tree:
+        yield key, label, formula, desc, level
+        yield from td_nodes(kids, level + 1)
+
+
+def td_tree(tree=TOPDOWN_TREE):
+    """The breakdown as page data: [{key, children}]."""
+    return [{"key": k, "children": td_tree(kids)}
+            for k, _, _, _, kids in tree]
+
+
+TD_LEVEL = {k: lvl for k, _, _, _, lvl in td_nodes()}
+METRICS += [
+    (key, "Top-down", label, "% slots",
+     desc + (f" (Level {lvl})" if lvl > 1 else ""),
+     ((TD_SLOTS,), lambda s, b, k=key: topdown(s)[k]))
+    for key, label, _, desc, lvl in td_nodes()]
+TD_GEM5 = {key: TD + f for key, _, f, _, _ in td_nodes() if f}
+
+
+def read_dumps(run, wanted):
+    """Per stats dump, {stat: float} restricted to `wanted`. Reads
+    stats.txt or its values-only table (stats_table)."""
     dumps = []
     for d in stats_table.dumps(run):
         cur = {}
         for name, value in d.items():
-            if name in wanted or name.endswith(suffixes):
+            if name in wanted:
                 try:
                     cur[name] = float(value)
                 except ValueError:
@@ -250,8 +374,8 @@ def block_metrics(outdir, extra, skip_insts=0):
     metrics = METRICS + [custom_metric(m) for m in extra]
     wanted = {x for m in metrics for x in m[5][0]}
     wanted |= {CORE + "numCycles", CORE + "commitStats0.numInsts"}
-    suffixes = tuple("." + t[1] for t in TOPDOWN)
-    dumps = read_dumps(outdir, wanted, suffixes)
+    wanted |= set(TD_STATS) | set(TD_GEM5.values())
+    dumps = read_dumps(outdir, wanted)
     # One dump per interval; gem5's exit dump has no interval row.
     blocks = []
     for iv, d in zip(intervals, dumps):
@@ -266,17 +390,9 @@ def block_metrics(outdir, extra, skip_insts=0):
         first = blocks[0]["s"]
         blocks = [b for b in blocks if b["s"] >= first + skip_insts]
     seen = set().union(*(b["stats"] for b in blocks)) if blocks else set()
-    for key, stat, label in TOPDOWN:
-        full = sorted(n for n in seen if n.endswith("." + stat))
-        if full:
-            metrics.append((key, "Top-down", label, "% slots",
-                            f"Top-down Level 1: {full[0]}",
-                            ((full[0],),
-                             lambda s, b, n=full[0]: s(n))))
     # Stats that are already per-block averages or ratios cannot be summed
     # over blocks; their window value is the cycle-weighted mean.
     averaged = {CORE + "lsq0.lqAvgOccupancy", CORE + "lsq0.sqAvgOccupancy"}
-    averaged |= {m[5][0][0] for m in metrics if m[1] == "Top-down"}
     total = {"insts": sum(b["insts"] for b in blocks),
              "cycles": sum(b["cycles"] for b in blocks),
              "ticks": sum(b["ticks"] for b in blocks)}
@@ -300,7 +416,8 @@ def block_metrics(outdir, extra, skip_insts=0):
                 vals.append(round4(formula(s, b)))
             except ZeroDivisionError:
                 vals.append(None)
-        if key != "ipc" and not any(vals):
+        # Top-down nodes stay when zero: the breakdown needs all of them.
+        if key != "ipc" and key not in TD_LEVEL and not any(vals):
             dropped.append(key)
             continue
         if any(x in averaged for x in stats):
@@ -316,7 +433,36 @@ def block_metrics(outdir, extra, skip_insts=0):
         out.append({"key": key, "group": group, "label": label,
                     "unit": unit, "desc": desc, "whole": round4(whole),
                     "v": vals})
+        if key in TD_LEVEL:
+            out[-1]["level"] = TD_LEVEL[key]
+    if TD_SLOTS in seen:
+        check_topdown(outdir, blocks)
     return blocks, out, dropped
+
+
+def check_topdown(outdir, blocks, tol=1e-4):
+    """Warn when the recomputed top-down shares differ from gem5's own
+    formulas in some block: topdown() has drifted from tdm.cc."""
+    worst = {}
+    for b in blocks:
+        d = b["stats"]
+        if not d.get(TD_SLOTS):
+            continue
+        try:
+            ours = topdown(lambda n: d.get(n, 0.0))
+        except ZeroDivisionError:
+            continue
+        for key, stat in TD_GEM5.items():
+            # gem5 prints nan for a split with no events, and leaves out
+            # a zero
+            g = d.get(stat, 0.0)
+            if g == g and abs(ours[key] - g) > worst.get(key, tol):
+                worst[key] = abs(ours[key] - g)
+    if worst:
+        print(f"warning: {outdir}: top-down shares differ from gem5's "
+              "formulas (topdown() out of step with tdm.cc?): "
+              + ", ".join(f"{k} by {v:.2g}" for k, v in worst.items()),
+              file=sys.stderr)
 
 
 def schedule(outdir, lo, hi):
@@ -412,6 +558,8 @@ def view_model(outdir, extra):
                    "cyc": [int(b["cycles"]) for b in blocks]},
         "metrics": metrics,
         "zeroMetrics": dropped,
+        "topdown": td_tree() if any("level" in m for m in metrics)
+        else None,
         "sched": sched,
     }
 

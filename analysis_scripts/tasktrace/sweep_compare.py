@@ -47,6 +47,8 @@ When the summaries have edge settings (sweep_summary.py: stats blocks
 dropped at each end of every thread run), every view and geometric mean is
 also available at each setting, and compare_multi_geomean_edges.csv holds
 the geometric means at all of them.
+When the runs have top-down stats, both pages also show, per checkpoint,
+the top-down breakdown of every sweep side by side.
 --pdf also writes violins_multi.pdf/.png (the values)
 and violins_multi_change.pdf/.png (the ratios). The output directory
 defaults to <A>/compare-multi.
@@ -265,7 +267,7 @@ def compare_multi(dirs, labels, out, pdf):
              "categories": ss.category_defs(sliced), "runs": rows,
              "geomean": gm, "geomean_cat": gm_cat,
              "edges": list(ss.EDGES) if gm_edge else [],
-             "geomean_edge": gm_edge}
+             "geomean_edge": gm_edge, "topdown": ss.topdown_tree(defs)}
     ss.write_page(model, out, "compare_multi")
     if pdf:
         write_multi_pdfs(rows, defs, labels, out)
@@ -341,6 +343,8 @@ def write_multi_slices(rows, defs, labels, gm_cat, out):
 
 def write_multi_pdfs(rows, defs, labels, out):
     """Grouped violins (suite x sweep) of the values and of the change."""
+    # top-down parts below Level 1 are in the CSVs and the page only
+    defs = [d for d in defs if d.get("level", 1) == 1]
     import math
 
     import matplotlib
@@ -509,7 +513,7 @@ def main():
              "notes": notes, "metrics": defs,
              "categories": ss.category_defs(rows),
              "edges": list(ss.EDGES) if all("edge" in r for r in rows)
-             else [], "runs": rows}
+             else [], "topdown": ss.topdown_tree(defs), "runs": rows}
     ss.write_page(model, out, "compare")
     if args.pdf:
         pct = lambda d: d["unit"].startswith("%")  # noqa: E731

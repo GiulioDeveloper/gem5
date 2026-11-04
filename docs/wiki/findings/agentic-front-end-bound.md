@@ -22,7 +22,8 @@ performance in the front end (instruction cache, instruction TLB, BTB
 detection) far more than SPEC CPU 2026 does, and front-end improvements
 help agentic while leaving SPEC flat. Confidence: high for the miss rates
 (53 checkpoints, consistent across configurations); medium for how much of
-the IPC gap they explain (no top-down breakdown yet).
+the IPC gap they explain (top-down Level 1 does not separate the two yet,
+[[2026-11-03-top-down-validation]]).
 
 ## Evidence
 
@@ -52,6 +53,10 @@ the IPC gap they explain (no top-down breakdown yet).
   polling, itself a short-lived-process workload
   ([[replay-polling-in-measurement]]); the comparisons include it.
 - The back end is not ruled out: agentic L1D miss latency is 112 cycles vs
-  54 for SPEC, and L2 MPKI is high. A top-down breakdown is open
-  ([[questions]]).
+  54 for SPEC, and L2 MPKI is high.
+- First top-down windows ([[2026-11-03-top-down-validation]], one 30M
+  window each) give front-end bound ~0.47-0.49 for jq and gin but also
+  0.49-0.54 for SPEC llvm and stockfish; fetch waits on L1I hits in every
+  workload. Level 1 front-end bound does not separate agentic from SPEC
+  int; resteers, decode redirects and idle cycles do (interpretation).
 - One 400M window per agentic task (`cpt.0` only).

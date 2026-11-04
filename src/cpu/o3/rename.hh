@@ -524,6 +524,20 @@ class Rename
      */
     void incrFullStat(const FullSource &source);
 
+    /** Top-down: classify the slots rename could fill this cycle but
+     * the front end left empty (see TopDownStats). */
+    void countFrontendBubbles(ThreadID tid, int insts_available);
+
+    /** Cycle in which rename last finished squashing. */
+    Cycles lastSquashCycle;
+    /** Set when rename finishes squashing; cleared by the first
+     * instruction that reaches rename afterwards. */
+    bool awaitingRefill;
+    /** Cycles after a squash that the pipeline needs, at least, to bring
+     * the first correct-path instruction from fetch to rename. Bubbles in
+     * them are bad speculation, not front-end bound. */
+    const Cycles refillPenalty;
+
     struct RenameStats : public statistics::Group
     {
         static std::string statusStrings[ThreadStatusMax];
@@ -577,7 +591,27 @@ class Rename
         statistics::Scalar intReturned;
         /** Number of registers freed and written back to floating point free list*/
         statistics::Scalar fpReturned;
+        /** Top-down: rename slots the back end could take but the front
+         * end left empty, outside the refill after a squash. */
+        statistics::Scalar fetchBubbles;
+        /** Top-down: the fetchBubbles of cycles in which no instruction
+         * reached rename (fetch latency). */
+        statistics::Scalar fetchLatencyBubbles;
+        /** Top-down: the fetchLatencyBubbles between the end of the refill
+         * after a squash and the first instruction to reach rename. */
+        statistics::Scalar resteerBubbles;
+        /** Top-down: empty or squashed slots during the refill after a
+         * squash. */
+        statistics::Scalar refillBubbles;
     } stats;
+
+  public:
+    /** Top-down: account for cycles the CPU spent idle. */
+    void addIdleCycles(Cycles c);
+
+    RenameStats &getStats() { return stats; }
+
+    unsigned getWidth() const { return renameWidth; }
 };
 
 } // namespace o3

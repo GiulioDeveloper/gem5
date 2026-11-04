@@ -53,7 +53,8 @@ and process, every process kept, at every edge setting), sweep_edges.csv
 (one row per run, edge setting and category), sweep.view.json and
 sweep.html (violins, SPEC beside agentic, window value or CV, all slices
 or one category, any edge setting, with the time share of each category
-on top). --pdf also writes
+on top, and the top-down breakdown of every checkpoint when the runs have
+it). --pdf also writes
 violins.pdf/.png and violins_cv.pdf/.png with matplotlib. The output
 directory defaults to <first path>/summary.
 """
@@ -82,7 +83,8 @@ KEYS = ("ipc", "user_share", "fetch_rate",
         "br_mpki", "btb_mispred_pki", "squashed",
         "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
         "walks_done_d_pki", "walks_done_i_pki", "l1d_lat",
-        "rob_full", "iq_full", "lsq_full")
+        "rob_full", "iq_full", "lsq_full") + tuple(
+            k for k, _, _, _, _ in wv.td_nodes())
 SWITCHES = (("switches", "Context switches", None),
             ("switch_process", "Process switches", "switch_process"),
             ("switch_thread", "Thread switches", "switch_thread"),
@@ -425,6 +427,8 @@ VIOLINS = (
 
 
 def write_pdfs(rows, defs, out, views):
+    # top-down parts below Level 1 are in the CSVs and the page only
+    defs = [d for d in defs if d.get("level", 1) == 1]
     import matplotlib
 
     matplotlib.use("Agg")
@@ -489,7 +493,8 @@ def collect(paths, skip_insts=0):
         for k, m in mdefs.items():
             defs.setdefault(k, {kk: m[kk] for kk in ("key", "group",
                                                       "label", "unit",
-                                                      "desc")})
+                                                      "desc", "level")
+                                if kk in m})
     metric_defs = [defs[k] for k in KEYS if k in defs]
     if any("switches" in r for r in rows):
         metric_defs += [{"key": k, "group": "Scheduling", "label": label,
@@ -501,6 +506,14 @@ def collect(paths, skip_insts=0):
                          "unit": unit, "desc": desc}
                         for k, label, unit, desc in SCHED]
     return rows, metric_defs
+
+
+def topdown_tree(metric_defs):
+    """The top-down breakdown (window_view.TOPDOWN_TREE) as page data, when
+    the metrics have it."""
+    keys = {m["key"] for m in metric_defs}
+    return (wv.td_tree() if all(k in keys for k, *_ in wv.td_nodes())
+            else None)
 
 
 def category_defs(rows):
@@ -603,7 +616,7 @@ def main():
                 "window skipped)" if args.skip_insts else ""),
              "metrics": metric_defs, "categories": category_defs(rows),
              "edges": list(EDGES) if any("edge" in r for r in rows) else [],
-             "runs": rows}
+             "topdown": topdown_tree(metric_defs), "runs": rows}
     write_page(model, out, "sweep")
     if args.pdf:
         write_pdfs(rows, metric_defs, out, VIOLINS)

@@ -28,10 +28,18 @@ here when answered, with a link.
   The clocked replay lays the window out differently after ~180M. A
   PC-matched comparison of the main OpenCode thread would settle it.
   ([[2026-10-16-btb-tlb-limit-study]], [[pc-trace]])
-- **Where does the rest of the agentic IPC gap come from?** A top-down
-  breakdown (the window view shows top-down L1 when the build has it);
-  check the back end (L1D miss latency 112 vs 54 cycles, L2 MPKI).
+- **Where does the rest of the agentic IPC gap come from?** Top-down
+  counters now exist ([[top-down-accounting]]). On five 30M windows Level 1
+  front-end bound is ~50% for SPEC int and agentic alike; the differences
+  are in resteers, idle cycles and serialization
+  ([[2026-11-03-top-down-validation]]). Needs the sweep, and Level 2/3.
   ([[agentic-front-end-bound]])
+- **Is fetch waiting on L1I hits a model artifact?** Fetch sits in
+  `icacheWaitResponse` 22-31% of cycles even with ~0 L1I misses, which
+  inflates front-end latency for every workload.
+  ([[2026-11-03-top-down-validation]])
+- **What makes jq-2598 serialise?** Rename in `SerializeStall` 9.5% of
+  cycles. ([[2026-11-03-top-down-validation]])
 - **What realistic structures get close to the ceilings?** Larger or
   ASID-tagged BTBs, a modelled L2 TLB latency, better instruction
   prefetching for JIT and short-lived code.

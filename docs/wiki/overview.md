@@ -55,8 +55,10 @@ reference ([[spec-cpu-2026]]).
   stats blocks ([[stats-blocks]]).
 - Results before 2026-10-13 had the L2 TLB disconnected
   ([[l2-tlb-disconnected]]); the sweeps are after the fix.
-- No top-down breakdown yet; the back end (L1D miss latency 112 cycles) is
-  not ruled out.
+- Top-down counters exist but have only five windows behind them
+  ([[2026-11-03-top-down-validation]]): front-end bound is ~50% for SPEC
+  int too, partly from the fetch model, so Level 1 alone does not support
+  the thesis; the back end (L1D miss latency 112 cycles) is not ruled out.
 
 ## Where to go next
 

@@ -30,6 +30,7 @@
   --ev-fork_thread: #1baf7a;
   --ev-exit: #d0442a;
   --ev-tool: #4a3aa7;
+  --td-ret: #1baf7a; --td-bad: #e34948; --td-fe: #2a78d6; --td-be: #eda100;
   --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
   --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
@@ -45,6 +46,7 @@
     --ev-switch_process: #eef1f3; --ev-switch_thread: #7b858f;
     --ev-switch_kernel: #59626a; --ev-exec: #d95926; --ev-fork_process: #199e70;
     --ev-fork_thread: #199e70; --ev-exit: #ef6a50; --ev-tool: #9085e9;
+    --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
     color-scheme: dark;
   }
 }
@@ -58,9 +60,11 @@
   --ev-switch_process: #eef1f3; --ev-switch_thread: #7b858f;
   --ev-switch_kernel: #59626a; --ev-exec: #d95926; --ev-fork_process: #199e70;
   --ev-fork_thread: #199e70; --ev-exit: #ef6a50; --ev-tool: #9085e9;
+  --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
   color-scheme: dark;
 }
 * { box-sizing: border-box; }
+[hidden] { display: none !important; }
 body {
   background: var(--bg); color: var(--ink); font-family: var(--font-body);
   font-size: 14px; line-height: 1.45; padding-inline: 16px;
@@ -136,6 +140,8 @@ table.t { border-collapse: collapse; width: 100%; font-size: 12.5px; }
 .t tr { cursor: pointer; }
 .t tr:hover td { background: var(--bg); }
 .t tr.cur td { background: var(--grid); }
+.tdleaf { display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; padding: 3px 4px; }
+.tdleaf .sw { width: 10px; height: 10px; margin-right: 5px; vertical-align: -1px; }
 .empty { color: var(--ink-3); font-size: 13px; padding: 8px 0; }
 footer { color: var(--ink-3); font-size: 12px; }
 footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap: anywhere; }
@@ -150,6 +156,17 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   <section class="stats" id="stats" aria-label="Summary"></section>
 
   <section class="picker" id="picker" aria-label="Metrics to plot"></section>
+
+  <section class="controls" id="tdctl" aria-label="Top-down breakdown" hidden>
+    <h2>Top-down</h2>
+    <div class="seg" role="group" aria-label="Breakdown depth">
+      <button id="td-l1" aria-pressed="true">Level 1</button>
+      <button id="td-l2" aria-pressed="false">Level 2</button>
+      <button id="td-l3" aria-pressed="false">Level 3</button>
+    </div>
+    <div class="seg" role="group" aria-label="Category to break down" id="td-pick" hidden></div>
+    <div class="pgroup" id="td-legend"></div>
+  </section>
 
   <section class="controls" aria-label="Overlay controls">
     <div class="seg" role="group" aria-label="Schedule overlay">
@@ -208,7 +225,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     <div class="scroll"><table class="t" id="t-ev"></table></div>
   </section>
 
-  <footer>Generated from <code>stats.txt</code>, <code>intervals.csv</code> and <code>tasktrace.jsonl</code> by <code>python3 analysis_scripts/tasktrace/window_view.py &lt;outdir&gt;</code>. Each bar is one stats block; its width is the instructions it committed. The dashed line is the metric over the whole window, computed from the stats summed over all blocks (cycle-weighted for averages such as queue occupancy), so it is not the mean of the bars. When blocks are narrower than two pixels, a pixel column shows their mean (solid) and maximum (faint). The CPU strip shows who ran between two context switches, with the kernel-mode share of each slice as a darker lower band; who ran is grouped by process name, launch tree (the topmost ancestor below systemd on the host, or the container's top process) or where it ran, as in <code>trace_analysis.py</code>, and shading uses the group that ran most of each block. Around events: blocks are indexed relative to the block holding each event, and a block holding several events of the kind counts once.</footer>
+  <footer>Generated from <code>stats.txt</code>, <code>intervals.csv</code> and <code>tasktrace.jsonl</code> by <code>python3 analysis_scripts/tasktrace/window_view.py &lt;outdir&gt;</code>. Each bar is one stats block; its width is the instructions it committed. The dashed line is the metric over the whole window, computed from the stats summed over all blocks (cycle-weighted for averages such as queue occupancy), so it is not the mean of the bars. When blocks are narrower than two pixels, a pixel column shows their mean (solid) and maximum (faint). The top-down breakdown stacks the shares of each block's rename slots at one level: Level 1 from the bottom (retiring, bad speculation, front-end bound, back-end bound), or the parts of one chosen Level 1 category (Level 2) or Level 2 category (Level 3), still as shares of all slots, on an axis fitted to that category; the label column gives each part's share over the whole window. Narrower than two pixels, a column shows its blocks' cycle-weighted mean. The CPU strip shows who ran between two context switches, with the kernel-mode share of each slice as a darker lower band; who ran is grouped by process name, launch tree (the topmost ancestor below systemd on the host, or the container's top process) or where it ran, as in <code>trace_analysis.py</code>, and shading uses the group that ran most of each block. Around events: blocks are indexed relative to the block holding each event, and a block holding several events of the kind counts once.</footer>
 </div>
 
 <div class="tip" id="tip" hidden></div>
@@ -231,7 +248,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     ["tool_completed", "Tool call ends"], ["tool_error", "Tool call fails"],
   ];
   const KIND_LABEL = Object.fromEntries(KINDS);
-  const DEFAULT_METRICS = ["ipc", "l1i_mpki", "itlb_mpki", "br_mpki", "l1d_mpki", "rename_blocked"];
+  const TD_KEY = "td_stack";
+  const DEFAULT_METRICS = ["ipc", TD_KEY, "l1i_mpki", "itlb_mpki", "br_mpki", "l1d_mpki", "rename_blocked"];
   const $ = (id) => document.getElementById(id);
   const ov = $("overview"), mc = $("main"), ac = $("aligned"), tip = $("tip");
 
@@ -249,6 +267,50 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     m.max = sorted.length ? sorted[sorted.length - 1] : 1;
   });
   const ipcM = M.find((m) => m.key === "ipc");
+  const mOf = (k) => M.find((m) => m.key === k);
+  // Top-down breakdown: D.topdown is window_view.TOPDOWN_TREE, every node of
+  // which is also a metric. The stacked panel (TD_KEY) shows one level:
+  // Level 1, or the parts of one chosen Level 1 (Level 2) or Level 2
+  // (Level 3) category, as shares of all slots.
+  const TD = D.topdown && D.topdown.every((n) => mOf(n.key)) ? D.topdown : null;
+  const TD_FAMILY = { td_retiring: "ret", td_badspec: "bad", td_frontend: "fe", td_backend: "be" };
+  // Panel order: the metrics', with the breakdown right after IPC.
+  const ORDER = M.map((m) => m.key);
+  if (TD) ORDER.splice(ORDER.indexOf("ipc") + 1, 0, TD_KEY);
+  // The categories that can be broken down at levels 2 and 3, with their
+  // Level 1 family.
+  const TD_PICKS = { 2: [], 3: [] };
+  if (TD) TD.forEach((f) => {
+    if (f.children.length) TD_PICKS[2].push({ n: f, f: f.key });
+    f.children.forEach((c) => { if (c.children.length) TD_PICKS[3].push({ n: c, f: f.key }); });
+  });
+  // Level 2 opens on the front end
+  let tdLvl = 1, tdPick = { 2: Math.max(0, TD_PICKS[2].findIndex((p) => p.n.key === "td_frontend")), 3: 0 }, tdLeafM = [], tdParentM = null, tdCol = {};
+  // the chosen category ({n, f}) below Level 1, else null
+  const tdChosen = () => tdLvl > 1 ? TD_PICKS[tdLvl][tdPick[tdLvl]] : null;
+  const hex = (s) => { const h = s.replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.length === 3 ? h[i / 2].repeat(2) : h.slice(i, i + 2), 16)); };
+  const mix = (a, b, t) => { const x = hex(a), y = hex(b); return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
+  // Level 1 shows each family in its hue; below it, the chosen category's
+  // parts are steps of its family's hue, from a shade (bottom) to a tint
+  // (top).
+  function tdColors() {
+    const out = {}, ch = tdChosen();
+    if (!ch) { TD.forEach((f) => (out[f.key] = colors["td-" + TD_FAMILY[f.key]])); return out; }
+    const base = colors["td-" + TD_FAMILY[ch.f]], ls = ch.n.children;
+    ls.forEach((l, j) => {
+      const s = ls.length < 2 ? 0 : -0.45 + 0.95 * j / (ls.length - 1);
+      out[l.key] = s < 0 ? mix(base, colors.ink, -s) : mix(base, colors.panel, s);
+    });
+    return out;
+  }
+  // Top of the breakdown's y axis: 100% at Level 1, else fitted to the
+  // largest stack (the chosen category's share) among vals.
+  function tdScale(vals) {
+    if (tdLvl === 1) return { max: 1, ticks: [0.5, 1] };
+    const mx = Math.max(1e-6, ...vals.filter((v) => v !== null && v !== undefined)) * 1.05;
+    const t = niceTicks(0, mx, 2);
+    return { max: Math.max(mx, t[t.length - 1] || mx), ticks: t.filter((x) => x > 0) };
+  }
   const S = D.sched;
   const marks = S ? S.marks : [];
   const kindOf = (k) => k.startsWith("tool_") ? "tool" : k;
@@ -300,7 +362,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   marks.forEach((m, j) => blockEvents[m.b].push(j));
 
   // ---------- state ----------
-  let selected = DEFAULT_METRICS.filter((k) => M.some((m) => m.key === k));
+  let selected = DEFAULT_METRICS.filter((k) => ORDER.includes(k));
   let overlay = "shade", clip = true;
   let lines = new Set(["switch_process", "exec", "tool"]);
   let view = [D.i0, D.i1];
@@ -337,6 +399,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     ["kernel", "idle", "other"].forEach((k) => (colors["g-" + k] = g("--g-" + k)));
     ["switch_process", "switch_thread", "switch_kernel", "exec", "fork_process", "fork_thread", "exit", "tool"]
       .forEach((k) => (colors["ev-" + k] = g("--ev-" + k)));
+    ["ret", "bad", "fe", "be"].forEach((k) => (colors["td-" + k] = g("--td-" + k)));
+    if (TD) refreshTd();
   }
   const evColor = (k) => colors["ev-" + kindOf(k)] || colors.ink3;
 
@@ -369,16 +433,43 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     const mgroups = [];
     M.forEach((m) => { let g = mgroups.find((x) => x.name === m.group); if (!g) mgroups.push(g = { name: m.group, ms: [] }); g.ms.push(m); });
     $("picker").innerHTML = mgroups.map((g) => `<div class="pgroup"><span class="gl">${esc(g.name)}</span>` +
+      (g.name === "Top-down" && TD ? `<button class="chip" data-k="${TD_KEY}" title="Rename slots split into the top-down categories, stacked per block" aria-pressed="${selected.includes(TD_KEY)}">Breakdown (stacked)</button>` : "") +
       g.ms.map((m) => `<button class="chip" data-k="${m.key}" title="${esc(m.desc)}" aria-pressed="${selected.includes(m.key)}">${esc(m.label)}</button>`).join("") + "</div>").join("") +
       (D.zeroMetrics && D.zeroMetrics.length ? `<div class="hint">Zero throughout, not shown: ${esc(D.zeroMetrics.join(", "))}</div>` : "");
     $("picker").querySelectorAll("button").forEach((b) => b.addEventListener("click", () => {
       const k = b.dataset.k;
       selected = selected.includes(k) ? selected.filter((x) => x !== k) : selected.concat([k]);
       // keep picker order stable: by metric definition order
-      selected = M.map((m) => m.key).filter((x) => selected.includes(x));
+      selected = ORDER.filter((x) => selected.includes(x));
       b.setAttribute("aria-pressed", selected.includes(k));
+      if (k === TD_KEY) renderTdControls();
       resize(); drawAligned();
     }));
+  }
+
+  // ---------- top-down controls ----------
+  function refreshTd() {
+    const ch = tdChosen();
+    tdParentM = ch ? mOf(ch.n.key) : null;
+    tdLeafM = (ch ? ch.n.children : TD).map((n) => mOf(n.key));
+    tdCol = tdColors();
+  }
+  function renderTdControls() {
+    $("tdctl").hidden = !TD || !selected.includes(TD_KEY);
+    if ($("tdctl").hidden) return;
+    [1, 2, 3].forEach((l) => $("td-l" + l).setAttribute("aria-pressed", l === tdLvl));
+    $("td-pick").hidden = tdLvl === 1;
+    if (tdLvl > 1) $("td-pick").innerHTML = TD_PICKS[tdLvl].map((p, i) =>
+      `<button data-i="${i}" title="${esc(mOf(p.n.key).desc)}" aria-pressed="${i === tdPick[tdLvl]}">${esc(mOf(p.n.key).label)}</button>`).join("");
+    $("td-legend").innerHTML = tdLeafM.map((m) => `<span class="tdleaf" title="${esc(m.desc)}"><i class="sw" style="background:${tdCol[m.key]}"></i>${esc(m.label)}</span>`).join("");
+  }
+  function tdChanged() { refreshTd(); renderTdControls(); draw(); drawAligned(); }
+  if (TD) {
+    $("td-pick").addEventListener("click", (e) => {
+      const b = e.target.closest("button[data-i]"); if (!b) return;
+      tdPick[tdLvl] = +b.dataset.i; tdChanged();
+    });
+    [1, 2, 3].forEach((l) => $("td-l" + l).addEventListener("click", () => { tdLvl = l; tdChanged(); }));
   }
 
   function renderEventToggles() {
@@ -450,7 +541,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   const yTool = () => yCpu() + (S ? G.cpuH + 4 : 0);
   const yEv = () => yTool() + (hasTools() ? G.toolH + 4 : 0);
   const yPanels = () => (S ? yEv() + G.evH : G.axisH) + G.gap;
-  const panelY = (pi) => yPanels() + pi * (G.panelH + G.panelGap);
+  const panelHOf = (key) => key === TD_KEY ? 2 * G.panelH : G.panelH;
+  const panelY = (pi) => { let y = yPanels(); for (let i = 0; i < pi; i++) y += panelHOf(selected[i]) + G.panelGap; return y; };
   const plotX = (v) => G.labelW + (v - view[0]) / (view[1] - view[0]) * (W - G.labelW - G.right);
   const valAt = (x) => view[0] + (x - G.labelW) / (W - G.labelW - G.right) * (view[1] - view[0]);
 
@@ -527,7 +619,7 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
       c.globalAlpha = 1;
     }
 
-    selected.forEach((key, pi) => drawPanel(c, M.find((m) => m.key === key), panelY(pi), ka, kb, blockPx));
+    selected.forEach((key, pi) => key === TD_KEY ? drawStackPanel(c, panelY(pi), ka, kb, blockPx) : drawPanel(c, mOf(key), panelY(pi), ka, kb, blockPx));
 
     // event lines through the panels
     if (S) {
@@ -555,8 +647,9 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
 
     // panel labels
     selected.forEach((key, pi) => {
-      const m = M.find((x) => x.key === key), y = panelY(pi);
+      const m = mOf(key), y = panelY(pi);
       c.textAlign = "right"; c.textBaseline = "top";
+      if (key === TD_KEY) { drawStackLabels(c, y); return; }
       c.font = `600 12px ${colors.label}`; c.fillStyle = colors.ink;
       c.fillText(clipText(c, m.label, G.labelW - 52), x0 - 44, y);
       c.font = `11px ${colors.label}`; c.fillStyle = colors.ink3;
@@ -700,6 +793,67 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     yTickLabels.push({ y, sc, m, Y });
   }
 
+  // Stacked top-down shares per block, bottom up in tdLeafM order, with a
+  // 1px surface gap above every segment tall enough to keep it.
+  function drawStackPanel(c, y, ka, kb, blockPx) {
+    const h = panelHOf(TD_KEY), x0 = G.labelW, x1 = W - G.right;
+    const sc = tdScale(tdParentM ? tdParentM.v.slice(ka, kb + 1).concat([tdParentM.mean]) : []);
+    const Y = (v) => y + h - Math.max(0, Math.min(1, v / sc.max)) * h;
+    c.fillStyle = colors.rule; c.fillRect(x0, y + h, x1 - x0, 1);
+    const stack = (xa, w, vals) => {
+      let acc = 0;
+      vals.forEach((v, i) => {
+        if (!(v > 0)) return;
+        const ya = Y(acc + v), yb = Y(acc), gap = yb - ya > 3 ? 1 : 0; acc += v;
+        c.fillStyle = tdCol[tdLeafM[i].key]; c.fillRect(xa, ya + gap, w, Math.max(0.5, yb - ya - gap));
+      });
+    };
+    if (blockPx >= 2) {
+      const gap = blockPx > 6 ? 1 : 0;
+      for (let k = ka; k <= kb; k++) {
+        const vals = tdLeafM.map((m) => m.v[k]);
+        if (vals.some((v) => v === null)) continue;
+        const xa = plotX(B.s[k]) + gap, xb = plotX(B.e[k]);
+        stack(xa, Math.max(1, xb - xa), vals);
+      }
+    } else {
+      // several blocks per pixel column: their cycle-weighted mean
+      let col = null, sums = null, wsum = 0;
+      const flush = () => { if (col !== null && wsum > 0) stack(col, 1, sums.map((s) => s / wsum)); };
+      for (let k = ka; k <= kb; k++) {
+        const vals = tdLeafM.map((m) => m.v[k]);
+        if (vals.some((v) => v === null)) continue;
+        const px = Math.floor(plotX(B.s[k]));
+        if (px !== col) { flush(); col = px; sums = vals.map(() => 0); wsum = 0; }
+        const w = B.cyc[k] || 1; vals.forEach((v, i) => (sums[i] += v * w)); wsum += w;
+      }
+      flush();
+    }
+    yTickLabels.push({ y, sc, m: { unit: "% slots" }, Y });
+  }
+
+  // The breakdown's label column: its parts top down, with their share
+  // over the whole window.
+  function drawStackLabels(c, y) {
+    const x0 = G.labelW, w = G.labelW - 52;
+    c.font = `600 12px ${colors.label}`; c.fillStyle = colors.ink;
+    c.fillText(clipText(c, tdParentM ? `${tdParentM.label} ${fmtV(tdParentM, tdParentM.mean)}` : "Top-down", w), x0 - 44, y);
+    c.font = `11px ${colors.label}`; c.fillStyle = colors.ink3;
+    c.fillText(`Level ${tdLvl} · % of all slots`, x0 - 44, y + 15);
+    const rows = tdLeafM.slice().reverse(), lh = Math.min(14, (panelHOf(TD_KEY) - 32) / rows.length);
+    const size = lh < 12 ? 10 : 11;
+    rows.forEach((m, i) => {
+      const yy = y + 32 + i * lh;
+      c.font = `${size}px ${colors.font}`; c.fillStyle = colors.ink2;
+      const val = fmtV(m, m.mean), vw = c.measureText(val).width;
+      c.fillText(val, x0 - 44, yy);
+      c.font = `${size}px ${colors.label}`;
+      const txt = clipText(c, m.label, w - vw - 18), right = x0 - 44 - vw - 5;
+      c.fillText(txt, right, yy);
+      c.fillStyle = tdCol[m.key]; c.fillRect(right - c.measureText(txt).width - 12, yy + 1, 8, Math.min(8, lh - 2));
+    });
+  }
+
   // y tick labels go in the label column, outside the plot clip
   let yTickLabels = [];
   function drawMain() {
@@ -766,7 +920,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     }
     const offs = []; for (let o = -ctx; o <= ctx; o++) offs.push(o);
     selected.forEach((key, i) => {
-      const m = M.find((x) => x.key === key);
+      if (key === TD_KEY) { alignedStack(c, i, evb, offs); return; }
+      const m = mOf(key);
       const stats = offs.map((o) => {
         const xs = [];
         for (const b of evb) { const k = b + o; if (k >= 0 && k < NB && m.v[k] !== null) xs.push(m.v[k]); }
@@ -816,6 +971,39 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
       stats.forEach((s, j) => { if (lab.has(s.o)) c.fillText(s.o > 0 ? "+" + s.o : String(s.o), px0 + (j + 0.5) * bw, py1 + 4); });
       alGeo.cells.push({ m, stats, px0, px1, py0, py1, bw, cx, cy });
     });
+  }
+
+  // The breakdown around events: per offset, each part's mean over the
+  // event blocks, stacked.
+  function alignedStack(c, i, evb, offs) {
+    const { cols, cellW, cellH } = alGeo;
+    const stats = offs.map((o) => {
+      const ks = evb.map((b) => b + o).filter((k) => k >= 0 && k < NB && tdLeafM.every((m) => m.v[k] !== null));
+      return { o, n: ks.length, means: ks.length ? tdLeafM.map((m) => ks.reduce((a, k) => a + m.v[k], 0) / ks.length) : null };
+    });
+    const cx = (i % cols) * cellW, cy = Math.floor(i / cols) * cellH + 4;
+    const px0 = cx + 52, px1 = cx + cellW - 14, py0 = cy + 22, py1 = cy + cellH - 26;
+    const sc = tdScale(stats.map((s) => s.means && s.means.reduce((a, b) => a + b, 0)).concat(tdParentM ? [tdParentM.mean] : []));
+    const Y = (v) => py1 - Math.max(0, Math.min(1, v / sc.max)) * (py1 - py0), bw = (px1 - px0) / offs.length;
+    c.textBaseline = "alphabetic"; c.textAlign = "left";
+    c.font = `600 12px ${colors.label}`; c.fillStyle = colors.ink; c.fillText("Top-down" + (tdParentM ? ": " + tdParentM.label : " breakdown"), cx + 12, cy + 12);
+    c.textAlign = "right"; c.textBaseline = "middle"; c.font = `10.5px ${colors.font}`; c.fillStyle = colors.ink3;
+    for (const tv of [0].concat(sc.ticks)) c.fillText(fmtV({ unit: "%" }, tv), px0 - 6, Y(tv));
+    stats.forEach((s, j) => {
+      if (!s.means) return;
+      const xa = px0 + j * bw + (bw > 6 ? 1 : 0), ww = Math.max(1, bw - (bw > 6 ? 2 : 0));
+      let acc = 0;
+      s.means.forEach((v, q) => {
+        if (!(v > 0)) return;
+        const ya = Y(acc + v), yb = Y(acc), gap = yb - ya > 3 ? 1 : 0; acc += v;
+        c.fillStyle = tdCol[tdLeafM[q].key]; c.fillRect(xa, ya + gap, ww, Math.max(0.5, yb - ya - gap));
+      });
+      if (s.o === 0) { c.strokeStyle = colors.focus; c.lineWidth = 1.5; c.strokeRect(xa - 0.5, py0 - 0.5, ww + 1, py1 - py0 + 1); }
+    });
+    c.fillStyle = colors.ink3; c.textAlign = "center"; c.textBaseline = "top"; c.font = `10.5px ${colors.font}`;
+    const lab = new Set([-ctx, 0, ctx, -Math.round(ctx / 2), Math.round(ctx / 2)]);
+    stats.forEach((s, j) => { if (lab.has(s.o)) c.fillText(s.o > 0 ? "+" + s.o : String(s.o), px0 + (j + 0.5) * bw, py1 + 4); });
+    alGeo.cells.push({ stack: true, stats, px0, px1, py0, py1, bw, cx, cy });
   }
 
   // ---------- events table ----------
@@ -869,8 +1057,13 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   }
 
   function blockTip(k) {
+    const tdRow = (m) => {
+      const v = m.v[k], d = v !== null && m.mean ? v / m.mean - 1 : null;
+      return `<tr><td><i class="sw" style="background:${tdCol[m.key]};width:9px;height:9px"></i> ${esc(m.label)}</td><td class="n">${fmtV(m, v)}</td><td class="n dim">${d === null ? "" : (d >= 0 ? "+" : "") + (d * 100).toFixed(0) + "%"}</td></tr>`;
+    };
     const rows = selected.map((key) => {
-      const m = M.find((x) => x.key === key), v = m.v[k];
+      if (key === TD_KEY) return tdLeafM.slice().reverse().map(tdRow).join("") + (tdParentM ? tdRow(tdParentM).replace(/<i class="sw"[^>]*><\/i> /, "") : "");
+      const m = mOf(key), v = m.v[k];
       const d = v !== null && m.mean ? v / m.mean - 1 : null;
       return `<tr><td>${esc(m.label)}</td><td class="n">${fmtV(m, v)}</td><td class="n dim">${d === null ? "" : (d >= 0 ? "+" : "") + (d * 100).toFixed(0) + "%"}</td></tr>`;
     }).join("");
@@ -1010,6 +1203,12 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
     const cell = alGeo.cells.find((c) => x >= c.px0 && x < c.px1 && y >= c.cy && y < c.cy + alGeo.cellH);
     if (!cell) { hideTip(); return; }
     const s = cell.stats[Math.min(cell.stats.length - 1, Math.max(0, Math.floor((x - cell.px0) / cell.bw)))];
+    if (cell.stack) {
+      if (!s || !s.means) { hideTip(); return; }
+      showTip(`<b>Top-down breakdown</b> <span class="m">offset ${s.o > 0 ? "+" : ""}${s.o} block${Math.abs(s.o) === 1 ? "" : "s"} · ${s.n} events</span><table>` +
+        tdLeafM.map((m, q) => [m, q]).reverse().map(([m, q]) => `<tr><td><i class="sw" style="background:${tdCol[m.key]};width:9px;height:9px"></i> ${esc(m.label)}</td><td class="n">${fmtV(m, s.means[q])}</td><td class="n dim">window ${fmtV(m, m.mean)}</td></tr>`).join("") + "</table>", e);
+      return;
+    }
     if (!s || s.mean === null) { hideTip(); return; }
     showTip(`<b>${esc(cell.m.label)}</b> <span class="m">offset ${s.o > 0 ? "+" : ""}${s.o} block${Math.abs(s.o) === 1 ? "" : "s"}</span><table>` +
       `<tr><td>mean</td><td class="n">${fmtV(cell.m, s.mean)}</td></tr><tr><td>25th–75th</td><td class="n">${fmtV(cell.m, s.p25)} – ${fmtV(cell.m, s.p75)}</td></tr>` +
@@ -1020,8 +1219,8 @@ footer code { font-family: var(--font-data); color: var(--ink-2); overflow-wrap:
   // ---------- boot ----------
   readColors();
   computeGroups();
-  renderSummary(); renderPicker(); renderEventToggles(); renderNav(); renderTable();
-  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); draw(); drawAligned(); });
+  renderSummary(); renderPicker(); renderTdControls(); renderEventToggles(); renderNav(); renderTable();
+  matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { readColors(); renderTdControls(); draw(); drawAligned(); });
   window.addEventListener("resize", resize);
   resize();
   // Deep link: #kind=switch_process[&cause=...]&n=5[&ctx=10] opens on the

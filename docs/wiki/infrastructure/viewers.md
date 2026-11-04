@@ -1,9 +1,10 @@
 ---
 type: howto
 status: current
-updated: 2026-10-21
+updated: 2026-11-03
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
+  - analysis_scripts/tasktrace/window_view.py
 tags: [viewer, visualization]
 ---
 
@@ -42,10 +43,26 @@ how the core behaves around scheduling points.
 
 - **One bar chart per metric** on a shared instruction axis, a bar per
   block as wide as its instructions. Groups: throughput, front end, bad
-  speculation, memory, back end; Garfield counters and top-down L1 when the
-  build has them. `--metric` adds any stat raw, per 1000 instructions or as
+  speculation, memory, back end; Garfield counters and every top-down node
+  when the build has them. `--metric` adds any stat raw, per 1000 instructions or as
   a share of cycles. `window_view.METRICS` defines every metric the sweep
   tools use.
+- **Top-down breakdown** (builds with [[top-down-accounting]]): a stacked
+  panel, shown by default right under IPC, splits each block's rename slots
+  into retiring, bad speculation, front-end and back-end bound (bottom up).
+  The bars show one level at a time: *Level 2* shows only the parts of one
+  chosen Level 1 category (bad speculation, front-end or back-end bound;
+  e.g. front end → fetch latency + fetch bandwidth), *Level 3* only those
+  of fetch latency or memory bound. Parts stay shares of all slots, on an
+  axis fitted to the chosen category, in shades of its family's hue. The
+  label column gives the category and its parts with their window shares;
+  the block tooltip and *Around events* (stacked means per offset) follow
+  the same choice. Every node is also a metric of its own (group Top-down).
+  `window_view.topdown()` recomputes the shares from the counters behind
+  gem5's formulas, so they sum over blocks, slices and edge settings like
+  any other metric, and `check_topdown()` warns on stderr if a block
+  differs from gem5's own formulas by over 1e-4 (the code has drifted from
+  `tdm.cc`).
 - **Dashed line = the window value from summed stats**, not the mean of the
   bars ([[aggregating-metrics]]: window IPC 0.956 vs mean bar 1.21 on
   framework-52684).

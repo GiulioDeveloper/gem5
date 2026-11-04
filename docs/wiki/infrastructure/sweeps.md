@@ -195,6 +195,17 @@ With slice categories in the summaries, the comparison pages have the
 same slice switch and open with the time shares per sweep. The geometric
 means follow the selected category, and `compare_multi_slices.csv` and
 `compare_multi_geomean_slices.csv` hold the per-category values and means. A category's geometric means are over the checkpoints where it ran in the baseline (at least 1M instructions), n in the table.
+**Top-down breakdown** (summaries of runs with [[top-down-accounting]];
+also on `sweep.html`): a collapsible section above the geometric means,
+closed by default, with one card per checkpoint (SPEC, then agentic, each
+led by a mean card: the plain mean of the checkpoints' shares) holding a
+stacked bar per sweep (A, B, ...). It follows the page's slice category,
+edge setting and checkpoint search, and has the window view's level
+controls (*Level 1*, or *Level 2/3* plus the one category whose parts are
+shown), on a y axis shared by every card. The open state, level and choice
+are remembered per page type. Only Level 1 gets violins
+and table columns; the deeper nodes are in the CSVs (`td_*` columns) and
+the geometric-mean table.
 With edge settings in the summaries, every view and geometric mean is also
 available at each setting, and `compare_multi_geomean_edges.csv` has the
 means at k = 0, 1, 3, 5, per suite and per category. The geometric-mean table shows one suite at a time (an Agentic/SPEC
