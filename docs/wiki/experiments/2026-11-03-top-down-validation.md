@@ -148,7 +148,9 @@ Serialize bound: rubocop 0.053-0.061, cppcheck 0.001.
 ## Open
 
 - Is fetch waiting on L1I hits a model artifact (a real V2 pipelines fetch)?
-  It inflates every front-end number, SPEC included.
+  It inflates every front-end number, SPEC included. Measured 2026-11-06:
+  1.00 wait cycle per line on hits, 21-30% of cycles; likely an artifact
+  ([[2026-11-05-front-end-width#Why fetch delivers nothing in most cycles (2026-11-06)]]).
 - What makes jq serialise (barriers, system-register writes, ISBs)?
 - Bad speculation splits by event count; squashes from commit (traps,
   interrupts) are frequent on agentic windows and have no category.

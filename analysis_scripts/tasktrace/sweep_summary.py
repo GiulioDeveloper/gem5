@@ -1,6 +1,6 @@
 # LICENSE-PLACEHOLDER: GARFIELD-LICENSE-TBD
-"""Cross-checkpoint summary of a detailed-window sweep: violins of each
-metric over the checkpoints of each suite.
+"""Cross-checkpoint summary of a detailed-window sweep: every metric of
+every checkpoint, the data sweep_compare.py compares.
 
 Usage:
     python3 analysis_scripts/tasktrace/sweep_summary.py runs/sweep/<ts> [--pdf]
@@ -50,11 +50,9 @@ those of the whole window.
 Writes <out>/sweep.csv (one row per run), sweep_slices.csv (one row per
 agentic run and category), sweep_processes.csv (one row per agentic run
 and process, every process kept, at every edge setting), sweep_edges.csv
-(one row per run, edge setting and category), sweep.view.json and
-sweep.html (violins, SPEC beside agentic, window value or CV, all slices
-or one category, any edge setting, with the time share of each category
-on top, and the top-down breakdown of every checkpoint when the runs have
-it). --pdf also writes
+(one row per run, edge setting and category) and sweep.view.json (all
+of it, for sweep_compare.py). There is no page for a single sweep:
+compare it against a baseline with sweep_compare.py. --pdf also writes
 violins.pdf/.png and violins_cv.pdf/.png with matplotlib. The output
 directory defaults to <first path>/summary.
 """
@@ -74,8 +72,6 @@ import process_views as pv  # noqa: E402
 import trace_analysis as ta  # noqa: E402
 import window_view as wv  # noqa: E402
 
-TEMPLATE = Path(__file__).with_name("sweep_view.html")
-PLACEHOLDER = "__SWEEP_DATA__"
 
 # Metrics shown, in order (keys of window_view.METRICS).
 KEYS = ("ipc", "user_share", "fetch_rate",
@@ -83,8 +79,7 @@ KEYS = ("ipc", "user_share", "fetch_rate",
         "br_mpki", "btb_mispred_pki", "squashed",
         "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
         "walks_done_d_pki", "walks_done_i_pki", "l1d_lat",
-        "rob_full", "iq_full", "lsq_full") + tuple(
-            k for k, _, _, _, _ in wv.td_nodes())
+        "rob_full", "iq_full", "lsq_full") + tuple(wv.td_keys())
 SWITCHES = (("switches", "Context switches", None),
             ("switch_process", "Process switches", "switch_process"),
             ("switch_thread", "Thread switches", "switch_thread"),
@@ -570,18 +565,6 @@ def write_procs_csv(rows, metric_defs, path):
                            + [p.get(k) for k in keys])
 
 
-def write_page(model, out, stem):
-    """<out>/<stem>.view.json and <out>/<stem>.html from the template."""
-    blob = json.dumps(model, separators=(",", ":"))
-    (out / f"{stem}.view.json").write_text(blob)
-    page = TEMPLATE.read_text().replace(PLACEHOLDER,
-                                        blob.replace("</", "<\\/"))
-    page = ('<!doctype html>\n<html lang="en">\n<meta charset="utf-8">\n'
-            '<meta name="viewport" content="width=device-width, '
-            'initial-scale=1">\n' + page + "\n</html>\n")
-    (out / f"{stem}.html").write_text(page)
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("paths", type=Path, nargs="+")
@@ -611,17 +594,19 @@ def main():
     write_edges_csv(rows, metric_defs, out / "sweep_edges.csv")
     for r in rows:      # per-process rows stay out of the page
         r.pop("procs", None)
+    # The data sweep_compare.py reads; the pages are comparisons only.
     model = {"version": 3, "name": str(args.paths[0])
              + (f" (first {args.skip_insts / 1e6:g}M instructions of each "
                 "window skipped)" if args.skip_insts else ""),
              "metrics": metric_defs, "categories": category_defs(rows),
              "edges": list(EDGES) if any("edge" in r for r in rows) else [],
              "topdown": topdown_tree(metric_defs), "runs": rows}
-    write_page(model, out, "sweep")
+    (out / "sweep.view.json").write_text(
+        json.dumps(model, separators=(",", ":")))
     if args.pdf:
         write_pdfs(rows, metric_defs, out, VIOLINS)
     counts = {s: sum(r["suite"] == s for r in rows) for s in SUITES}
-    print(f"{out}/sweep.html: {len(rows)} runs "
+    print(f"{out}/sweep.view.json: {len(rows)} runs "
           f"({counts['spec']} spec, {counts['agentic']} agentic), "
           f"{len(metric_defs)} metrics"
           + (", violins*.pdf/.png" if args.pdf else ""))

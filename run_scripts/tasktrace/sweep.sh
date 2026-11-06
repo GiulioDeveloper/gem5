@@ -4,7 +4,8 @@
 # gets SETTLE atomic instructions, WARM of warm-up and a detailed O3 window
 # in IVL-instruction stats blocks, with the task tracer. Each finished run is
 # analysed (trace_analysis, trace_view, window_view) and marked `done`; at
-# the end sweep_summary.py writes the cross-checkpoint table and violins.
+# the end sweep_summary.py writes the cross-checkpoint table, and with
+# BASELINE sweep_compare.py the comparison page.
 #
 # usage: run_scripts/tasktrace/sweep.sh [BASE]
 #   BASE      output root (default runs/sweep/<timestamp>); rerunning with

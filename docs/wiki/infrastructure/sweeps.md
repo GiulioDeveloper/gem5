@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-03
+updated: 2026-11-05
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -97,14 +97,38 @@ uncapped.
 Launches are logged in `BASE/launch.log` with the need, available memory,
 headroom, pressure, cap and wait.
 
+## Watch a sweep: `sweep_status.py`
+
+`run_scripts/tasktrace/sweep_status.py [BASE...]` shows where smart sweeps
+stand, from their files and `/proc` only, so it is safe to run at any time.
+- **Per sweep:** its extra flags, number of runs, disk size, a progress
+  bar and the runs done, failed, analysing,
+  running, waiting at the memory gate, and queued. It flags a sweep whose
+  `smart_sweep.sh` is gone before `sweep.conf` says `finished`.
+- **Per run** (`-r` the active runs, `-a` all): progress (committed over
+  warm-up plus detailed instructions), IPC, host KIPS over the last 30
+  progress lines, CPU use, RSS against the run's cap, elapsed time and time left.
+- **Host:** CPU use (over the last second, or since the last refresh),
+  memory, swap and pressure, disk use of the file system holding the
+  sweeps, and gem5s per user.
+- **Time left for the set:** remaining instructions over the current total
+  speed. It assumes the present concurrency, so it is rough while the
+  gate is still filling the machine. `--pending-runs N` adds runs of
+  sweeps not started yet.
+
+`-w 60` refreshes every minute. With no BASE it takes the newest stamp
+under `runs/sweep/`.
+
 ## Summaries: `sweep_summary.py`
 
 Runs at the end of a sweep, or by hand on any set of window runs. Per run,
 over the window: each metric's **window value** from summed stats, its
 **coefficient of variation** over blocks, and context-switch counts, rates
-and CVs by kind. Writes `summary/sweep.csv`, `summary/sweep.html` (a violin
-per suite per metric, value or CV, linear or log, linked hover) and with
-matplotlib `violins*.pdf/png`. `--skip-insts N` leaves out each window's
+and CVs by kind. Writes `summary/sweep.csv`, `summary/sweep.view.json`
+(everything, for the comparisons) and with matplotlib `violins*.pdf/png`.
+Since 2026-11-05 there is no page for a single sweep: every result is read
+against a baseline with `sweep_compare.py`. Summaries written earlier still
+have a `sweep.html`. `--skip-insts N` leaves out each window's
 first N instructions without re-simulating ([[warmup-and-skip]]); write
 such summaries elsewhere with `-o`.
 
@@ -136,9 +160,9 @@ time. Idle WFI time
 counts in "other" ([[numcycles-excludes-wfi]]). A category with under 1M
 instructions in a window has shares but no values.
 
-The page opens with violins of each category's time share (or instruction
-share) and has a slice switch for every panel and table. SPEC always shows
-the whole window. `summary/sweep_slices.csv` has one row per agentic run
+The comparison page shows each category's time share (or instruction
+share) and has a slice switch for every view. SPEC always shows the whole
+window. `summary/sweep_slices.csv` has one row per agentic run
 and category, and `summary/sweep_processes.csv` one row per agentic run and
 process: category, tgid, name, shares, instructions and every metric. The
 pages show categories only. Whole-window values are unchanged by the split: checked
@@ -179,39 +203,63 @@ whose context they run in.
 sweep_compare.py A B [C ...] [--labels ...] [-o OUT] [--pdf]
 ```
 
-Pairs runs by suite and checkpoint (A is the baseline). Two sweeps write
-`B/compare-<A>/compare.{csv,html}` (A, B, B − A, B / A − 1 per metric and
-checkpoint, violins of change or difference, median IPC change per suite).
-Up to 8 write `compare_multi.{csv,html}` (default `<A>/compare-multi/`):
-violins of the values, the ratio to A (×) or the difference from A, and,
-per suite, a table of geometric means (also `compare_multi_geomean.csv`):
-A's window values, and each other sweep's per-checkpoint ratio to A (for
-IPC, the speedup), shown on the page as a change (ratio − 1: 1.075× is
-+7.5%) and kept as ratios in the CSV. A checkpoint with a zero in either sweep has no ratio
-and is left out of that mean (counted on the page). That understates a
-drop to zero. A mean over fewer than half the checkpoints is left empty
-(for example SPEC switch rates, zero in most windows).
-With slice categories in the summaries, the comparison pages have the
-same slice switch and open with the time shares per sweep. The geometric
-means follow the selected category, and `compare_multi_slices.csv` and
-`compare_multi_geomean_slices.csv` hold the per-category values and means. A category's geometric means are over the checkpoints where it ran in the baseline (at least 1M instructions), n in the table.
-**Top-down breakdown** (summaries of runs with [[top-down-accounting]];
-also on `sweep.html`): a collapsible section above the geometric means,
-closed by default, with one card per checkpoint (SPEC, then agentic, each
-led by a mean card: the plain mean of the checkpoints' shares) holding a
-stacked bar per sweep (A, B, ...). It follows the page's slice category,
-edge setting and checkpoint search, and has the window view's level
-controls (*Level 1*, or *Level 2/3* plus the one category whose parts are
-shown), on a y axis shared by every card. The open state, level and choice
-are remembered per page type. Only Level 1 gets violins
-and table columns; the deeper nodes are in the CSVs (`td_*` columns) and
-the geometric-mean table.
-With edge settings in the summaries, every view and geometric mean is also
-available at each setting, and `compare_multi_geomean_edges.csv` has the
-means at k = 0, 1, 3, 5, per suite and per category. The geometric-mean table shows one suite at a time (an Agentic/SPEC
-switch); the violins show both. A category with under 1M kept instructions
-in a window has no value. So at high k, a category that runs only in short
-bursts can drop out of a checkpoint (json-4237's harness at k = 3 and 5).
+Pairs runs by suite and checkpoint (A is the baseline) and compares 2 to 8
+sweeps the same way (2026-11-05: two sweeps no longer have a page of their
+own). Writes `compare.{html,csv,view.json}`, in `B/compare-<A>/` for two
+sweeps and `A/compare-multi/` for more (`-o` overrides). Labels come from
+`--labels`, or `--label-a`/`--label-b` for two, else each sweep's `extra`.
+Outputs written before 2026-11-05 are named `compare_multi*` (three or more
+sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
+`_diff`, `_rel`).
+
+**The page leads with the aggregate over checkpoints**, per suite:
+- **Top-down** ([[top-down-accounting]]): one stacked bar per sweep and
+  suite, the plain mean of the checkpoints' shares, with the window view's
+  level controls (*Level 1*, or *Level 2/3* plus the one category whose
+  parts are shown; Level 3 is memory bound only since the fetch-latency
+  split was dropped as non-paper). Segments tall enough are labelled.
+- **Every metric in one table**, SPEC and agentic side by side (also
+  `compare_geomean.csv`, column `aggregate`). Rates and counts: the
+  geometric mean of A's window values, and each other sweep's geometric
+  mean of its per-checkpoint ratio to A (for IPC, the speedup), shown as a
+  change (ratio − 1: 1.075× is +7.5%) and kept as ratios in the CSV. A
+  checkpoint with a zero in either sweep has no ratio and is left out of
+  that mean (counted on the page). That understates a drop to zero. A mean
+  over fewer than half the checkpoints is left empty (for example SPEC
+  switch rates, zero in most windows). Top-down shares add up, so they are
+  averaged instead: the plain mean of A's shares, and each other sweep's
+  difference from it in percentage points (in the CSV, the ratio of the
+  means over the checkpoints both sweeps have). Branch resteers, which
+  `tdm.cc` reports but Yasin's tree has no node for, is listed under fetch
+  latency but stacked nowhere.
+- **Every metric any compared sweep has gets a row** (2026-11-05; before,
+  only the metrics all sweeps had, so L1I misses vanished next to a
+  perfect L1I and L2 misses next to a perfect L2). A value a sweep lacks,
+  or a mean left empty, shows as "N/A", also in the per-checkpoint bars.
+
+**Collapsed below** (open state remembered):
+- *Where the agentic time goes*: violins of each slice category's share of
+  time or instructions, per sweep.
+- *Per checkpoint*: one metric, or the top-down breakdown, checkpoint by
+  checkpoint. A metric gets a column chart: every checkpoint on the x axis,
+  a vertical bar per sweep (named in a legend above the chart), as window
+  values, ratio to A or difference from A (these two leave A out), sorted
+  by name, A's value or B's change, plus a sortable table. The breakdown gets a card per
+  checkpoint with a stacked bar per sweep, at the level chosen above, on
+  an axis shared by every card.
+- *Distributions over checkpoints*: violins of every Level 1 metric, SPEC
+  beside agentic, a violin per sweep, as values, ratios or differences.
+
+The slice category, edge setting and checkpoint search apply to every view.
+A category's aggregates are over the checkpoints where it ran in the
+baseline (at least 1M instructions), n in the table; `compare_slices.csv`
+and `compare_geomean_slices.csv` hold the per-category values and
+aggregates. With edge settings in the summaries, every view and aggregate
+is also available at each setting, and `compare_geomean_edges.csv` has
+them at k = 0, 1, 3, 5, per suite and per category. A category with under
+1M kept instructions in a window has no value. So at high k, a category
+that runs only in short bursts can drop out of a checkpoint (json-4237's
+harness at k = 3 and 5).
 
 Summaries written before 2026-10-29 have no categories; rerun
 `sweep_summary.py` first. `runs/sweep/resummarise-slices.sh` does this for
@@ -239,5 +287,6 @@ comparison: [[comparing-configurations]].
 | `runs/sweep/20261014-110051` | baseline (FDP on) | [[2026-10-14-baseline-sweep]] |
 | `runs/sweep/20261014-154546-nofdp` | `--disable-fdp` | [[2026-10-14-fdp-off-sweep]] |
 | `runs/sweep/20261016-172546-{infbtb,inftlb,infbtb-inftlb}` | limit studies | [[2026-10-16-btb-tlb-limit-study]] |
+| `runs/sweep/20261104-1115-*` | 9 perfect L1I / L2 / TLB and FDP-off configs, 1B windows (running) | [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]] |
 | `runs/sweep/20261019-compare-5way/` | five-way comparison | same |
 | `runs/sweep/20261020-skip100M/` | the five re-summarised skipping 100M | same |

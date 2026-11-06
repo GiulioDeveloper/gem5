@@ -57,7 +57,7 @@ They import each other from that folder, so keep them together.
 | `trace_analysis.py <run>` | [[trace-analysis]] |
 | `trace_view.py <run>` + `trace_view.html` | [[viewers]] |
 | `window_view.py <run>` + `window_view.html` | [[viewers]] |
-| `sweep_summary.py <sweep>` + `sweep_view.html`, `sweep_compare.py A B ...` | [[sweeps]] |
+| `sweep_summary.py <sweep>`, `sweep_compare.py A B ...` + `compare_view.html` | [[sweeps]] |
 | `landing_summary.py <landing run> <checkpoints>` | [[validation-checks]] |
 | `pc_trace.py reduce/verify` | [[pc-trace]] |
 | `pc_footprint.py <run>` | instruction footprint, LRU hit rates, repeat distance and branches per process, PID and thread from a PC trace, plus the per-thread `report.html` ([[pc-trace#Footprint, hit rates and branches]]) |

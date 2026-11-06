@@ -17,8 +17,10 @@ change** (B / A − 1) per suite with its quartiles, plus the outliers.
 `sweep_compare.py` does this ([[sweeps]]). For a headline number per
 configuration, as computer-architecture results usually give it, use the
 **geometric mean of the per-checkpoint ratios** (speedup for IPC) beside
-the baseline's geomean value; the multi-sweep page and
-`compare_multi_geomean.csv` give both. Geomeans hide spread and drop
+the baseline's geomean value; the comparison page and
+`compare_geomean.csv` give both (`compare_multi_geomean.csv` in outputs
+written before 2026-11-05). Top-down shares are averaged, not geomeaned,
+since they add up to 1. Geomeans hide spread and drop
 checkpoints where a value is zero, so keep the medians, quartiles and
 outliers alongside.
 

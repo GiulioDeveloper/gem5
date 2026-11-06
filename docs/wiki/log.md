@@ -651,3 +651,80 @@ top-down viewers, the perfect-sweep notes, `mem_peaks.tsv`), with the
 caveat that top-down results are still under review. Removed leftovers:
 the pre-merge worktree and the run outputs of the removed back-end split.
 Updated [[top-down-accounting]] and [[2026-11-03-top-down-validation]].
+
+## [2026-11-04] run | Perfect sweep relaunched
+
+Relaunched `runs/perfect-sweep/launch.sh` at `5889fe1205` (top-down merge;
+binary relinked, only version tags were stale): `runs/sweep/20261104-1115-*`,
+9 sweeps × 27 agentic tasks, 1B windows, stats compressed. First runs
+simulate at about 200 KIPS (about 1.4 h per run); about two days in all.
+Updated [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]], [[sweeps]].
+
+## [2026-11-04] tool | sweep_status.py
+
+New `run_scripts/tasktrace/sweep_status.py`: a terminal view of smart-sweep
+progress (per-sweep state counts, per-run progress, speed, memory against
+the cap, time left; host memory and gem5s per user), from the sweep files
+and `/proc` only. `runs/perfect-sweep/status.sh` wraps it for the perfect
+sweep, counting the group-2 sweeps not started yet. Updated [[sweeps]].
+
+## [2026-11-05] experiment | Front-end width 8
+
+Checked the user's report that gem5's 6-wide fetch/decode bottlenecks the
+8-wide rename: confirmed, fetch and decode count micro-ops, so rename gets
+at most 6 a cycle. Fetch is at the cap in 11-18% of cycles on the 400M
+windows and idle in about two thirds. New `--front-end-width` switch;
+validation and sweeps (agentic 1B at 8, SPEC 200M at 6 and 8) in
+`runs/front-end-width/`. New [[2026-11-05-front-end-width]].
+
+## [2026-11-05] fix | Comparison page: aggregate first, single-sweep page dropped
+
+Decided with the user: results are always read against a baseline, and the
+headline is the aggregate over checkpoints. `sweep_compare.py` now treats
+2 to 8 sweeps the same way and writes `compare.{html,csv,view.json}` and
+`compare_geomean{,_slices,_edges}.csv` (formerly `compare_multi*` for three
+or more; the two-sweep `_a/_b/_diff/_rel` layout is gone).
+`sweep_summary.py` writes no page any more, only the data. The page
+(`compare_view.html`, formerly `sweep_view.html`) leads with the top-down
+breakdown as a stacked bar per sweep and suite and every metric in one
+table with both suites side by side. Collapsed below are the category time
+shares, one metric (or the breakdown) per checkpoint against A, and the
+violins. Top-down aggregates are plain means of the shares, with
+differences in percentage points, not geomeans. The fetch-latency split
+(branch resteers + other) was dropped from the stacked tree as non-paper;
+resteers stay a metric. Updated [[sweeps]], [[viewers]],
+[[top-down-accounting]], [[comparing-configurations]] and
+[[run-and-analysis-scripts]].
+
+## [2026-11-05] fix | Comparison page: every metric, N/A for missing values
+
+`sweep_compare.py` now keeps every metric that any compared sweep has (it
+kept only those all had, so L1I misses vanished next to a perfect L1I and
+L2 misses next to a perfect L2); a sweep without the metric gets no value.
+`compare_view.html` shows a missing value as "N/A" (table, strip, tooltips,
+per-checkpoint bars) and no longer stops drawing when a suite has no
+checkpoints (an agentic-only comparison crashed on SPEC's empty geomean IPC,
+leaving out the table and the top-down section). The per-checkpoint chart
+is now vertical (every checkpoint on the x axis, a bar per sweep) with a
+legend naming each sweep's colour. Updated [[sweeps]].
+
+## [2026-11-05] query | Cost of the per-line I-cache wait
+
+From the 400M perfect-L1I windows at 2 and 1 cycles: removing fetch's
+one-cycle wait per line gains +3.0% IPC on rubocop-13560 and +6.1% on
+727.cppcheck_r. Front-end bound falls 8 points, but most freed slots move
+to back-end bound. Updated [[2026-11-03-perfect-l1i]].
+
+## [2026-11-06] experiment | Front-end width 8: interim
+
+12 runs per suite done: width 8 gains a median 1.1% IPC on agentic and
+2.2% on SPEC; bandwidth share falls 0.05-0.07 but the slots move to back-end
+bound. Updated [[2026-11-05-front-end-width]].
+
+## [2026-11-06] query | Why fetch delivers nothing in 50-60% of cycles
+
+The user asked why fetch is idle in ~70% of cycles. Answer: mostly the
+floor of a 6-wide fetch at ~1.2 UPC, back-pressure from the back end (36%
+of cycles on agentic), and a 1-cycle wait per L1I line on hits (21-30%),
+likely a fetch-model artifact. Updated [[2026-11-05-front-end-width]],
+[[2026-11-03-top-down-validation]].

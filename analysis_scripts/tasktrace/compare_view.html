@@ -1,0 +1,832 @@
+<title>Sweep Comparison</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: summary strip and filters, then the aggregate over checkpoints
+   (top-down bars per suite and sweep, every metric in one table); collapsed
+   below: the time shares of the slice categories, one metric checkpoint by
+   checkpoint, and the violins. Colours match window_view.html. */
+:root {
+  --bg: #f4f6f7; --panel: #fdfdfd; --ink: #13171b; --ink-2: #4a535c;
+  --ink-3: #85909a; --rule: #dfe3e7; --grid: #e9ecef; --focus: #2a78d6;
+  --median: #13171b;
+  --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100;
+  --s4: #e87ba4; --s5: #008300; --s6: #6250d6; --s7: #e34948;
+  --td-ret: #1baf7a; --td-bad: #e34948; --td-fe: #2a78d6; --td-be: #eda100;
+  --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
+  --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
+  --font-data: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, monospace;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+    --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+    --median: #eef1f3;
+    --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
+    --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+    --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #111416; --panel: #171b1e; --ink: #eef1f3; --ink-2: #b5bec6;
+  --ink-3: #7b858f; --rule: #2a3035; --grid: #20262a; --focus: #3987e5;
+  --median: #eef1f3;
+  --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
+  --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+  --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body {
+  background: var(--bg); color: var(--ink); font-family: var(--font-body);
+  font-size: 14px; line-height: 1.45; padding-inline: 16px;
+  padding-block: 20px 40px; margin: 0;
+}
+.wrap { max-width: 1400px; margin-inline: auto; display: grid; gap: 16px; }
+header { display: grid; gap: 6px; }
+h1 { font-family: var(--font-label); font-weight: 600; font-size: 22px; margin: 0; }
+.sub { color: var(--ink-2); font-family: var(--font-data); font-size: 12px; overflow-wrap: anywhere; }
+h2, details > summary {
+  font-family: var(--font-label); font-weight: 600; font-size: 13px;
+  letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-2); margin: 8px 0 0;
+}
+h3 { font-family: var(--font-label); font-weight: 600; font-size: 13px; margin: 0; }
+details > summary { cursor: pointer; padding: 4px 0; margin: 0; }
+details > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
+details[open] > summary { margin-bottom: 8px; }
+.section { display: grid; gap: 10px; }
+.strip { display: flex; flex-wrap: wrap; gap: 8px 28px; }
+.kv { display: grid; gap: 2px; }
+.kv .k { font-family: var(--font-label); font-size: 11px; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-3); }
+.kv .v { font-family: var(--font-data); font-size: 15px; font-variant-numeric: tabular-nums; }
+.controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
+.seg { display: inline-flex; flex-wrap: wrap; border: 1px solid var(--rule); border-radius: 6px; overflow: hidden; background: var(--panel); }
+.seg button {
+  font: 500 13px var(--font-body); color: var(--ink); background: none; border: 0;
+  padding: 6px 12px; cursor: pointer; border-right: 1px solid var(--rule); min-height: 32px;
+}
+.seg button:last-child { border-right: 0; }
+.seg button[aria-pressed="true"] { background: var(--ink); color: var(--panel); }
+.seg button:disabled { color: var(--ink-3); background: none; cursor: default; }
+.seg button:focus-visible, input:focus-visible, select:focus-visible, th:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
+input[type="search"] {
+  font: 13px var(--font-data); color: var(--ink); background: var(--panel);
+  border: 1px solid var(--rule); border-radius: 6px; padding: 6px 10px; min-height: 32px; width: 220px; max-width: 100%;
+}
+select { font: 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 5px 8px; min-height: 32px; max-width: 100%; }
+.hint { color: var(--ink-3); font-size: 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 430px), 1fr)); gap: 12px; }
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 10px 10px 4px; min-width: 0; }
+.panel .t { font-family: var(--font-label); font-weight: 600; font-size: 13px; }
+.panel .u { color: var(--ink-3); font-size: 11px; font-family: var(--font-data); }
+.panel .med { color: var(--ink-2); font-size: 11px; font-family: var(--font-data); font-variant-numeric: tabular-nums; }
+svg { display: block; width: 100%; height: auto; overflow: visible; }
+svg text { font-family: var(--font-data); font-size: 10px; fill: var(--ink-3); }
+.pt { stroke: var(--panel); stroke-width: 0.8; cursor: pointer; }
+.pt.hi { stroke: var(--ink); stroke-width: 2; r: 5; }
+.pt.dim { opacity: 0.18; }
+.tableWrap { overflow-x: auto; background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; }
+table { border-collapse: collapse; font-size: 12px; font-variant-numeric: tabular-nums; width: 100%; }
+th, td { padding: 5px 10px; border-bottom: 1px solid var(--grid); text-align: right; white-space: nowrap; }
+th { font-family: var(--font-label); font-weight: 600; color: var(--ink-2); position: sticky; top: 0; background: var(--panel); }
+td { font-family: var(--font-data); }
+.sortable th { cursor: pointer; }
+.sortable th:first-child, .sortable td:first-child { text-align: left; }
+tr.hi td { background: color-mix(in srgb, var(--focus) 12%, transparent); }
+.sortable tbody tr { cursor: pointer; }
+.agg td:first-child, .agg th:first-child { text-align: left; font-family: var(--font-body); }
+.agg tr.grp td { font-family: var(--font-label); font-weight: 600; color: var(--ink-2); text-align: left; background: var(--bg); }
+.agg th.suite { text-align: center; border-left: 1px solid var(--rule); }
+.agg td.first, .agg th.first { border-left: 1px solid var(--rule); }
+.agg .x { color: var(--ink-3); font-size: 10px; }
+.tdleaf { display: inline-flex; align-items: center; font-size: 12.5px; padding: 3px 4px; }
+.tdagg { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 12px; }
+.tdcards { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+.tdcard { background: var(--panel); border: 1px solid var(--rule); border-radius: 8px; padding: 6px 8px 2px; }
+.tdcard.hi { border-color: var(--ink); }
+.tdcard.mean { background: var(--bg); }
+.tdcard .t { font-family: var(--font-label); font-weight: 600; font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tdcard svg { width: auto; }
+.pcrow { cursor: pointer; }
+.pclegend { margin: 8px 0 10px; padding: 8px 12px; border: 1px solid var(--rule); border-radius: 6px; font-size: 14px; color: var(--ink); }
+.pclegend .sw { width: 14px; height: 14px; vertical-align: -2px; }
+.pcrow.hi > rect.bg { fill: color-mix(in srgb, var(--focus) 12%, transparent); }
+.pcrow.dim { opacity: 0.25; }
+#tip {
+  position: fixed; pointer-events: none; background: var(--ink); color: var(--panel);
+  font: 12px var(--font-data); padding: 6px 8px; border-radius: 6px; display: none; z-index: 5; max-width: 360px;
+}
+footer { color: var(--ink-3); font-size: 12px; }
+</style>
+<div class="wrap">
+  <header>
+    <h1>Sweep comparison</h1>
+    <div class="sub" id="sub"></div>
+  </header>
+  <div class="strip" id="strip"></div>
+  <div class="legend" id="legend" aria-label="Sweeps"></div>
+  <div class="controls">
+    <div class="seg" role="group" aria-label="Slices" id="cats" hidden></div>
+    <span class="controls" id="edges-wrap" hidden>
+      <span class="hint">Stats blocks dropped at each end of every thread run</span>
+      <span class="seg" role="group" aria-label="Edge blocks dropped" id="edges"></span>
+    </span>
+    <input type="search" id="find" placeholder="Find a checkpoint" aria-label="Find a checkpoint">
+  </div>
+  <div class="hint" id="cathint" hidden></div>
+  <div class="hint" id="edgehint" hidden></div>
+  <div class="hint" id="notes" hidden></div>
+
+  <section class="section" aria-labelledby="agg-title">
+    <h2 id="agg-title">Over all checkpoints</h2>
+    <div class="section" id="td-agg-wrap" hidden>
+      <div class="controls">
+        <h3>Top-down</h3>
+        <div class="seg" role="group" aria-label="Breakdown level">
+          <button id="td-l1" aria-pressed="true">Level 1</button>
+          <button id="td-l2" aria-pressed="false">Level 2</button>
+          <button id="td-l3" aria-pressed="false">Level 3</button>
+        </div>
+        <div class="seg" role="group" aria-label="Category to break down" id="td-pick" hidden></div>
+        <div class="legend" id="td-legend"></div>
+      </div>
+      <div class="hint" id="td-hint"></div>
+      <div class="tdagg" id="td-agg"></div>
+    </div>
+    <div class="hint">Per suite: the baseline's value (A), and each other sweep's change against it. Rates and counts: the geometric mean of A's window values, and the geometric mean of each checkpoint's ratio to A shown as a change (geomean ratio − 1; for IPC, the speedup: 1.075× is +7.5%); a checkpoint where either value is zero has no ratio and is left out (“excl. n”), and a mean over fewer than half the checkpoints is not shown. Top-down shares: the plain mean over checkpoints, and the difference from A in percentage points.</div>
+    <div class="tableWrap"><table class="agg" id="agg"></table></div>
+  </section>
+
+  <details id="share" hidden>
+    <summary>Where the agentic time goes</summary>
+    <div class="controls" style="margin-bottom:8px">
+      <div class="seg" role="group" aria-label="Share of" id="share-q">
+        <button data-q="time" aria-pressed="true">Time</button>
+        <button data-q="insts" aria-pressed="false">Instructions</button>
+      </div>
+      <span class="hint" id="share-hint"></span>
+    </div>
+    <div id="share-panels"></div>
+  </details>
+
+  <details id="pc">
+    <summary>Per checkpoint</summary>
+    <div class="section">
+      <div class="controls">
+        <label class="hint">Metric <select id="pc-metric"></select></label>
+        <div class="seg" role="group" aria-label="Quantity" id="pc-modes"></div>
+        <label class="hint">Sort <select id="pc-sort">
+          <option value="name">by name</option>
+          <option value="base">by A's value</option>
+          <option value="change">by change, B against A</option>
+        </select></label>
+      </div>
+      <div class="hint" id="pc-hint"></div>
+      <div id="pc-charts"></div>
+      <div class="tableWrap" id="pc-tbl-wrap"><table class="sortable" id="tbl"></table></div>
+    </div>
+  </details>
+
+  <details id="vio">
+    <summary>Distributions over checkpoints</summary>
+    <div class="section">
+      <div class="controls">
+        <div class="seg" role="group" aria-label="Quantity" id="v-modes"></div>
+        <div class="seg" role="group" aria-label="Scale">
+          <button id="s-lin" aria-pressed="true">Linear</button>
+          <button id="s-log" aria-pressed="false">Log</button>
+        </div>
+      </div>
+      <div class="hint">One point per checkpoint; each panel shows SPEC on the left and agentic on the right, one violin per sweep (lettered as in the legend). Hover a point to see the checkpoint and highlight it everywhere; click to keep the highlight. Violins are kernel density estimates cut at the data range; the line is the median, the box the 25th–75th percentile. Top-down parts below Level 1 are in the table and the per-checkpoint view only.</div>
+      <div id="panels"></div>
+    </div>
+  </details>
+
+  <footer>Generated by <code>python3 analysis_scripts/tasktrace/sweep_compare.py A B [C ...]</code> from each sweep's <code>summary/sweep.view.json</code> (<code>sweep_summary.py</code>). Runs are paired by checkpoint; ratios and differences are against the first sweep (A), checkpoint by checkpoint. The window value of a metric is computed from the stats summed over the window's blocks (as in <code>window.html</code>), so window IPC is not the mean of block IPCs. Log scale leaves out zero and negative values. Slice categories (agentic only): each window is cut at every context switch, and a slice goes to the category of the task switched in. A category's values are over its slices alone: cycles are the slices' simulated time over the clock period (so idle WFI time counts in "Other"), and event counts are shared out from the stats blocks by instruction overlap, so a short slice partly inherits its neighbours' events. A window with under 1M instructions of a category has no value for it. SPEC has no harness and always shows the whole window. Edge blocks: with k = 1, 3 or 5, the k stats blocks on each side of every context switch, the block holding it included (the first and last k of every thread run), are left out and every metric is recomputed over the rest, the switch metrics and time shares excepted. Top-down: the bars split the rename slots (renameWidth per cycle) into retiring, bad speculation, front-end bound and back-end bound, from the bottom (Level 1), or show the parts of one chosen Level 1 category (Level 2) or Level 2 category (Level 3), still as shares of all slots, on an axis fitted to that category. The shares are recomputed from gem5's counters over the shown blocks or slices; the aggregate bars are the plain means of the checkpoints' shares. Switch frequency is switches per millisecond of simulated time; scheduler instructions are those from <code>__schedule</code> to <code>__switch_to</code>, counted for the slice category switched out of.</footer>
+</div>
+<div id="tip"></div>
+<script id="data" type="application/json">__COMPARE_DATA__</script>
+<script>
+"use strict";
+const D = JSON.parse(document.getElementById("data").textContent);
+const SUITES = ["spec", "agentic"], SUITE_LABEL = { spec: "SPEC", agentic: "agentic" };
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s).replace(/[&<>"]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+// D.sweeps[0] is the baseline (A); every metric of a run is an array with
+// one value per sweep.
+const SW = D.sweeps;
+const LET = (i) => String.fromCharCode(65 + i);
+const MODES = [["value", "Window value"], ["ratio", "Ratio to A (×)"], ["diff", "Difference from A"]];
+const STORE = "sweep-compare-view";
+// Slice categories of the agentic runs (sweep_summary.CATEGORIES): "all" is
+// the whole window; otherwise an agentic run's values are in r.cat[cat].
+const CATS = D.categories || [];
+// Edge settings: stats blocks dropped at each end of every thread run; an
+// edge > 0 run's values are in r.edge[edge] (and its categories there).
+const EDGES = D.edges || [];
+const TD = D.topdown || null;
+const mdef = (k) => D.metrics.find((m) => m.key === k);
+let cat = "all", edge = 0, shareQ = "time", pcMetric = TD ? "td" : "ipc", pcMode = "ratio", pcSort = "name";
+let vMode = "value", logScale = false, pinned = null, hover = null, sortKey = "name", sortDir = 1;
+let tdLvl = 1, tdPick = null, open = {};
+try {
+  const s = JSON.parse(localStorage.getItem(STORE) || "{}");
+  if (CATS.some((c) => c.key === s.cat)) cat = s.cat;
+  if (EDGES.includes(s.edge)) edge = s.edge;
+  if (s.shareQ === "insts") shareQ = "insts";
+  if (s.pcMetric === "td" ? TD : mdef(s.pcMetric)) pcMetric = s.pcMetric;
+  if (MODES.some((x) => x[0] === s.pcMode)) pcMode = s.pcMode;
+  if (["name", "base", "change"].includes(s.pcSort)) pcSort = s.pcSort;
+  if (MODES.some((x) => x[0] === s.vMode)) vMode = s.vMode;
+  logScale = !!s.log;
+  if ([1, 2, 3].includes(s.tdLvl)) tdLvl = s.tdLvl;
+  if (s.tdPick) tdPick = { 2: +s.tdPick[2] || 0, 3: +s.tdPick[3] || 0 };
+  open = s.open || {};
+} catch (e) {}
+const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ cat, edge, shareQ, pcMetric, pcMode, pcSort, vMode, log: logScale, tdLvl, tdPick, open })); } catch (e) {} };
+// The values of run r at the current edge setting and in the current slice
+// category (SPEC: always whole).
+const E = (r) => edge ? (r.edge && r.edge[edge]) || {} : r;
+const R = (r) => cat === "all" || r.suite !== "agentic" ? E(r) : (E(r).cat && E(r).cat[cat]) || {};
+const catDef = () => CATS.find((c) => c.key === cat);
+const sliceNote = () => (cat === "all" ? "" : ` · agentic ${catDef().label} slices`) + (edge ? ` · ${edge} edge block${edge > 1 ? "s" : ""} dropped` : "");
+const findQ = () => $("find").value.trim().toLowerCase();
+const matches = (name) => { const q = findQ(); return !q || name.toLowerCase().includes(q); };
+// Aggregates of the current slice category and edge setting.
+function gmFor() {
+  if (!D.geomean) return null;
+  const g = edge ? D.geomean_edge[edge] : { all: D.geomean, cat: D.geomean_cat || {} };
+  return { spec: g.all.spec, agentic: cat === "all" ? g.all.agentic : g.cat[cat] };
+}
+
+// ---- formatting ------------------------------------------------------------
+const isPct = (m) => m && m.unit.startsWith("%");
+const sign = (v) => v > 0 ? "+" : "";
+function fmtNum(v) {
+  const a = Math.abs(v);
+  if (a >= 1000) return v.toLocaleString("en", { maximumFractionDigits: 0 });
+  return a >= 100 ? v.toFixed(0) : v.toPrecision(3);
+}
+// A value of metric m as quantity md shows it (window value, ratio to A,
+// difference from A).
+function fmt(v, m, md = "value") {
+  if (v == null || !isFinite(v)) return "N/A";
+  if (Math.abs(v) < 1e-12) v = 0;
+  if (md === "ratio") return v.toFixed(3) + "×";
+  if (md === "diff") return v === 0 ? "0" : sign(v) + (isPct(m) ? (v * 100).toPrecision(3) + " pp" : fmtNum(v));
+  if (isPct(m)) return (v * 100).toPrecision(3) + "%";
+  return fmtNum(v);
+}
+// A geometric-mean ratio as a change against A: 1.075 -> "+7.5%".
+const gmPct = (v) => v == null ? "N/A" : sign((v - 1) * 100) + ((v - 1) * 100).toFixed(1) + "%";
+const ppDiff = (d) => d == null ? "N/A" : Math.abs(d) < 5e-5 ? "0 pp" : sign(d) + (d * 100).toFixed(Math.abs(d) < 0.001 ? 2 : 1) + " pp";
+const unitOf = (m, md) => md === "ratio" ? "ratio to A" : md === "diff" ? "difference from A, " + (isPct(m) ? "percentage points" : m.unit) : m.unit;
+// Value of metric m of run r in sweep i, as quantity md.
+function mval(r, m, i, md) {
+  const o = R(r)[m.key];
+  if (!o) return null;
+  const v = o[i], a = o[0];
+  if (v == null) return null;
+  if (md === "ratio") return a > 0 ? v / a : null;
+  if (md === "diff") return a == null ? null : v - a;
+  return v;
+}
+function quantile(xs, q) { const a = [...xs].sort((x, y) => x - y); if (!a.length) return NaN; const p = (a.length - 1) * q, i = Math.floor(p); return a[i] + (a[Math.min(i + 1, a.length - 1)] - a[i]) * (p - i); }
+function kde(xs, lo, hi, n = 64) {
+  // Gaussian KDE with Silverman's bandwidth, evaluated on [lo, hi].
+  const N = xs.length, mean = xs.reduce((a, b) => a + b, 0) / N;
+  const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / Math.max(1, N - 1));
+  const iqr = quantile(xs, 0.75) - quantile(xs, 0.25);
+  let h = 0.9 * Math.min(sd, iqr > 0 ? iqr / 1.34 : sd) * Math.pow(N, -0.2);
+  if (!(h > 0)) h = (Math.abs(mean) || 1) * 0.05;
+  const out = [];
+  for (let i = 0; i < n; i++) {
+    const x = lo + (hi - lo) * i / (n - 1);
+    let d = 0; for (const v of xs) d += Math.exp(-0.5 * ((x - v) / h) ** 2);
+    out.push([x, d]);
+  }
+  return out;
+}
+function niceTicks(lo, hi, count = 4) {
+  const span = hi - lo || Math.abs(hi) || 1, step0 = span / count, mag = Math.pow(10, Math.floor(Math.log10(step0)));
+  const step = [1, 2, 2.5, 5, 10].map((f) => f * mag).find((s) => s >= step0) || mag * 10;
+  const t = []; for (let v = Math.ceil(lo / step) * step; v <= hi + step * 1e-9; v += step) t.push(+v.toPrecision(12));
+  return t;
+}
+const hex = (s) => { const h = s.trim().replace("#", ""); return [0, 2, 4].map((i) => parseInt(h.length === 3 ? h[i / 2].repeat(2) : h.slice(i, i + 2), 16)); };
+const mix = (a, b, t) => { const x = hex(a), y = hex(b); return "#" + x.map((v, i) => Math.round(v + (y[i] - v) * t).toString(16).padStart(2, "0")).join(""); };
+const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValue(n).trim();
+
+// ---- strip and legend ------------------------------------------------------
+function drawStrip() {
+  const n = (s) => D.runs.filter((r) => r.suite === s).length;
+  const G = gmFor();
+  const items = [["Baseline (A)", esc(SW[0].label)], ["Checkpoints", `${n("spec")} SPEC · ${n("agentic")} agentic`]];
+  if (cat !== "all") items.push(["Agentic slices", esc(catDef().label)]);
+  if (edge) items.push(["Edge blocks dropped", edge]);
+  if (G && G.spec && G.spec.ipc && G.agentic && G.agentic.ipc) {
+    const b = G.agentic.ipc.base;
+    items.push(["Geomean IPC, A (SPEC / agentic)", `${G.spec.ipc.base == null ? "N/A" : fmtNum(G.spec.ipc.base)} / ${b == null ? "N/A" : fmtNum(b)}`]);
+    SW.forEach((sw, i) => { if (i) items.push([`IPC change, ${LET(i)} ${sw.label}`, `${gmPct(G.spec.ipc.ratio[i - 1])} / ${gmPct(G.agentic.ipc.ratio[i - 1])}`]); });
+  }
+  $("strip").innerHTML = items.map(([k, v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join("");
+}
+
+// ---- aggregate table -------------------------------------------------------
+// Every metric, per suite: A's aggregate, then each other sweep's change.
+function drawAgg() {
+  const G = gmFor(); if (!G) return;
+  const su = SUITES.filter((s) => G[s]);
+  const cell = (g, m, i) => {
+    if (!g) return "N/A";
+    if (i === 0) return g.base == null ? "N/A" : isPct(m) ? (g.base * 100).toPrecision(3) + "%" : fmtNum(g.base);
+    const r = g.ratio[i - 1], x = g.excluded[i - 1];
+    const v = g.agg === "mean" ? ppDiff(r == null || g.base == null ? null : g.base * (r - 1)) : gmPct(r);
+    return v + (x && r != null && g.agg !== "mean" ? ` <span class="x" title="checkpoints left out: a zero or missing value">excl. ${x}</span>` : "");
+  };
+  const cols = SW.map((sw, i) => i);
+  let head = `<tr><th rowspan="2">Metric</th>` + su.map((s) => `<th class="suite" colspan="${SW.length}">${SUITE_LABEL[s]}${s === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""} · ${G[s][D.metrics[0].key] ? G[s][D.metrics[0].key].n : 0}</th>`).join("") + "</tr><tr>" +
+    su.map(() => cols.map((i) => `<th class="${i ? "" : "first"}" title="${esc(SW[i].label)}"><span class="sw" style="background:var(--s${i})"></span>${LET(i)}${i ? " Δ" : ""}</th>`).join("")).join("") + "</tr>";
+  let body = "", grp = null;
+  for (const m of D.metrics) {
+    if (m.group !== grp) { grp = m.group; body += `<tr class="grp"><td colspan="${1 + su.length * SW.length}">${esc(grp)}</td></tr>`; }
+    const indent = m.level > 1 ? `padding-left:${10 + 14 * (m.level - 1)}px` : "";
+    body += `<tr title="${esc(m.desc || "")}"><td style="${indent}">${esc(m.label)} <span class="x">${esc(m.unit)}</span></td>` +
+      su.map((s) => cols.map((i) => `<td class="${i ? "" : "first"}">${cell(G[s][m.key], m, i)}</td>`).join("")).join("") + "</tr>";
+  }
+  $("agg").innerHTML = `<thead>${head}</thead><tbody>${body}</tbody>`;
+}
+
+// ---- top-down --------------------------------------------------------------
+// D.topdown is window_view.TOPDOWN_TREE; every node is also a metric. The
+// bars show one level: Level 1, or the parts of one chosen Level 1 (Level 2)
+// or Level 2 (Level 3) category, as shares of all slots.
+const TD_FAMILY = { td_retiring: "ret", td_badspec: "bad", td_frontend: "fe", td_backend: "be" };
+const TD_PICKS = { 2: [], 3: [] };
+if (TD) TD.forEach((f) => {
+  if (f.children.length) TD_PICKS[2].push({ n: f, f: f.key });
+  f.children.forEach((c) => { if (c.children.length) TD_PICKS[3].push({ n: c, f: f.key }); });
+});
+// Level 2 opens on the front end
+if (!tdPick) tdPick = { 2: Math.max(0, TD_PICKS[2].findIndex((p) => p.n.key === "td_frontend")), 3: 0 };
+if (!(tdPick[2] in TD_PICKS[2])) tdPick[2] = 0;
+if (!(tdPick[3] in TD_PICKS[3])) tdPick[3] = 0;
+const tdChosen = () => tdLvl > 1 ? TD_PICKS[tdLvl][tdPick[tdLvl]] : null;
+const tdShown = () => { const ch = tdChosen(); return ch ? ch.n.children : TD; };
+// Level 1 shows each family in its hue; below it, the chosen category's
+// parts step from a shade (bottom) to a tint (top) of its family's hue, as
+// in window.html.
+let tdCol = {};
+function tdColors() {
+  const out = {}, ch = tdChosen();
+  if (!ch) { TD.forEach((f) => (out[f.key] = cssVar("--td-" + TD_FAMILY[f.key]))); return out; }
+  const base = cssVar("--td-" + TD_FAMILY[ch.f]), ls = ch.n.children;
+  ls.forEach((l, j) => { const s = ls.length < 2 ? 0 : -0.45 + 0.95 * j / (ls.length - 1); out[l.key] = s < 0 ? mix(base, cssVar("--ink"), -s) : mix(base, cssVar("--panel"), s); });
+  return out;
+}
+// Value of top-down node k of run r in sweep i.
+const tdVal = (r, k, i) => (R(r)[k] || [])[i];
+// Per suite and sweep, the plain mean of each shown node's share (and the
+// chosen category's) over the checkpoints that have them all.
+function tdMeans(runs) {
+  const keys = tdShown().map((n) => n.key).concat(tdChosen() ? [tdChosen().n.key] : []);
+  return SW.map((_, i) => {
+    const rs = runs.filter((r) => keys.every((k) => tdVal(r, k, i) != null));
+    const out = { n: rs.length };
+    keys.forEach((k) => (out[k] = rs.length ? rs.reduce((a, r) => a + tdVal(r, k, i), 0) / rs.length : null));
+    return out;
+  });
+}
+// y axis: 100% at Level 1, else fitted to the chosen category's largest
+// value among vals.
+function tdAxis(vals) {
+  if (tdLvl === 1) return { top: 1, ticks: [0, 0.5, 1] };
+  const top = Math.max(1e-6, ...vals.filter((v) => v != null)) * 1.05, t = niceTicks(0, top, 3);
+  return { top: Math.max(top, t[t.length - 1]), ticks: t };
+}
+const tickLab = (v) => +(v * 100).toPrecision(3) + "%";
+// Text that stays readable on a fill: dark ink on light fills, else white.
+const onFill = (c) => { const [r, g, b] = hex(c); return 0.299 * r + 0.587 * g + 0.114 * b > 150 ? "#13171b" : "#ffffff"; };
+// One stacked bar: vals bottom up, at x with width bw on the axis y().
+function stackBar(x, bw, vals, keys, y, attrs, label) {
+  let s = "", acc = 0;
+  vals.forEach((v, q) => {
+    if (!(v > 0)) return;
+    const ya = y(acc + v), yb = y(acc), gap = yb - ya > 3 ? 1 : 0; acc += v;
+    s += `<rect ${attrs(keys[q])} x="${x}" y="${(ya + gap).toFixed(1)}" width="${bw}" height="${Math.max(0.5, yb - ya - gap).toFixed(1)}" fill="${tdCol[keys[q]]}"/>`;
+    if (label && yb - ya >= 14) s += `<text x="${x + bw / 2}" y="${(ya + yb) / 2 + 3.5}" text-anchor="middle" style="fill:${onFill(tdCol[keys[q]])};pointer-events:none">${(v * 100).toFixed(1)}</text>`;
+  });
+  return s;
+}
+function drawTdControls() {
+  [1, 2, 3].forEach((l) => $("td-l" + l).setAttribute("aria-pressed", l === tdLvl));
+  const ch = tdChosen();
+  $("td-pick").hidden = !ch;
+  if (ch) $("td-pick").innerHTML = TD_PICKS[tdLvl].map((p, i) =>
+    `<button data-i="${i}" title="${esc(mdef(p.n.key).desc)}" aria-pressed="${i === tdPick[tdLvl]}">${esc(mdef(p.n.key).label)}</button>`).join("");
+  $("td-legend").innerHTML = tdShown().map((n) => `<span class="tdleaf" title="${esc(mdef(n.key).desc)}"><span class="sw" style="background:${tdCol[n.key]}"></span>${esc(mdef(n.key).label)}</span>`).join("");
+  $("td-hint").textContent = `${ch ? `The parts of ${mdef(ch.n.key).label}, as shares of all rename slots` : "Share of rename slots"}: per suite, one bar per sweep, the plain mean over checkpoints${sliceNote()}. Segments tall enough carry their share in %.`;
+}
+let tdAggMeans = {};
+function drawTdAgg() {
+  if (!TD) return;
+  $("td-agg-wrap").hidden = false;
+  tdCol = tdColors(); drawTdControls();
+  const ch = tdChosen(), keys = tdShown().map((n) => n.key), pk = ch && ch.n.key;
+  const per = SUITES.map((su) => ({ su, means: tdMeans(D.runs.filter((r) => r.suite === su)) }));
+  per.forEach((p) => (tdAggMeans[p.su] = p.means));
+  const ax = tdAxis(per.flatMap((p) => p.means.map((m) => pk ? m[pk] : null)));
+  const n = SW.length, bw = n > 4 ? 30 : 44, L = 40, Rm = 8, T = 8, B = 18, H = 230;
+  const W = Math.max(240, L + Rm + n * (bw + 14));
+  const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(1, v / ax.top)));
+  $("td-agg").innerHTML = per.map(({ su, means }) => {
+    let s = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${W * 1.4}px" role="img" aria-label="Top-down breakdown, ${SUITE_LABEL[su]} mean per sweep">`;
+    for (const tv of ax.ticks) s += `<text x="${L - 5}" y="${y(tv) + 3}" text-anchor="end">${tickLab(tv)}</text>` + (tv > 0 ? `<line x1="${L}" x2="${W - Rm}" y1="${y(tv)}" y2="${y(tv)}" stroke="var(--grid)" stroke-dasharray="2 3"/>` : "");
+    means.forEach((m, i) => {
+      const x = L + 7 + i * (bw + 14);
+      s += `<text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle" style="fill:var(--ink-2)">${LET(i)}</text>`;
+      if (keys.some((k) => m[k] == null)) return;
+      s += stackBar(x, bw, keys.map((k) => m[k]), keys, y, (k) => `data-td-su="${su}" data-td-i="${i}" data-td-k="${k}"`, true);
+    });
+    const total = pk ? " · " + SW.map((_, i) => `${LET(i)} ${means[i][pk] == null ? "N/A" : (means[i][pk] * 100).toFixed(1) + "%"}`).join(" · ") : "";
+    return `<div class="panel"><div class="t">${SUITE_LABEL[su]}${su === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""}</div><div class="u">mean of ${means[0].n} checkpoints${pk ? ` · ${esc(mdef(pk).label)}${total}` : ""}</div>${s}</svg></div>`;
+  }).join("");
+}
+// Per checkpoint: one card per checkpoint, a stacked bar per sweep, on an
+// axis shared by every card.
+function drawTdCards() {
+  const ch = tdChosen(), keys = tdShown().map((n) => n.key), pk = ch && ch.n.key;
+  const groups = SUITES.map((su) => ({ su, runs: D.runs.filter((r) => r.suite === su && matches(r.name)).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.runs.length);
+  const ax = tdAxis(pk ? groups.flatMap((g) => g.runs.flatMap((r) => SW.map((_, i) => tdVal(r, pk, i)))) : []);
+  const n = SW.length, bw = n > 4 ? 16 : 22, L = 34, Rm = 4, T = 6, B = 16, H = 150 + T + B;
+  // at least wide enough for a checkpoint name, the bars centred
+  const W = Math.max(130, L + Rm + n * (bw + 6)), off = (W - L - Rm - n * (bw + 6)) / 2;
+  const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(1, v / ax.top)));
+  const card = (r) => {
+    let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Top-down breakdown of ${esc(r.name)}">`;
+    for (const tv of ax.ticks) s += `<text x="${L - 4}" y="${y(tv) + 3}" text-anchor="end">${tickLab(tv)}</text>` + (tv > 0 && ch ? `<line x1="${L}" x2="${W - Rm}" y1="${y(tv)}" y2="${y(tv)}" stroke="var(--grid)" stroke-dasharray="2 3"/>` : "");
+    SW.forEach((_, i) => {
+      const x = L + off + 3 + i * (bw + 6), vals = keys.map((k) => tdVal(r, k, i));
+      s += `<text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle">${LET(i)}</text>`;
+      if (vals.some((v) => v == null)) { s += `<rect x="${x}" y="${T}" width="${bw}" height="${H - T - B}" fill="none" stroke="var(--rule)" stroke-dasharray="3 3"/>`; return; }
+      s += stackBar(x, bw, vals, keys, y, (k) => `data-td-name="${esc(r.name)}" data-td-i="${i}" data-td-k="${k}"`, false);
+    });
+    return `<div class="tdcard" data-name="${esc(r.name)}" style="width:${W + 18}px"><div class="t" title="${esc(r.name)}">${esc(r.name)}</div>${s}</svg></div>`;
+  };
+  $("pc-charts").innerHTML = groups.map((g) => `<h3>${SUITE_LABEL[g.su]}${g.su === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""} · ${g.runs.length}</h3><div class="tdcards">${g.runs.map(card).join("")}</div>`).join("");
+}
+function tdTip(rect) {
+  const i = +rect.dataset.tdI, k = rect.dataset.tdK, su = rect.dataset.tdSu, name = rect.dataset.tdName, ch = tdChosen();
+  const r = su ? null : D.runs.find((x) => x.name === name);
+  const get = (key) => su ? tdAggMeans[su][i][key] : tdVal(r, key, i);
+  const pct = (v) => v == null ? "N/A" : (v * 100).toFixed(1) + "%";
+  const rows = tdShown().slice().reverse().map((l) => `${l.key === k ? "<b>" : ""}${esc(mdef(l.key).label)} ${pct(get(l.key))}${l.key === k ? "</b>" : ""}`).join("<br>");
+  return `<b>${esc(su ? SUITE_LABEL[su] + " mean" : name)}</b><br>${LET(i)} ${esc(SW[i].label)}<br>${rows}` + (ch ? `<br>${esc(mdef(ch.n.key).label)} (all parts) ${pct(get(ch.n.key))}` : "");
+}
+
+// ---- per checkpoint --------------------------------------------------------
+// One metric, a row per checkpoint and a bar per sweep: the window values,
+// or each other sweep's ratio to or difference from A.
+function pcRuns(su, m) {
+  const rs = D.runs.filter((r) => r.suite === su);
+  const key = (r) => pcSort === "base" ? mval(r, m, 0, "value") : pcSort === "change" ? mval(r, m, 1, isPct(m) ? "diff" : "ratio") : null;
+  return pcSort === "name" ? rs.sort((a, b) => a.name.localeCompare(b.name))
+    : rs.sort((a, b) => { const x = key(a), y = key(b); if (x == null) return 1; if (y == null) return -1; return y - x; });
+}
+function drawPc() {
+  if (!$("pc").open) return;
+  $("pc-modes").hidden = pcMetric === "td";
+  $("pc-sort").disabled = pcMetric === "td";
+  $("pc-tbl-wrap").hidden = pcMetric === "td";
+  if (pcMetric === "td") {
+    $("pc-hint").textContent = `Top-down breakdown of each checkpoint at the level chosen above, one bar per sweep${sliceNote()}; a dashed outline marks a sweep with no value. Hover a bar for its values.`;
+    drawTdCards(); highlight(); return;
+  }
+  const m = mdef(pcMetric), md = pcMode, idx = SW.map((_, i) => i).filter((i) => md === "value" || i > 0);
+  $("pc-hint").textContent = `${m.label} (${unitOf(m, md)})${sliceNote()}. ${md === "value" ? "One bar per sweep." : "One bar per sweep against A; the dark line marks no change."} Hover a column for its values; click to keep the highlight.`;
+  // Vertical grouped bars: every checkpoint on the x axis, one bar per
+  // sweep, the colours named in the legend above the charts.
+  const Wd = Math.max(480, $("pc-charts").clientWidth || 900), L = 58, Rm = 8, T = 12, PH = 230;
+  const ref = md === "ratio" ? 1 : 0;
+  const legend = `<div class="legend pclegend">` + idx.map((i) => `<span><span class="sw" style="background:var(--s${i})"></span><b>${LET(i)}</b>&nbsp;${esc(SW[i].label)}</span>`).join("") +
+    (md === "value" ? "" : `<span class="hint">change against <b>A</b> ${esc(SW[0].label)}</span>`) + `</div>`;
+  $("pc-charts").innerHTML = legend + SUITES.map((su) => {
+    const runs = pcRuns(su, m).filter((r) => matches(r.name));
+    if (!runs.length) return "";
+    const vs = runs.flatMap((r) => idx.map((i) => mval(r, m, i, md))).filter((v) => v != null && isFinite(v));
+    let lo = Math.min(ref, ...vs), hi = Math.max(ref, ...vs);
+    if (hi === lo) hi = lo + 1;
+    const pad = (hi - lo) * 0.04; if (lo < ref) lo -= pad; hi += pad;
+    const gw = (Wd - L - Rm) / runs.length, bw = Math.max(1.5, Math.min(16, (gw - 3) / idx.length));
+    const fs = gw < 14 ? 8 : 10, maxc = 24;
+    const B = 12 + Math.ceil(Math.min(maxc, Math.max(...runs.map((r) => r.name.length))) * fs * 0.6 * Math.sin(Math.PI / 3));
+    const H = T + PH + B;
+    const y = (v) => T + PH * (1 - (v - lo) / (hi - lo));
+    let s = `<svg viewBox="0 0 ${Wd} ${H}" width="${Wd}" height="${H}" style="width:${Wd}px" role="img" aria-label="${esc(m.label)} per ${SUITE_LABEL[su]} checkpoint">`;
+    for (const tk of niceTicks(lo, hi, 5)) {
+      if (tk < lo || tk > hi) continue;
+      s += `<line x1="${L}" x2="${Wd - Rm}" y1="${y(tk).toFixed(1)}" y2="${y(tk).toFixed(1)}" stroke="var(--grid)"/><text x="${L - 5}" y="${(y(tk) + 3.5).toFixed(1)}" text-anchor="end">${esc(fmt(tk, m, md))}</text>`;
+    }
+    runs.forEach((r, j) => {
+      const gx = L + j * gw, x0 = gx + (gw - bw * idx.length) / 2, cx = gx + gw / 2;
+      const nm = r.name.length > maxc ? r.name.slice(0, maxc - 1) + "…" : r.name;
+      s += `<g class="pcrow" data-name="${esc(r.name)}"><rect class="bg" x="${gx.toFixed(1)}" y="${T}" width="${gw.toFixed(1)}" height="${H - T}" fill="transparent"/>` +
+        `<text transform="translate(${cx.toFixed(1)},${T + PH + 8}) rotate(-60)" text-anchor="end" style="font-size:${fs}px;fill:var(--ink-2)">${esc(nm)}</text>`;
+      idx.forEach((i, q) => {
+        const v = mval(r, m, i, md), bx = x0 + q * bw;
+        if (v == null || !isFinite(v)) {
+          s += `<text transform="translate(${(bx + bw / 2 + 3).toFixed(1)},${(y(ref) - 3).toFixed(1)}) rotate(-90)" style="font-size:8px;fill:var(--ink-3)">N/A</text>`;
+          return;
+        }
+        const ya = y(Math.max(v, ref)), yb = y(Math.min(v, ref));
+        s += `<rect x="${bx.toFixed(1)}" y="${ya.toFixed(1)}" width="${Math.max(1, bw - (bw > 4 ? 1 : 0)).toFixed(1)}" height="${Math.max(1, yb - ya).toFixed(1)}" fill="var(--s${i})"/>`;
+      });
+      s += "</g>";
+    });
+    s += `<line x1="${L}" x2="${Wd - Rm}" y1="${y(ref).toFixed(1)}" y2="${y(ref).toFixed(1)}" stroke="var(--ink-3)"/>`;
+    return `<h3>${SUITE_LABEL[su]}${su === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""} · ${runs.length}</h3><div style="overflow-x:auto">${s}</svg></div>`;
+  }).join("");
+  drawTable();
+}
+function pcTip(name) {
+  const r = D.runs.find((x) => x.name === name), m = mdef(pcMetric);
+  return `<b>${esc(name)}</b><br>${esc(m.label)}<br>` + SW.map((sw, i) => {
+    const v = mval(r, m, i, "value");
+    const d = i ? ` (${isPct(m) ? fmt(mval(r, m, i, "diff"), m, "diff") : fmt(mval(r, m, i, "ratio"), m, "ratio")})` : "";
+    return `${LET(i)} ${esc(sw.label)}: ${fmt(v, m)}${d}`;
+  }).join("<br>");
+}
+function drawTable() {
+  const m = mdef(pcMetric); if (!m) return;
+  const cols = [{ k: "suite", l: "Suite" }, { k: "name", l: "Checkpoint" }]
+    .concat(SW.map((_, i) => i).filter((i) => pcMode === "value" || i > 0).map((i) => ({ k: "c" + i, i, l: `${LET(i)} ${SW[i].label}` })));
+  const val = (r, c) => c.i != null ? mval(r, m, c.i, pcMode) : r[c.k];
+  const rows = D.runs.filter((r) => matches(r.name));
+  const sc = cols.find((c) => c.k === sortKey) || cols[1];
+  rows.sort((a, b) => {
+    const x = val(a, sc), y2 = val(b, sc);
+    if (x == null) return 1; if (y2 == null) return -1;
+    return (typeof x === "string" ? x.localeCompare(y2) : x - y2) * sortDir;
+  });
+  $("tbl").innerHTML = `<thead><tr>${cols.map((c, j) => `<th tabindex="0" data-k="${c.k}" style="${j === 1 ? "text-align:left" : ""}">${esc(c.l)}${sc.k === c.k ? (sortDir > 0 ? " ▲" : " ▼") : ""}</th>`).join("")}</tr></thead><tbody>` +
+    rows.map((r) => `<tr data-name="${esc(r.name)}">${cols.map((c, j) => `<td style="${j === 1 ? "text-align:left" : ""}">${c.i != null ? fmt(val(r, c), m, pcMode) : c.k === "suite" ? SUITE_LABEL[r.suite] : esc(r[c.k])}</td>`).join("")}</tr>`).join("") + "</tbody>";
+  highlight();
+}
+
+// ---- violins ---------------------------------------------------------------
+const useLog = () => logScale && vMode === "value";
+function panelMulti(m) {
+  const idx = SW.map((_, i) => i).filter((i) => vMode === "value" || i > 0), G = SUITES.length * idx.length;
+  const W = Math.max(400, 60 + 34 * G), H = 260, L = 46, R = 8, T = 8, B = 34;
+  const groups = [];
+  SUITES.forEach((su) => idx.forEach((i) => groups.push({ su, i,
+    pts: D.runs.filter((r) => r.suite === su).map((r) => ({ r, v: mval(r, m, i, vMode) }))
+      .filter((p) => p.v != null && isFinite(p.v) && (!useLog() || p.v > 0)) })));
+  const all = groups.flatMap((g) => g.pts.map((p) => p.v));
+  const div = document.createElement("div"); div.className = "panel";
+  // Median of every shown sweep, one line per suite.
+  const meds = (su) => idx.map((i) => {
+    const xs = groups.find((g) => g.i === i && g.su === su).pts.map((p) => p.v);
+    return xs.length ? `${LET(i)} ${fmt(quantile(xs, 0.5), m, vMode)}` : "";
+  }).filter(Boolean).join(" · ") || "N/A";
+  div.innerHTML = `<div class="t">${esc(m.label)}</div><div class="u">${esc(unitOf(m, vMode))}</div>` +
+    SUITES.map((su) => `<div class="med">${SUITE_LABEL[su]} median ${meds(su)}</div>`).join("");
+  if (!all.length) { div.insertAdjacentHTML("beforeend", `<div class="hint" style="padding:30px 0">N/A</div>`); return div; }
+  const lg = useLog(), signed = vMode !== "value", ref = vMode === "ratio" ? 1 : 0;
+  const tf = lg ? Math.log10 : (x) => x, itf = lg ? (x) => Math.pow(10, x) : (x) => x;
+  let lo = Math.min(...all.map(tf)), hi = Math.max(...all.map(tf));
+  if (!lg) { lo = Math.min(lo, ref); hi = Math.max(hi, ref); }
+  if (hi === lo) { hi += 0.5; lo -= lg || signed ? 0.5 : 0; }
+  const pad = (hi - lo) * 0.04; lo -= lg || signed ? pad : 0; hi += pad;
+  const y = (v) => T + (H - T - B) * (1 - (tf(v) - lo) / (hi - lo));
+  const step = (W - L - R) / G, cx = (j) => L + step * (j + 0.5), half = step * 0.42;
+  let s = `<svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(m.label)} by suite and sweep">`;
+  const ticks = lg ? niceTicks(lo, hi).filter((t) => Number.isInteger(t)).concat(hi - lo < 1 ? niceTicks(lo, hi) : []) : niceTicks(lo, hi);
+  for (const t of [...new Set(ticks)]) {
+    const v = itf(t), yy = y(v); if (yy < T - 1 || yy > H - B + 1) continue;
+    s += `<line x1="${L}" x2="${W - R}" y1="${yy}" y2="${yy}" stroke="${signed && t === ref ? "var(--ink-3)" : "var(--grid)"}"/><text x="${L - 5}" y="${yy + 3}" text-anchor="end">${esc(fmt(v, m, vMode))}</text>`;
+  }
+  // Suite separator and suite labels under each group of violins.
+  const xsep = L + step * idx.length;
+  s += `<line x1="${xsep}" x2="${xsep}" y1="${T}" y2="${H - B + 4}" stroke="var(--rule)"/>`;
+  SUITES.forEach((su, k) => {
+    const c = L + step * idx.length * (k + 0.5);
+    s += `<text x="${c}" y="${H - 2}" text-anchor="middle" style="fill:var(--ink-2)">${SUITE_LABEL[su]}</text>`;
+  });
+  groups.forEach((g, j) => {
+    const xs = g.pts.map((p) => tf(p.v)), c = cx(j), col = `var(--s${g.i})`;
+    s += `<text x="${c}" y="${H - B + 14}" text-anchor="middle">${LET(g.i)}</text>`;
+    if (xs.length > 1) {
+      const k = kde(xs, Math.min(...xs), Math.max(...xs)), dmax = Math.max(...k.map((p) => p[1])) || 1;
+      const pts = k.map(([x, d]) => [c + half * d / dmax, y(itf(x))]);
+      const path = pts.map((p, q) => `${q ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("") +
+        pts.slice().reverse().map((p) => `L${(2 * c - p[0]).toFixed(1)},${p[1].toFixed(1)}`).join("") + "Z";
+      s += `<path d="${path}" fill="${col}" fill-opacity="0.18" stroke="${col}" stroke-opacity="0.6"/>`;
+      const q1 = quantile(xs, 0.25), q3 = quantile(xs, 0.75), md = quantile(xs, 0.5);
+      s += `<rect x="${c - 3}" y="${y(itf(q3))}" width="6" height="${Math.max(1, y(itf(q1)) - y(itf(q3)))}" fill="none" stroke="var(--ink-2)" stroke-width="1"/>`;
+      s += `<line x1="${c - half * 0.6}" x2="${c + half * 0.6}" y1="${y(itf(md))}" y2="${y(itf(md))}" stroke="var(--median)" stroke-width="1.6"/>`;
+    }
+    g.pts.forEach((p, q) => {
+      const jx = c + half * 0.5 * Math.sin(q * 2.399963);
+      s += `<circle class="pt" cx="${jx.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.6" fill="${col}" data-name="${esc(p.r.name)}" data-v="${esc(fmt(p.v, m, vMode))}" data-m="${esc(m.label + " · " + LET(g.i) + " " + SW[g.i].label)}"/>`;
+    });
+  });
+  div.insertAdjacentHTML("beforeend", s + "</svg>");
+  return div;
+}
+function drawPanels() {
+  if (!$("vio").open) return;
+  const host = $("panels"); host.innerHTML = "";
+  // top-down parts below Level 1 are in the table and per checkpoint only
+  const ms = D.metrics.filter((m) => (m.level || 1) === 1);
+  for (const g of [...new Set(ms.map((m) => m.group))]) {
+    host.insertAdjacentHTML("beforeend", `<h3 style="margin-top:8px">${esc(g)}</h3>`);
+    const grid = document.createElement("div"); grid.className = "grid"; grid.style.marginTop = "8px";
+    ms.filter((m) => m.group === g).forEach((m) => grid.appendChild(panelMulti(m)));
+    host.appendChild(grid);
+  }
+  highlight();
+}
+
+// ---- share of time per slice category ------------------------------------
+// One violin per category and sweep of each agentic window's share of
+// simulated time, or of instructions.
+function drawShare() {
+  if (!CATS.length) return;
+  $("share").hidden = false;
+  document.querySelectorAll("#share-q button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.q === shareQ));
+  if (!$("share").open) return;
+  const what = shareQ === "time" ? "simulated time" : "committed instructions";
+  const runs = D.runs.filter((r) => r.suite === "agentic" && r.share);
+  const pct = (v) => (v * 100).toFixed(1) + "%";
+  const groups = [];
+  CATS.forEach((c, ci) => SW.forEach((sw, i) => groups.push({ c, ci, i,
+    pts: runs.map((r) => ({ r, v: r.share[c.key][shareQ][i] })).filter((p) => p.v != null) })));
+  const G = groups.length, W = Math.max(640, 60 + 30 * G), H = 260, L = 46, Rm = 8, T = 8, B = 36;
+  const hi = Math.min(1, Math.max(0.01, ...groups.flatMap((g) => g.pts.map((p) => p.v))) * 1.04);
+  const y = (v) => T + (H - T - B) * (1 - v / hi);
+  const step = (W - L - Rm) / G, cx = (j) => L + step * (j + 0.5), half = step * 0.42;
+  // Capped width: the text stays near the other panels' size.
+  let s = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${Math.round(W * 1.3)}px" role="img" aria-label="Share of ${what} by slice category">`;
+  for (const t of niceTicks(0, hi)) {
+    const yy = y(t); if (yy < T - 1) continue;
+    s += `<line x1="${L}" x2="${W - Rm}" y1="${yy}" y2="${yy}" stroke="var(--grid)"/><text x="${L - 5}" y="${yy + 3}" text-anchor="end">${(t * 100).toFixed(0)}%</text>`;
+  }
+  CATS.forEach((c, ci) => {
+    const x0 = L + step * SW.length * ci;
+    if (ci) s += `<line x1="${x0}" x2="${x0}" y1="${T}" y2="${H - B + 4}" stroke="var(--rule)"/>`;
+    s += `<text x="${x0 + step * SW.length / 2}" y="${H - 2}" text-anchor="middle" style="fill:var(--ink-2)">${esc(c.label)}</text>`;
+  });
+  groups.forEach((g, j) => {
+    const xs = g.pts.map((p) => p.v), c = cx(j), col = `var(--s${g.i})`;
+    s += `<text x="${c}" y="${H - B + 14}" text-anchor="middle">${LET(g.i)}</text>`;
+    if (xs.length > 1 && Math.max(...xs) > Math.min(...xs)) {
+      const k = kde(xs, Math.min(...xs), Math.max(...xs)), dmax = Math.max(...k.map((p) => p[1])) || 1;
+      const pts = k.map(([x, d]) => [c + half * d / dmax, y(x)]);
+      const path = pts.map((p, q) => `${q ? "L" : "M"}${p[0].toFixed(1)},${p[1].toFixed(1)}`).join("") +
+        pts.slice().reverse().map((p) => `L${(2 * c - p[0]).toFixed(1)},${p[1].toFixed(1)}`).join("") + "Z";
+      s += `<path d="${path}" fill="${col}" fill-opacity="0.18" stroke="${col}" stroke-opacity="0.6"/>`;
+      const q1 = quantile(xs, 0.25), q3 = quantile(xs, 0.75), md = quantile(xs, 0.5);
+      s += `<rect x="${c - 3}" y="${y(q3)}" width="6" height="${Math.max(1, y(q1) - y(q3))}" fill="none" stroke="var(--ink-2)" stroke-width="1"/>`;
+      s += `<line x1="${c - half * 0.6}" x2="${c + half * 0.6}" y1="${y(md)}" y2="${y(md)}" stroke="var(--median)" stroke-width="1.6"/>`;
+    }
+    g.pts.forEach((p, q) => {
+      const jx = c + half * 0.5 * Math.sin(q * 2.399963);
+      s += `<circle class="pt" cx="${jx.toFixed(1)}" cy="${y(p.v).toFixed(1)}" r="2.6" fill="${col}" data-name="${esc(p.r.name)}" data-v="${pct(p.v)}" data-m="${esc(g.c.label + " · " + LET(g.i) + " " + SW[g.i].label + " · share of " + what)}"/>`;
+    });
+  });
+  const stat = (g, f) => g.pts.length ? pct(f(g.pts.map((p) => p.v))) : "N/A";
+  const meds = CATS.map((c) => `<div class="med">${esc(c.label)}: median ${groups.filter((g) => g.c === c).map((g) => `${LET(g.i)} ${stat(g, (xs) => quantile(xs, 0.5))}`).join(" · ")}</div>`).join("");
+  $("share-hint").textContent = `Share of each agentic window's ${what} by who runs, one point per checkpoint (${runs.length}).` +
+    (shareQ === "time" ? " Idle (WFI) time counts in Other." : "");
+  $("share-panels").innerHTML = `<div class="panel"><div class="t">Share of ${what}</div><div class="u" title="${esc(CATS.map((c) => c.label + ": " + c.desc).join("\n"))}">${CATS.map((c) => esc(c.label)).join(" · ")} (hover for definitions)</div>${meds}${s}</svg></div>`;
+  highlight();
+}
+
+// ---- highlight and tooltips ------------------------------------------------
+function highlight() {
+  const name = hover || pinned;
+  document.querySelectorAll(".pt").forEach((c) => {
+    const n = c.dataset.name;
+    c.classList.toggle("hi", n === name);
+    c.classList.toggle("dim", !matches(n));
+  });
+  document.querySelectorAll("#tbl tbody tr").forEach((tr) => tr.classList.toggle("hi", tr.dataset.name === name));
+  document.querySelectorAll(".tdcard, .pcrow").forEach((c) => c.classList.toggle("hi", c.dataset.name === name));
+}
+const tip = $("tip");
+function showTip(html, e) {
+  tip.innerHTML = html; tip.style.display = "block";
+  tip.style.left = Math.min(e.clientX + 12, innerWidth - tip.offsetWidth - 8) + "px";
+  tip.style.top = Math.min(e.clientY + 12, innerHeight - tip.offsetHeight - 8) + "px";
+}
+function setHover(n) { if (hover !== n) { hover = n; highlight(); } }
+for (const host of [$("panels"), $("share-panels")]) {
+  host.addEventListener("mousemove", (e) => {
+    const c = e.target.closest(".pt");
+    if (!c) { setHover(null); tip.style.display = "none"; return; }
+    setHover(c.dataset.name);
+    showTip(`<b>${esc(c.dataset.name)}</b><br>${esc(c.dataset.m)}: ${esc(c.dataset.v)}`, e);
+  });
+  host.addEventListener("click", (e) => { const c = e.target.closest(".pt"); pinned = c && pinned !== c.dataset.name ? c.dataset.name : null; highlight(); });
+}
+$("td-agg").addEventListener("mousemove", (e) => {
+  const c = e.target.closest("rect[data-td-k]");
+  if (!c) { tip.style.display = "none"; return; }
+  showTip(tdTip(c), e);
+});
+$("pc-charts").addEventListener("mousemove", (e) => {
+  const c = e.target.closest("rect[data-td-k]"), row = e.target.closest(".pcrow, .tdcard");
+  setHover(row ? row.dataset.name : null);
+  if (c) showTip(tdTip(c), e); else if (row && row.classList.contains("pcrow")) showTip(pcTip(row.dataset.name), e); else tip.style.display = "none";
+});
+$("pc-charts").addEventListener("click", (e) => { const row = e.target.closest(".pcrow, .tdcard"); if (row) { pinned = pinned !== row.dataset.name ? row.dataset.name : null; highlight(); } });
+for (const host of [$("panels"), $("share-panels"), $("td-agg"), $("pc-charts")])
+  host.addEventListener("mouseleave", () => { setHover(null); tip.style.display = "none"; });
+$("tbl").addEventListener("click", (e) => {
+  const th = e.target.closest("th");
+  if (th) { const k = th.dataset.k; sortDir = sortKey === k ? -sortDir : (k === "name" || k === "suite" ? 1 : -1); sortKey = k; drawTable(); return; }
+  const tr = e.target.closest("tbody tr"); if (tr) { pinned = pinned === tr.dataset.name ? null : tr.dataset.name; highlight(); }
+});
+$("tbl").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.matches("th")) e.target.click(); });
+
+// ---- controls --------------------------------------------------------------
+function drawAll() { drawStrip(); drawTdAgg(); drawAgg(); drawShare(); drawPc(); drawPanels(); }
+$("sub").textContent = D.name;
+$("legend").innerHTML = SW.map((sw, i) => `<span><span class="sw" style="background:var(--s${i})"></span>${LET(i)} ${esc(sw.label)}${i ? "" : " (baseline)"}</span>`).join("");
+if (D.notes && D.notes.length) { $("notes").hidden = false; $("notes").innerHTML = "Check: " + D.notes.map(esc).join(" · "); }
+if (CATS.length) {
+  $("cats").hidden = false;
+  $("cats").innerHTML = [{ key: "all", label: "All slices", desc: "the whole window" }].concat(CATS)
+    .map((c) => `<button data-cat="${c.key}" title="${esc(c.desc)}" aria-pressed="false">${esc(c.label)}</button>`).join("");
+  $("cats").onclick = (e) => { const b = e.target.closest("button"); if (b) { cat = b.dataset.cat; filtersChanged(); } };
+}
+if (EDGES.length) {
+  $("edges-wrap").hidden = false;
+  $("edges").innerHTML = [0].concat(EDGES).map((k) => `<button data-edge="${k}" aria-pressed="false">${k}</button>`).join("");
+  $("edges").onclick = (e) => { const b = e.target.closest("button"); if (b) { edge = +b.dataset.edge; filtersChanged(); } };
+}
+function filtersChanged() {
+  document.querySelectorAll("#cats button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.cat === cat));
+  document.querySelectorAll("#edges button").forEach((b) => b.setAttribute("aria-pressed", +b.dataset.edge === edge));
+  const d = catDef();
+  $("cathint").hidden = !d;
+  if (d) $("cathint").textContent = `Agentic values over the ${d.label} slices only (${d.desc}). Cycles are these slices' simulated time. ` +
+    (edge ? "Every kept block lies inside one thread run, so its misses and stalls are its own. " : "Misses and stalls are shared out from the stats blocks by instruction overlap. ") +
+    "Windows with under 1M instructions of this category have no value. SPEC is always the whole window.";
+  edgeHint(); save(); drawAll();
+}
+// Share of the agentic instructions the current edge setting keeps in A,
+// over the shown slices.
+function edgeHint() {
+  $("edgehint").hidden = !edge;
+  if (!edge) return;
+  const kept = D.runs.filter((r) => r.suite === "agentic").map((r) => (R(r).kept || [])[0]).filter((v) => v != null);
+  const pct = (v) => (v * 100).toFixed(0) + "%";
+  $("edgehint").textContent = `Each window drops the ${edge} stats block${edge > 1 ? "s" : ""} at each end of every thread run, so blocks holding a context switch and their neighbours, and recomputes every metric over the rest. ` +
+    (kept.length ? `Agentic ${cat === "all" ? "windows" : catDef().label + " slices"} keep ${pct(quantile(kept, 0.5))} of their instructions in A (median; ${pct(Math.min(...kept))}–${pct(Math.max(...kept))}). ` : "") +
+    "The difference from 0 is the indirect cost of switching plus a work-mix effect: the dropped stretches are also the switch-heavy phases. Switch counts, rates and scheduler instructions, and the time shares, stay those of the whole window.";
+}
+if (TD) {
+  $("td-pick").onclick = (e) => { const b = e.target.closest("button[data-i]"); if (b) { tdPick[tdLvl] = +b.dataset.i; save(); drawTdAgg(); drawPc(); } };
+  [1, 2, 3].forEach((l) => { $("td-l" + l).onclick = () => { tdLvl = l; save(); drawTdAgg(); drawPc(); }; });
+}
+// Per-checkpoint metric picker: the breakdown, then every metric by group.
+$("pc-metric").innerHTML = (TD ? `<option value="td">Top-down breakdown (stacked)</option>` : "") +
+  [...new Set(D.metrics.map((m) => m.group))].map((g) => `<optgroup label="${esc(g)}">` +
+    D.metrics.filter((m) => m.group === g).map((m) => `<option value="${esc(m.key)}">${m.level > 1 ? " ".repeat(m.level - 1) : ""}${esc(m.label)}</option>`).join("") + "</optgroup>").join("");
+$("pc-metric").value = pcMetric;
+$("pc-metric").onchange = (e) => { pcMetric = e.target.value; save(); drawPc(); };
+$("pc-sort").value = pcSort;
+$("pc-sort").onchange = (e) => { pcSort = e.target.value; save(); drawPc(); };
+$("pc-modes").innerHTML = MODES.map(([k, l]) => `<button data-mode="${k}" aria-pressed="${k === pcMode}">${esc(l)}</button>`).join("");
+$("pc-modes").onclick = (e) => { const b = e.target.closest("button"); if (!b) return; pcMode = b.dataset.mode; document.querySelectorAll("#pc-modes button").forEach((x) => x.setAttribute("aria-pressed", x === b)); save(); drawPc(); };
+$("v-modes").innerHTML = MODES.map(([k, l]) => `<button data-mode="${k}" aria-pressed="${k === vMode}">${esc(l)}</button>`).join("");
+function setVMode(md) {
+  vMode = md;
+  document.querySelectorAll("#v-modes button").forEach((b) => b.setAttribute("aria-pressed", b.dataset.mode === md));
+  $("s-lin").disabled = $("s-log").disabled = md !== "value";
+  save(); drawPanels();
+}
+$("v-modes").onclick = (e) => { const b = e.target.closest("button"); if (b) setVMode(b.dataset.mode); };
+function setScale(l) { logScale = l; $("s-lin").setAttribute("aria-pressed", !l); $("s-log").setAttribute("aria-pressed", l); save(); drawPanels(); }
+$("s-lin").onclick = () => setScale(false); $("s-log").onclick = () => setScale(true);
+$("share-q").onclick = (e) => { const b = e.target.closest("button"); if (b) { shareQ = b.dataset.q; save(); drawShare(); } };
+$("find").oninput = () => { highlight(); drawPc(); };
+// Collapsed sections draw when opened and remember being open.
+for (const [id, draw] of [["share", drawShare], ["pc", drawPc], ["vio", drawPanels]]) {
+  $(id).open = !!open[id];
+  $(id).addEventListener("toggle", () => { open[id] = $(id).open; save(); draw(); });
+}
+let resizeT = null;
+window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(drawPc, 150); });
+matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawTdAgg(); drawPc(); });
+$("s-lin").setAttribute("aria-pressed", !logScale); $("s-log").setAttribute("aria-pressed", logScale);
+$("s-lin").disabled = $("s-log").disabled = vMode !== "value";
+filtersChanged();
+</script>

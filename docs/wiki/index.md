@@ -56,9 +56,10 @@ Human-facing outputs: [[publish]].
 - [[2026-10-22-opencode-thread-breakdown]]: instruction share, IPC and switches by OpenCode thread vs Docker vs tools
 - [[2026-10-26-rubocop-instruction-footprint]]: code footprint, LRU hit rates at L1I/L2 sizes and distinct branches per process and thread; per-bin footprint, window length vs program (rubocop, 15G)
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
-- [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep pending
+- [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep running (20261104-1115)
 - [[2026-11-03-top-down-validation]]: top-down accounting (PR #2392) merged and fixed; 3 SPEC + 2 agentic 30M windows; front-end bound ~50% for both, much of it the fetch model
-- [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, sweep pending
+- [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, 1B sweep running (20261104-1115)
+- [[2026-11-05-front-end-width]]: gem5's 6-wide fetch/decode caps micro-ops into 8-wide rename; `--front-end-width 8` vs 6, agentic 1B + SPEC 200M sweeps launching
 
 ## Findings
 

@@ -62,6 +62,7 @@ from m5.util.convert import toFrequency
 from garfield.arm.neoverse_v2 import (
     L1I,
     L2,
+    NeoverseV2,
     NeoverseV2_InfiniteBTB,
     NeoverseV2_InfiniteL2TLB,
 )
@@ -118,6 +119,15 @@ def add_common_args(
         type=str,
         default="0Hz",
         help="CPU progress-heartbeat frequency (e.g. 1kHz); 0Hz disables.",
+    )
+    machine.add_argument(
+        "--front-end-width",
+        type=int,
+        default=None,
+        help="Set fetchWidth and decodeWidth (micro-ops per cycle; gem5 "
+        "cracks macro-ops at fetch). Default: the NeoverseV2 config, 6. "
+        "8 matches rename and V2's MOP-cache delivery rate "
+        "(docs/wiki/experiments/2026-11-05-front-end-width.md).",
     )
 
     prefetch = parser.add_argument_group("prefetcher / front-end ablation")
@@ -515,6 +525,9 @@ def apply_core_knobs(cpu, args):
     cpu.mmu.perfect_tlb = args.perfect_tlb
     cpu.perfectICache = args.perfect_l1i
     cpu.perfectICacheLatency = args.perfect_l1i_cycles
+    if args.front_end_width is not None:
+        cpu.fetchWidth = args.front_end_width
+        cpu.decodeWidth = args.front_end_width
     cpu.progress_interval = args.progress_interval
     cpu.ghostExec = args.ghost_exec
     mrn = make_mrn(args)
@@ -581,7 +594,10 @@ def describe(args):
     else:
         l1 = f"L1I/L1D {l1d}"
     fdp_off = args.disable_fdp or args.perfect_l1i
+    fe_width = args.front_end_width or NeoverseV2.decodeWidth
     return [
+        f"  core     : fetch/decode width {fe_width}, "
+        f"rename {NeoverseV2.renameWidth}",
         f"  caches   : {l1}, {l2} | "
         f"FDP={'off' if fdp_off else 'on'}, "
         f"L1Dpf={'off' if args.disable_l1d_prefetch else 'on'}, "

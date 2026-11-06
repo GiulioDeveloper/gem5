@@ -5,25 +5,48 @@
 # every clone gets the measurements. Columns, tab-separated: task, peak MB,
 # date set, run that set it ("oom-cap <run>": the run was killed at that
 # cap, so the true peak is at least this).
-babel-15649	6144	2026-10-20	runs/sweep (400M windows; run not recorded)
-bat-2835	5591	2026-11-03	runs/sweep/20261103-1456-base/agentic/bat-2835
-caddy-4774	3581	2026-11-03	runs/sweep/20261103-1456-base/agentic/caddy-4774
-carbon-2752	3486	2026-11-03	runs/sweep/20261103-1456-base/agentic/carbon-2752
-core-11870	4198	2026-10-20	runs/sweep (400M windows; run not recorded)
-docusaurus-9897	10957	2026-10-20	runs/sweep (400M windows; run not recorded)
-fastlane-20958	3072	2026-10-20	runs/sweep (400M windows; run not recorded)
-fmt-3901	3277	2026-10-20	runs/sweep (400M windows; run not recorded)
-gson-2134	2772	2026-10-20	runs/sweep (400M windows; run not recorded)
-immutable-js-2006	5403	2026-10-20	runs/sweep (400M windows; run not recorded)
-jekyll-8167	3255	2026-10-20	runs/sweep (400M windows; run not recorded)
-jq-2598	2770	2026-10-20	runs/sweep (400M windows; run not recorded)
-json-4237	4240	2026-10-20	runs/sweep (400M windows; run not recorded)
-lombok-3479	3775	2026-10-20	runs/sweep (400M windows; run not recorded)
-micropython-13039	3931	2026-10-20	runs/sweep (400M windows; run not recorded)
-nushell-13831	22215	2026-10-20	runs/sweep (400M windows; run not recorded)
-php-cs-fixer-8064	3457	2026-10-20	runs/sweep (400M windows; run not recorded)
-preact-3763	4652	2026-10-20	runs/sweep (400M windows; run not recorded)
-prometheus-10720	4207	2026-10-20	runs/sweep (400M windows; run not recorded)
-redis-12272	4457	2026-10-20	runs/sweep (400M windows; run not recorded)
-ripgrep-2209	4457	2026-10-20	runs/sweep (400M windows; run not recorded)
-rubocop-13560	3183	2026-10-20	runs/sweep (400M windows; run not recorded)
+706.stockfish_r	2929	2026-11-05	runs/sweep/20261105-1143-spec-fe6/spec/706.stockfish_r
+707.ntest_r	1258	2026-11-05	runs/sweep/20261105-1143-spec-fe8/spec/707.ntest_r
+708.sqlite_r	2028	2026-11-05	runs/sweep/20261105-1143-spec-fe6/spec/708.sqlite_r
+709.cactus_r	2826	2026-11-05	runs/sweep/20261105-1143-spec-fe8/spec/709.cactus_r
+710.omnetpp_r	1261	2026-11-05	runs/sweep/20261105-1143-spec-fe6/spec/710.omnetpp_r
+714.cpython_r	1429	2026-11-05	runs/sweep/20261105-1143-spec-fe6/spec/714.cpython_r
+721.gcc_r	2087	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/721.gcc_r
+722.palm_r	3031	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/722.palm_r
+723.llvm_r	2653	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/723.llvm_r
+727.cppcheck_r	1576	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/727.cppcheck_r
+729.abc_r	1186	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/729.abc_r
+731.astcenc_r	1269	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/731.astcenc_r
+734.vpr_r	2912	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/734.vpr_r
+735.gem5_r	1891	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/735.gem5_r
+736.ocio_r	1343	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/736.ocio_r
+737.gmsh_r	1187	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/737.gmsh_r
+748.flightdm_r	1216	2026-11-06	runs/sweep/20261105-1143-spec-fe8/spec/748.flightdm_r
+749.fotonik3d_r	2100	2026-11-06	runs/sweep/20261105-1143-spec-fe6/spec/749.fotonik3d_r
+axios-5892	5454	2026-11-04	runs/sweep/20261104-1115-base/agentic/axios-5892
+babel-15649	6288	2026-11-05	runs/sweep/20261104-1115-nofdp/agentic/babel-15649
+bat-2835	6471	2026-11-04	runs/sweep/20261104-1115-pl1i/agentic/bat-2835
+caddy-4774	3782	2026-11-05	runs/sweep/20261104-1115-nofdp/agentic/caddy-4774
+carbon-2752	4028	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/carbon-2752
+core-11870	4744	2026-11-05	runs/sweep/20261104-1115-pl2-nofdp/agentic/core-11870
+docusaurus-9897	11457	2026-11-06	runs/sweep/20261105-1143-fe8/agentic/docusaurus-9897
+fastlane-20958	3952	2026-11-04	runs/sweep/20261104-1115-pl1i/agentic/fastlane-20958
+fmt-3750	4069	2026-11-06	runs/sweep/20261105-1143-fe8/agentic/fmt-3750
+fmt-3901	3796	2026-11-05	runs/sweep/20261104-1115-nofdp/agentic/fmt-3901
+framework-52684	3900	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/framework-52684
+gin-2121	2855	2026-11-06	runs/sweep/20261105-1143-fe8/agentic/gin-2121
+gson-1093	3055	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/gson-1093
+gson-2134	3201	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/gson-2134
+immutable-js-2006	5669	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/immutable-js-2006
+jekyll-8167	3562	2026-11-04	runs/sweep/20261104-1115-pl1i/agentic/jekyll-8167
+jq-2598	2913	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/jq-2598
+json-4237	4276	2026-11-05	runs/sweep/20261104-1115-pl1i-ptlb/agentic/json-4237
+lombok-3479	3832	2026-11-06	runs/sweep/20261104-1115-pl1i-ptlb/agentic/lombok-3479
+micropython-13039	4177	2026-11-06	runs/sweep/20261104-1115-pl1i-ptlb/agentic/micropython-13039
+nushell-13831	22551	2026-11-04	runs/sweep/20261104-1115-base/agentic/nushell-13831
+php-cs-fixer-8064	3823	2026-11-06	runs/sweep/20261104-1115-ptlb/agentic/php-cs-fixer-8064
+preact-3763	4706	2026-11-06	runs/sweep/20261104-1115-nofdp/agentic/preact-3763
+prometheus-10720	4419	2026-11-06	runs/sweep/20261104-1115-pl1i-ptlb/agentic/prometheus-10720
+redis-12272	4797	2026-11-05	runs/sweep/20261104-1115-pl1i/agentic/redis-12272
+ripgrep-2209	4722	2026-11-06	runs/sweep/20261104-1115-nofdp/agentic/ripgrep-2209
+rubocop-13560	3458	2026-11-05	runs/sweep/20261104-1115-pl1i/agentic/rubocop-13560

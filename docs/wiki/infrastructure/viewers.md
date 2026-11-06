@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-03
+updated: 2026-11-05
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - analysis_scripts/tasktrace/window_view.py
@@ -53,7 +53,9 @@ how the core behaves around scheduling points.
   The bars show one level at a time: *Level 2* shows only the parts of one
   chosen Level 1 category (bad speculation, front-end or back-end bound;
   e.g. front end → fetch latency + fetch bandwidth), *Level 3* only those
-  of fetch latency or memory bound. Parts stay shares of all slots, on an
+  of memory bound (fetch latency's split into branch resteers and the rest
+  was dropped on 2026-11-05: resteers are not a node of Yasin's tree; they
+  stay a metric of their own). Parts stay shares of all slots, on an
   axis fitted to the chosen category, in shades of its family's hue. The
   label column gives the category and its parts with their window shares;
   the block tooltip and *Around events* (stacked means per offset) follow

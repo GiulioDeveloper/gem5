@@ -1,7 +1,7 @@
 ---
 type: concept
 status: draft
-updated: 2026-11-03
+updated: 2026-11-05
 sources:
   - src/cpu/o3/tdm.cc
   - src/cpu/o3/rename.cc
@@ -42,7 +42,9 @@ leaves idle cycles out entirely.
 
 `window_view.py` recomputes every node from these counters (checked
 against the formulas block by block) and the viewers stack them
-([[viewers]], [[sweeps]]).
+([[viewers]], [[sweeps]]). They stack only the paper's tree: since
+2026-11-05 `branchResteers` is a metric of its own, not a part of fetch
+latency in the bars.
 
 ## Level 2 and 3
 

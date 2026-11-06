@@ -242,7 +242,7 @@ def topdown(s):
         "td_backend": be,
         "td_bs_branch": branch, "td_bs_clears": bs - branch,
         "td_fe_latency": lat, "td_fe_bandwidth": fe - lat,
-        "td_fe_resteer": resteer, "td_fe_lat_other": lat - resteer,
+        "td_fe_resteer": resteer,
         "td_be_serialize": ser, "td_be_memory": mem,
         "td_be_core": be - ser - mem,
         "td_mem_l1": part(load - l1miss), "td_mem_l2": part(l1miss - l2miss),
@@ -269,15 +269,8 @@ TOPDOWN_TREE = [
     ("td_frontend", "Front-end bound", "level1.frontendBound",
      "Slots the back end could take but the front end left empty", [
          ("td_fe_latency", "Fetch latency", "frontend.fetchLatency",
-          "Front-end bound slots of cycles where nothing reached rename", [
-              ("td_fe_resteer", "Branch resteers",
-               "frontend.branchResteers",
-               "After a squash's refill, before the first correct-path "
-               "micro-op reached rename", []),
-              ("td_fe_lat_other", "Other fetch latency", None,
-               "Fetch latency outside resteers: I-cache, iTLB, FTQ and "
-               "decode stalls", []),
-          ]),
+          "Front-end bound slots of cycles where nothing reached rename",
+          []),
          ("td_fe_bandwidth", "Fetch bandwidth", "frontend.fetchBandwidth",
           "Front-end bound slots of cycles where too few micro-ops reached "
           "rename", []),
@@ -318,13 +311,37 @@ def td_tree(tree=TOPDOWN_TREE):
             for k, _, _, _, kids in tree]
 
 
-TD_LEVEL = {k: lvl for k, _, _, _, lvl in td_nodes()}
+# Top-down shares outside the breakdown, as (key, label, formula,
+# description, level, the node they are part of): tdm.cc reports them, but
+# they are not nodes of Yasin's tree, so no page stacks them.
+TD_EXTRA = [
+    ("td_fe_resteer", "Branch resteers", "frontend.branchResteers",
+     "Part of fetch latency: after a squash's refill, before the first "
+     "correct-path micro-op reached rename (not a node of the 2014 paper)",
+     3, "td_fe_latency"),
+]
+
+
+def td_all():
+    """(key, label, formula, description, level) of every top-down metric:
+    the breakdown's nodes depth first, each TD_EXTRA entry after the node
+    it is part of."""
+    for node in td_nodes():
+        yield node
+        yield from (x[:5] for x in TD_EXTRA if x[5] == node[0])
+
+
+def td_keys():
+    return [n[0] for n in td_all()]
+
+
+TD_LEVEL = {k: lvl for k, _, _, _, lvl in td_all()}
 METRICS += [
     (key, "Top-down", label, "% slots",
      desc + (f" (Level {lvl})" if lvl > 1 else ""),
      ((TD_SLOTS,), lambda s, b, k=key: topdown(s)[k]))
-    for key, label, _, desc, lvl in td_nodes()]
-TD_GEM5 = {key: TD + f for key, _, f, _, _ in td_nodes() if f}
+    for key, label, _, desc, lvl in td_all()]
+TD_GEM5 = {key: TD + f for key, _, f, _, _ in td_all() if f}
 
 
 def read_dumps(run, wanted):
