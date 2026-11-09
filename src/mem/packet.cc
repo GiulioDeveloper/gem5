@@ -309,9 +309,20 @@ Packet::trySatisfyFunctional(Printable *obj, Addr addr, bool is_secure, int size
 
         return all_bytes_valid;
     } else if (isWrite()) {
-        std::memcpy(_data + val_offset,
-               getConstPtr<uint8_t>() + func_offset,
-               overlap_size);
+        if (isMaskedWrite()) {
+            // Copy only the enabled bytes, as writeData does: a disabled
+            // byte holds no value and must leave the target untouched.
+            const auto &byte_enable = req->getByteEnable();
+            const uint8_t *src = getConstPtr<uint8_t>();
+            for (Addr i = 0; i < overlap_size; ++i) {
+                if (byte_enable[func_offset + i])
+                    _data[val_offset + i] = src[func_offset + i];
+            }
+        } else {
+            std::memcpy(_data + val_offset,
+                   getConstPtr<uint8_t>() + func_offset,
+                   overlap_size);
+        }
     } else {
         panic("Don't know how to handle command %s\n", cmdString());
     }

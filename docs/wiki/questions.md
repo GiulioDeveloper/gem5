@@ -40,6 +40,8 @@ here when answered, with a link.
   ([[2026-11-03-top-down-validation]])
 - **What makes jq-2598 serialise?** Rename in `SerializeStall` 9.5% of
   cycles. ([[2026-11-03-top-down-validation]])
+- **What do L1D misses cost?** Perfect L1D, design stage: LSQ-functional
+  model recommended. ([[2026-11-06-perfect-l1d]])
 - **What realistic structures get close to the ceilings?** Larger or
   ASID-tagged BTBs, a modelled L2 TLB latency, better instruction
   prefetching for JIT and short-lived code.

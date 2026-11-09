@@ -272,6 +272,16 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
       ADD_STAT(blockedByCache, statistics::units::Count::get(),
                "Number of times an access to memory failed due to the cache "
                "being blocked"),
+      ADD_STAT(perfectDCacheAccesses, statistics::units::Count::get(),
+               "Number of D-cache accesses served by a functional access "
+               "(perfect D-cache)"),
+      ADD_STAT(perfectDCacheAtomics, statistics::units::Count::get(),
+               "Number of atomic operations served by the perfect D-cache"),
+      ADD_STAT(perfectDCacheMaskedWrites, statistics::units::Count::get(),
+               "Number of masked writes served by the perfect D-cache"),
+      ADD_STAT(perfectDCacheBypasses, statistics::units::Count::get(),
+               "Number of D-cache accesses the perfect D-cache sent timed, "
+               "by reason"),
       ADD_STAT(loadToUse, statistics::units::Cycle::get(),
                "Distribution of cycle latency between the "
                "first time a load is issued and its completion"),
@@ -285,6 +295,27 @@ LSQUnit::LSQUnitStats::LSQUnitStats(statistics::Group *parent)
     loadToUse
         .init(0, 299, 10)
         .flags(statistics::nozero);
+
+    perfectDCacheAccesses.prereq(perfectDCacheAccesses);
+    perfectDCacheAtomics.prereq(perfectDCacheAtomics);
+    perfectDCacheMaskedWrites.prereq(perfectDCacheMaskedWrites);
+    perfectDCacheBypasses
+        .init(static_cast<int>(LSQ::PerfectDCacheBypass::NumReasons))
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::None), "none")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::Exclusive),
+                 "exclusive")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::Atomic),
+                 "atomic")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::Uncacheable),
+                 "uncacheable")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::Maintenance),
+                 "maintenance")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::NotMemory),
+                 "notMemory")
+        .subname(static_cast<int>(LSQ::PerfectDCacheBypass::Other),
+                 "other")
+        .flags(statistics::total | statistics::nozero);
+    perfectDCacheBypasses.prereq(perfectDCacheBypasses);
 
     lqAvgOccupancy.precision(2);
 
@@ -1496,9 +1527,24 @@ LSQUnit::trySendPacket(bool isLoad, PacketPtr data_pkt)
 
     if (!lsq->cacheBlocked() &&
         lsq->cachePortAvailable(isLoad)) {
-        if (!dcachePort->sendTimingReq(data_pkt)) {
-            ret = false;
-            cache_got_blocked = true;
+        const auto bypass = lsq->perfectDCacheEnabled()
+            ? lsq->perfectDCacheBypass(data_pkt)
+            : LSQ::PerfectDCacheBypass::Other;
+        if (lsq->perfectDCacheEnabled() &&
+            bypass == LSQ::PerfectDCacheBypass::None) {
+            ++stats.perfectDCacheAccesses;
+            if (data_pkt->isAtomicOp())
+                ++stats.perfectDCacheAtomics;
+            if (data_pkt->isMaskedWrite())
+                ++stats.perfectDCacheMaskedWrites;
+            lsq->sendPerfectDCacheAccess(data_pkt);
+        } else {
+            if (!dcachePort->sendTimingReq(data_pkt)) {
+                ret = false;
+                cache_got_blocked = true;
+            } else if (lsq->perfectDCacheEnabled()) {
+                ++stats.perfectDCacheBypasses[static_cast<int>(bypass)];
+            }
         }
     } else {
         ret = false;

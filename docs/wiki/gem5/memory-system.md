@@ -1,7 +1,7 @@
 ---
 type: gem5
 status: current
-updated: 2026-10-21
+updated: 2026-11-06
 sources:
   - "CLAUDE.md at commit 24f434b18f"
 tags: [gem5, memory, cache, ruby]
@@ -25,3 +25,6 @@ gem5 has two memory stacks:
 
 The TLB hierarchy is part of the MMU in `src/arch/arm/`, not of the memory
 system. See [[tlb-hierarchy]].
+
+Functional accesses (`sendFunctional`) and their gaps with masked writes:
+[[functional-access]].

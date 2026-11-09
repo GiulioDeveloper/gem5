@@ -728,3 +728,50 @@ floor of a 6-wide fetch at ~1.2 UPC, back-pressure from the back end (36%
 of cycles on agentic), and a 1-cycle wait per L1I line on hits (21-30%),
 likely a fetch-model artifact. Updated [[2026-11-05-front-end-width]],
 [[2026-11-03-top-down-validation]].
+
+## [2026-11-06] query | Perfect L1D design and functional writes
+
+The user asked how to model a perfect L1D. Compared four designs: the LSQ
+serving plain cacheable loads and stores functionally (recommended), a
+stateless `PerfectCache` object, a `Cache` that fills misses functionally
+(rejected: it bypasses the snoop filters, so eviction panics and DMA reads
+go stale), and a huge L1D. From the code: functional writes update every
+copy and patch queued packets, except masked (SVE/SME) writes, where the
+cache path ignores byte-enables (gap 1) and skips queued masked writes
+(gap 2). New [[functional-access]] and [[2026-11-06-perfect-l1d]]; updated
+[[memory-system]] and `questions.md`.
+
+## [2026-11-06] build | Perfect L1D built and validated
+
+- `--perfect-l1d` / `--perfect-l1d-cycles` (O3 `perfectDCache`,
+  `perfectDCacheLatency`): the LSQ serves plain cacheable loads, stores and
+  functor atomics functionally and answers after the L1D hit latency;
+  exclusives, MMIO and cache maintenance stay timed. The L1D prefetcher is
+  detached. New `lsq0.perfectDCache*` stats.
+- `Packet::trySatisfyFunctional`: a masked functional write copies only
+  its enabled bytes (gap 1 of [[functional-access]]).
+- Validation on jq-2598 (5M): switch off is a no-op, runs are
+  deterministic, the L1D sees no access, IPC 0.760 → 1.032. The first
+  build left atomics timed, and they missed more than in the baseline;
+  they are now functional. Stress: a 50M window and a perfect L1I + L1D
+  window complete cleanly.
+- Pages: [[2026-11-06-perfect-l1d]], [[functional-access]], [[index]].
+
+## [2026-11-06] sweep | Perfect L1D sweeps launched
+
+- Three agentic smart sweeps, `runs/sweep/20261106-2004-{pl1d,pl1d-pl1i,pl1d-ptlb}`:
+  27 tasks, 1B instructions, the same settings as the 11-04 perfect sweeps, against
+  whose `base`, `pl1i` and `ptlb` they compare. Launched from the uncommitted tree
+  (`src.diff` saved). Page: [[2026-11-06-perfect-l1d]].
+
+## [2026-11-07] analysis | Perfect L1D execution check
+
+- Guest work under `--perfect-l1d` matches base: same tool-call order on all 27 tasks,
+  same real failures, 95.9% process-share overlap (perfect L1I: 98.5%); the drift is
+  the faster core getting further in the script. `runs/perfect-l1d/check_exec.py`.
+  Page: [[2026-11-06-perfect-l1d]].
+
+## [2026-11-07] sweep | Perfect L1D sweeps finished
+
+- 81/81 runs done. Geomean IPC vs base: pl1d 1.432, pl1d+pl1i 1.588, pl1d+ptlb 1.488
+  (pl1i 1.096, ptlb 1.043). Page: [[2026-11-06-perfect-l1d]].

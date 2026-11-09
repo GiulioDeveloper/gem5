@@ -94,6 +94,16 @@ class BaseO3CPU(BaseCPU):
     perfectICacheLatency = Param.Cycles(
         2, "Latency of a perfectICache read (the L1I hit latency)"
     )
+    perfectDCache = Param.Bool(
+        False,
+        "Serve plain cacheable loads, stores and atomic operations with "
+        "functional accesses answered after perfectDCacheLatency: an L1D "
+        "that always hits (limit study). Exclusives, uncacheable accesses "
+        "and cache maintenance still go through the D-cache port.",
+    )
+    perfectDCacheLatency = Param.Cycles(
+        4, "Latency of a perfectDCache access (the L1D hit latency)"
+    )
     fetchQueueSize = Param.Unsigned(
         32, "Fetch queue size in micro-ops per-thread"
     )

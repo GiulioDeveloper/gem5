@@ -36,7 +36,8 @@ than the run mode lives here so the drivers cannot drift apart:
   * the front-end / prefetcher ablation switches (``--disable-fdp``,
     ``--disable-l1d-prefetch``, ``--disable-l2-prefetch``) and the limit
     studies (``--infinite-btb``, ``--infinite-tlb``, ``--perfect-tlb``,
-    ``--cache-scale``, ``--perfect-l2``, ``--perfect-l1i``),
+    ``--cache-scale``, ``--perfect-l2``, ``--perfect-l1i``,
+    ``--perfect-l1d``),
   * ``--progress-interval``,
   * the garfield knobs (``--ghost-exec`` and the ``--use-mrn`` / ``--mrn-*``
     memory-rename-predictor family).
@@ -60,6 +61,7 @@ from m5.objects import (
 from m5.util.convert import toFrequency
 
 from garfield.arm.neoverse_v2 import (
+    L1D,
     L1I,
     L2,
     NeoverseV2,
@@ -195,6 +197,23 @@ def add_common_args(
         default=max(L1I.tag_latency, L1I.data_latency),
         help="Latency of a --perfect-l1i read in core cycles "
         "(default: the L1I hit latency).",
+    )
+    prefetch.add_argument(
+        "--perfect-l1d",
+        action="store_true",
+        help="Serve every plain cacheable load, store and atomic operation "
+        "with a functional access answered after --perfect-l1d-cycles: an "
+        "L1D that always hits (limit study; "
+        "docs/wiki/experiments/2026-11-06-perfect-l1d.md). Exclusives, "
+        "uncacheable accesses and cache maintenance still use the real "
+        "L1D. Detaches the L1D prefetcher.",
+    )
+    prefetch.add_argument(
+        "--perfect-l1d-cycles",
+        type=int,
+        default=max(L1D.tag_latency, L1D.data_latency),
+        help="Latency of a --perfect-l1d access in core cycles "
+        "(default: the L1D hit latency).",
     )
     prefetch.add_argument(
         "--disable-l1d-prefetch",
@@ -436,7 +455,11 @@ def cache_kwargs(args):
         # Under --perfect-l1i nothing reads the L1I; FDP would only push
         # instruction lines into the L2.
         "enable_fdp": not (args.disable_fdp or args.perfect_l1i),
-        "enable_l1d_prefetch": not args.disable_l1d_prefetch,
+        # Under --perfect-l1d the L1D sees only rare accesses; its
+        # prefetcher would only push lines into the L2.
+        "enable_l1d_prefetch": not (
+            args.disable_l1d_prefetch or args.perfect_l1d
+        ),
         "enable_l2_prefetch": not args.disable_l2_prefetch,
         "cache_scale": args.cache_scale,
         "perfect_l2": args.perfect_l2,
@@ -525,6 +548,8 @@ def apply_core_knobs(cpu, args):
     cpu.mmu.perfect_tlb = args.perfect_tlb
     cpu.perfectICache = args.perfect_l1i
     cpu.perfectICacheLatency = args.perfect_l1i_cycles
+    cpu.perfectDCache = args.perfect_l1d
+    cpu.perfectDCacheLatency = args.perfect_l1d_cycles
     if args.front_end_width is not None:
         cpu.fetchWidth = args.front_end_width
         cpu.decodeWidth = args.front_end_width
@@ -588,19 +613,30 @@ def describe(args):
         l2 = f"L2 {2 * args.cache_scale}MiB"
         l2pf = "off" if args.disable_l2_prefetch else "on"
         dram = f"{args.mem_type} @ {args.mem_size}"
-    l1d = f"{64 * args.cache_scale}KiB"
-    if args.perfect_l1i:
-        l1 = f"L1I perfect ({args.perfect_l1i_cycles} cyc), L1D {l1d}"
+    size = f"{64 * args.cache_scale}KiB"
+    l1i = (
+        f"L1I perfect ({args.perfect_l1i_cycles} cyc)"
+        if args.perfect_l1i
+        else f"L1I {size}"
+    )
+    l1d = (
+        f"L1D perfect ({args.perfect_l1d_cycles} cyc)"
+        if args.perfect_l1d
+        else f"L1D {size}"
+    )
+    if args.perfect_l1i or args.perfect_l1d:
+        l1 = f"{l1i}, {l1d}"
     else:
-        l1 = f"L1I/L1D {l1d}"
+        l1 = f"L1I/L1D {size}"
     fdp_off = args.disable_fdp or args.perfect_l1i
+    l1dpf_off = args.disable_l1d_prefetch or args.perfect_l1d
     fe_width = args.front_end_width or NeoverseV2.decodeWidth
     return [
         f"  core     : fetch/decode width {fe_width}, "
         f"rename {NeoverseV2.renameWidth}",
         f"  caches   : {l1}, {l2} | "
         f"FDP={'off' if fdp_off else 'on'}, "
-        f"L1Dpf={'off' if args.disable_l1d_prefetch else 'on'}, "
+        f"L1Dpf={'off' if l1dpf_off else 'on'}, "
         f"L2pf={l2pf}, "
         f"BTB={'infinite' if args.infinite_btb else 'neoverse-v2'}, "
         f"L2TLB={_l2tlb_banner(args)}",

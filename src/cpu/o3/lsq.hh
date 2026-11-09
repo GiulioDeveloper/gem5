@@ -938,6 +938,30 @@ class LSQ
 
     RequestPort &getDataPort() { return dcachePort; }
 
+    /** Why a D-cache access cannot be served by the perfect D-cache. */
+    enum class PerfectDCacheBypass
+    {
+        None,        ///< served functionally
+        Exclusive,   ///< load/store exclusive (needs the cache monitor)
+        Atomic,      ///< atomic without an operation functor, locked RMW
+        Uncacheable, ///< uncacheable or strictly ordered
+        Maintenance, ///< cache clean/invalidate
+        NotMemory,   ///< physical address outside memory
+        Other,       ///< HTM or any other command
+        NumReasons
+    };
+
+    /** Whether the perfect D-cache is enabled. */
+    bool perfectDCacheEnabled() const { return perfectDCache; }
+
+    /** The reason pkt must take the timing path under the perfect
+     * D-cache, or None if it can be served functionally. */
+    PerfectDCacheBypass perfectDCacheBypass(PacketPtr pkt) const;
+
+    /** Accesses pkt functionally and schedules its response after
+     * perfectDCacheLatency. Stands in for a D-cache hit. */
+    void sendPerfectDCacheAccess(PacketPtr pkt);
+
     void sendRetryResp();
 
     /** Top-down: the cache misses so far of the deepest load with a
@@ -946,6 +970,13 @@ class LSQ
     int deepestOutstandingLoad();
 
   protected:
+    /** Limit study: serve plain cacheable accesses functionally, after
+     * perfectDCacheLatency, so the L1D always hits. */
+    const bool perfectDCache;
+    const Cycles perfectDCacheLatency;
+    /** Perfect D-cache responses scheduled but not yet delivered. */
+    unsigned perfectAccessesInFlight = 0;
+
     /** D-cache is blocked */
     bool _cacheBlocked;
     /** The number of cache ports available each cycle (stores only). */

@@ -550,6 +550,15 @@ class LSQUnit
         /** Number of times the LSQ is blocked due to the cache. */
         statistics::Scalar blockedByCache;
 
+        /** Accesses served by the perfect D-cache. */
+        statistics::Scalar perfectDCacheAccesses;
+        /** Atomic operations served by the perfect D-cache. */
+        statistics::Scalar perfectDCacheAtomics;
+        /** Masked (predicated) writes served by the perfect D-cache. */
+        statistics::Scalar perfectDCacheMaskedWrites;
+        /** Accesses the perfect D-cache sent timed, by reason. */
+        statistics::Vector perfectDCacheBypasses;
+
         /** Distribution of cycle latency between the first time a load
          * is issued and its completion */
         statistics::Distribution loadToUse;

@@ -44,6 +44,7 @@
 #include <algorithm>
 #include <list>
 #include <string>
+#include <vector>
 
 #include "base/compiler.hh"
 #include "base/logging.hh"
@@ -57,6 +58,8 @@
 #include "debug/LSQ.hh"
 #include "debug/Writeback.hh"
 #include "params/BaseO3CPU.hh"
+#include "sim/eventq.hh"
+#include "sim/system.hh"
 
 namespace gem5
 {
@@ -109,6 +112,8 @@ LSQ::DcachePort::DcachePortStats::DcachePortStats(CPU* _cpu)
 
 LSQ::LSQ(CPU *cpu_ptr, IEW *iew_ptr, const BaseO3CPUParams &params)
     : cpu(cpu_ptr), iewStage(iew_ptr),
+      perfectDCache(params.perfectDCache),
+      perfectDCacheLatency(params.perfectDCacheLatency),
       _cacheBlocked(false),
       cacheStorePorts(params.cacheStorePorts), usedStorePorts(0),
       cacheLoadPorts(params.cacheLoadPorts), usedLoadPorts(0),
@@ -204,6 +209,11 @@ LSQ::isDrained() const
         drained = false;
     }
 
+    if (perfectAccessesInFlight != 0) {
+        DPRINTF(Drain, "Not drained, perfect D-cache responses pending.\n");
+        drained = false;
+    }
+
     return drained;
 }
 
@@ -262,6 +272,68 @@ LSQ::cachePortBusy(bool is_load)
     } else {
         usedStorePorts++;
     }
+}
+
+LSQ::PerfectDCacheBypass
+LSQ::perfectDCacheBypass(PacketPtr pkt) const
+{
+    const RequestPtr &req = pkt->req;
+    if (req->isLLSC())
+        return PerfectDCacheBypass::Exclusive;
+    // An atomic with an operation functor (Arm LSE, SWP, CAS) is served
+    // functionally by sendPerfectDCacheAccess; anything else atomic is not.
+    if ((req->isAtomic() && !req->getAtomicOpFunctor()) || req->isSwap() ||
+        req->isLockedRMW())
+        return PerfectDCacheBypass::Atomic;
+    if (req->isUncacheable() || req->isStrictlyOrdered())
+        return PerfectDCacheBypass::Uncacheable;
+    if (req->isCacheMaintenance())
+        return PerfectDCacheBypass::Maintenance;
+    if (!cpu->system->isMemAddr(pkt->getAddr()))
+        return PerfectDCacheBypass::NotMemory;
+    // Only plain reads, software prefetches, plain writes and functor
+    // atomics; HTM and anything unusual keep the tested timing path.
+    if (req->isHTMCmd() || pkt->isHtmTransactional())
+        return PerfectDCacheBypass::Other;
+    const MemCmd cmd = pkt->cmd;
+    if (cmd != MemCmd::ReadReq && cmd != MemCmd::SoftPFReq &&
+        cmd != MemCmd::SoftPFExReq && cmd != MemCmd::WriteReq &&
+        !(cmd == MemCmd::SwapReq && req->isAtomic()))
+        return PerfectDCacheBypass::Other;
+    return PerfectDCacheBypass::None;
+}
+
+void
+LSQ::sendPerfectDCacheAccess(PacketPtr pkt)
+{
+    // The functional access reads the newest copy wherever it is (the
+    // real L1D, an MSHR, the L2, memory) and a write updates every copy.
+    // Data is read or written now, as a timed hit is at the cache.
+    if (pkt->isAtomicOp()) {
+        // Functional accesses do not apply atomic operations, so do it
+        // here as a cache hit does: return the old value, write the new.
+        // The O3 issues atomics non-speculatively, at the ROB head.
+        std::vector<uint8_t> value(pkt->getSize());
+        Packet read(pkt->req, MemCmd::ReadReq);
+        read.dataStatic(value.data());
+        dcachePort.sendFunctional(&read);
+        pkt->setData(value.data());
+        (*pkt->getAtomicOp())(value.data());
+        Packet write(pkt->req, MemCmd::WriteReq);
+        write.dataStatic(value.data());
+        dcachePort.sendFunctional(&write);
+        pkt->makeResponse();
+    } else {
+        dcachePort.sendFunctional(pkt);
+    }
+    ++perfectAccessesInFlight;
+    cpu->schedule(new EventFunctionWrapper(
+                      [this, pkt] {
+                          --perfectAccessesInFlight;
+                          recvTimingResp(pkt);
+                      },
+                      name() + ".perfectDCacheAccess", true),
+                  cpu->clockEdge(perfectDCacheLatency));
 }
 
 void
