@@ -36,7 +36,12 @@ With perfect_l2 the L2 and the per-core L2 crossbars are dropped: the L1s
 and the MMU cache connect straight to a memory bus with the L2 crossbar's
 timing. Paired with a fixed-latency memory set to the L2 hit latency
 (sim_opts.make_memory), every L1 miss costs an L2 hit.
+
+l1i_latency, when set, overrides the L1I tag, data and response latency
+(cycles); the default is the L1Cache value in neoverse_v2.py.
 """
+
+from typing import Optional
 
 from m5.objects import (
     BadAddr,
@@ -71,6 +76,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         enable_l2_prefetch: bool = True,
         cache_scale: int = 1,
         perfect_l2: bool = False,
+        l1i_latency: Optional[int] = None,
     ) -> None:
         # Sizes here are unused (incorporate_cache builds the real caches
         # from the neoverse_v2 classes); passed for documentation only.
@@ -85,6 +91,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         self._enable_l2_prefetch = enable_l2_prefetch
         self._cache_scale = cache_scale
         self._perfect_l2 = perfect_l2
+        self._l1i_latency = l1i_latency
 
     def incorporate_cache(self, board: AbstractBoard) -> None:
         num_cores = board.get_processor().get_num_cores()
@@ -109,6 +116,12 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
             for cache in scaled:
                 size = toMemorySize(str(cache.size))
                 cache.size = f"{size * self._cache_scale}B"
+        # L1I latency study: the hit (tag and data) and response latency.
+        if self._l1i_latency is not None:
+            for cache in self.l1icaches:
+                cache.tag_latency = self._l1i_latency
+                cache.data_latency = self._l1i_latency
+                cache.response_latency = self._l1i_latency
         self.mmubuses = [L2XBar(width=64) for _ in range(num_cores)]
 
         for i in range(num_cores):

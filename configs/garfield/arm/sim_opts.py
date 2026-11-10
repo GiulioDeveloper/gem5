@@ -167,6 +167,16 @@ def add_common_args(
         "associativity and latencies (capacity limit study).",
     )
     prefetch.add_argument(
+        "--l1i-cycles",
+        type=int,
+        default=None,
+        help="Set the L1I tag, data and response latency in core cycles "
+        "(hit-latency study; docs/wiki/experiments/"
+        "2026-11-03-perfect-l1i.md). Default: the config's "
+        f"{max(L1I.tag_latency, L1I.data_latency)}. The real L1I, misses "
+        "and FDP stay; --perfect-l1i ignores it (see --perfect-l1i-cycles).",
+    )
+    prefetch.add_argument(
         "--perfect-l2",
         action="store_true",
         help="Remove the L2 and serve every L1 miss from a fixed-latency "
@@ -463,6 +473,7 @@ def cache_kwargs(args):
         "enable_l2_prefetch": not args.disable_l2_prefetch,
         "cache_scale": args.cache_scale,
         "perfect_l2": args.perfect_l2,
+        "l1i_latency": args.l1i_cycles,
     }
 
 
@@ -614,17 +625,18 @@ def describe(args):
         l2pf = "off" if args.disable_l2_prefetch else "on"
         dram = f"{args.mem_type} @ {args.mem_size}"
     size = f"{64 * args.cache_scale}KiB"
-    l1i = (
-        f"L1I perfect ({args.perfect_l1i_cycles} cyc)"
-        if args.perfect_l1i
-        else f"L1I {size}"
-    )
+    if args.perfect_l1i:
+        l1i = f"L1I perfect ({args.perfect_l1i_cycles} cyc)"
+    elif args.l1i_cycles is not None:
+        l1i = f"L1I {size} ({args.l1i_cycles} cyc)"
+    else:
+        l1i = f"L1I {size}"
     l1d = (
         f"L1D perfect ({args.perfect_l1d_cycles} cyc)"
         if args.perfect_l1d
         else f"L1D {size}"
     )
-    if args.perfect_l1i or args.perfect_l1d:
+    if args.perfect_l1i or args.perfect_l1d or args.l1i_cycles is not None:
         l1 = f"{l1i}, {l1d}"
     else:
         l1 = f"L1I/L1D {size}"
