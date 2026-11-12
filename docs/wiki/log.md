@@ -795,3 +795,18 @@ cache path ignores byte-enables (gap 1) and skips queued masked writes
 - Updated [[pc-trace]] (format, flags, new section *Encodings and code
   versions*, footprint and limits), [[2026-10-26-rubocop-instruction-footprint]]
   (open item), [[questions]], [[index]].
+
+## [2026-11-12] publish | Rebuilt tracer-guide and long-runs-guide
+
+- `tracer-guide` (https://claude.ai/artifact/41mPPZTSJuU7EZTC8qssCq): the
+  window viewer's top-down breakdown ([[viewers]]); smart sweeps' memory
+  gate, per-run caps, tracked peaks file and `sweep_status.py`; summaries
+  without a page; comparisons of 2 to 26 sweeps with the aggregate table
+  and sweep picker ([[sweeps]], including its uncommitted 2026-11-09
+  edits); the 2026-11-03 conversion of old runs ([[run-output-compression]]).
+- `long-runs-guide` (https://claude.ai/artifact/Q59pV5tfkzizJsRkw87vGH):
+  PC trace v2 with encodings and rewritten code in the footprint pass
+  ([[pc-trace]], [[2026-11-12-jit-code-versions]]); the conversion of old
+  runs; top-down shares averaged in comparisons
+  ([[comparing-configurations]]).
+- Rows in [[publish]] updated (built 2026-11-12, commit 68192bbe68).
