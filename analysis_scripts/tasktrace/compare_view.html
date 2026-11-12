@@ -13,6 +13,8 @@
   --median: #13171b;
   --s0: #2a78d6; --s1: #eb6834; --s2: #1baf7a; --s3: #eda100;
   --s4: #e87ba4; --s5: #008300; --s6: #6250d6; --s7: #e34948;
+  --s8: #0e8fa3; --s9: #9c4fb3; --s10: #8c6d3f; --s11: #7f9a1f;
+  --s12: #5d6b78; --s13: #c4366f; --s14: #3f5bb5; --s15: #d98a5b;
   --td-ret: #1baf7a; --td-bad: #e34948; --td-fe: #2a78d6; --td-be: #eda100;
   --font-body: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
   --font-label: "IBM Plex Sans Condensed", "Arial Narrow", "IBM Plex Sans", system-ui, sans-serif;
@@ -25,6 +27,8 @@
     --median: #eef1f3;
     --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
     --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+    --s8: #22a9bd; --s9: #b77bcc; --s10: #a8875a; --s11: #9ab83a;
+    --s12: #8a98a5; --s13: #e0628f; --s14: #6f86d8; --s15: #e0a07a;
     --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
     color-scheme: dark;
   }
@@ -35,6 +39,8 @@
   --median: #eef1f3;
   --s0: #3987e5; --s1: #d95926; --s2: #199e70; --s3: #c98500;
   --s4: #d55181; --s5: #008300; --s6: #9085e9; --s7: #e66767;
+  --s8: #22a9bd; --s9: #b77bcc; --s10: #a8875a; --s11: #9ab83a;
+  --s12: #8a98a5; --s13: #e0628f; --s14: #6f86d8; --s15: #e0a07a;
   --td-ret: #199e70; --td-bad: #e66767; --td-fe: #3987e5; --td-be: #c98500;
   color-scheme: dark;
 }
@@ -73,6 +79,12 @@ details[open] > summary { margin-bottom: 8px; }
 .seg button:disabled { color: var(--ink-3); background: none; cursor: default; }
 .seg button:focus-visible, input:focus-visible, select:focus-visible, th:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
 .legend { display: flex; flex-wrap: wrap; gap: 6px 14px; align-items: center; font-size: 13px; color: var(--ink-2); }
+.pick button { display: inline-flex; align-items: center; gap: 0; font: 13px var(--font-body); color: var(--ink); background: var(--panel); border: 1px solid var(--rule); border-radius: 6px; padding: 4px 9px; min-height: 30px; cursor: pointer; }
+.pick button[aria-pressed="false"] { color: var(--ink-3); background: none; border-style: dashed; }
+.pick button[aria-pressed="false"] .sw { opacity: 0.25; }
+.pick button:disabled { cursor: default; }
+.pick button:focus-visible { outline: 2px solid var(--focus); outline-offset: 1px; }
+.pick .act { border: 0; background: none; color: var(--ink-2); text-decoration: underline; padding: 4px 4px; }
 .sw { display: inline-block; width: 10px; height: 10px; border-radius: 2px; margin-right: 5px; vertical-align: -1px; }
 input[type="search"] {
   font: 13px var(--font-data); color: var(--ink); background: var(--panel);
@@ -129,8 +141,16 @@ footer { color: var(--ink-3); font-size: 12px; }
     <div class="sub" id="sub"></div>
   </header>
   <div class="strip" id="strip"></div>
-  <div class="legend" id="legend" aria-label="Sweeps"></div>
+  <div class="legend pick" id="legend" role="group" aria-label="Sweeps shown"></div>
+  <div class="hint" id="pick-hint"></div>
   <div class="controls">
+    <span class="controls" id="suites-wrap" hidden>
+      <span class="hint">SPEC</span>
+      <span class="seg" role="group" aria-label="SPEC benchmarks" id="suites">
+        <button data-spec="1" aria-pressed="true">Shown</button>
+        <button data-spec="0" aria-pressed="false">Hidden</button>
+      </span>
+    </span>
     <div class="seg" role="group" aria-label="Slices" id="cats" hidden></div>
     <span class="controls" id="edges-wrap" hidden>
       <span class="hint">Stats blocks dropped at each end of every thread run</span>
@@ -183,7 +203,7 @@ footer { color: var(--ink-3); font-size: 12px; }
         <label class="hint">Sort <select id="pc-sort">
           <option value="name">by name</option>
           <option value="base">by A's value</option>
-          <option value="change">by change, B against A</option>
+          <option value="change" id="pc-sort-change">by change, B against A</option>
         </select></label>
       </div>
       <div class="hint" id="pc-hint"></div>
@@ -202,7 +222,7 @@ footer { color: var(--ink-3); font-size: 12px; }
           <button id="s-log" aria-pressed="false">Log</button>
         </div>
       </div>
-      <div class="hint">One point per checkpoint; each panel shows SPEC on the left and agentic on the right, one violin per sweep (lettered as in the legend). Hover a point to see the checkpoint and highlight it everywhere; click to keep the highlight. Violins are kernel density estimates cut at the data range; the line is the median, the box the 25th–75th percentile. Top-down parts below Level 1 are in the table and the per-checkpoint view only.</div>
+      <div class="hint">One point per checkpoint; each panel shows SPEC (unless hidden) on the left and agentic on the right, one violin per shown sweep (lettered as in the legend). Hover a point to see the checkpoint and highlight it everywhere; click to keep the highlight. Violins are kernel density estimates cut at the data range; the line is the median, the box the 25th–75th percentile. Top-down parts below Level 1 are in the table and the per-checkpoint view only.</div>
       <div id="panels"></div>
     </div>
   </details>
@@ -234,6 +254,10 @@ const mdef = (k) => D.metrics.find((m) => m.key === k);
 let cat = "all", edge = 0, shareQ = "time", pcMetric = TD ? "td" : "ipc", pcMode = "ratio", pcSort = "name";
 let vMode = "value", logScale = false, pinned = null, hover = null, sortKey = "name", sortDir = 1;
 let tdLvl = 1, tdPick = null, open = {};
+// Shown sweeps (A always) and whether the SPEC runs are shown; saved per
+// comparison, by label, so a page with other sweeps starts with them all.
+const HAS_SPEC = D.runs.some((r) => r.suite === "spec");
+let shown = new Set(SW.map((_, i) => i)), showSpec = true, saved = {};
 try {
   const s = JSON.parse(localStorage.getItem(STORE) || "{}");
   if (CATS.some((c) => c.key === s.cat)) cat = s.cat;
@@ -247,8 +271,24 @@ try {
   if ([1, 2, 3].includes(s.tdLvl)) tdLvl = s.tdLvl;
   if (s.tdPick) tdPick = { 2: +s.tdPick[2] || 0, 3: +s.tdPick[3] || 0 };
   open = s.open || {};
+  saved = s.views || {};
+  const v = saved[D.name];
+  if (v) {
+    const ls = new Set(v.shown || []);
+    shown = new Set(SW.map((_, i) => i).filter((i) => !i || ls.has(SW[i].label)));
+    showSpec = v.spec !== false;
+  }
 } catch (e) {}
-const save = () => { try { localStorage.setItem(STORE, JSON.stringify({ cat, edge, shareQ, pcMetric, pcMode, pcSort, vMode, log: logScale, tdLvl, tdPick, open })); } catch (e) {} };
+const save = () => {
+  saved[D.name] = { shown: [...shown].map((i) => SW[i].label), spec: showSpec };
+  try { localStorage.setItem(STORE, JSON.stringify({ cat, edge, shareQ, pcMetric, pcMode, pcSort, vMode, log: logScale, tdLvl, tdPick, open, views: saved })); } catch (e) {}
+};
+// Colour of sweep i: 16 slots, cycling; the letters tell repeats apart.
+const SC = (i) => `var(--s${i % 16})`;
+// Indices of the shown sweeps, in order (A first), and the suites shown.
+const VIS = () => SW.map((_, i) => i).filter((i) => shown.has(i));
+const VISO = () => VIS().filter((i) => i > 0);
+const suites = () => SUITES.filter((s) => (s !== "spec" || showSpec) && D.runs.some((r) => r.suite === s));
 // The values of run r at the current edge setting and in the current slice
 // category (SPEC: always whole).
 const E = (r) => edge ? (r.edge && r.edge[edge]) || {} : r;
@@ -326,13 +366,15 @@ const cssVar = (n) => getComputedStyle(document.documentElement).getPropertyValu
 function drawStrip() {
   const n = (s) => D.runs.filter((r) => r.suite === s).length;
   const G = gmFor();
-  const items = [["Baseline (A)", esc(SW[0].label)], ["Checkpoints", `${n("spec")} SPEC · ${n("agentic")} agentic`]];
+  const items = [["Baseline (A)", esc(SW[0].label)], ["Checkpoints", suites().map((s) => `${n(s)} ${SUITE_LABEL[s]}`).join(" · ")],
+    ["Sweeps shown", `${shown.size} of ${SW.length}`]];
   if (cat !== "all") items.push(["Agentic slices", esc(catDef().label)]);
   if (edge) items.push(["Edge blocks dropped", edge]);
-  if (G && G.spec && G.spec.ipc && G.agentic && G.agentic.ipc) {
-    const b = G.agentic.ipc.base;
-    items.push(["Geomean IPC, A (SPEC / agentic)", `${G.spec.ipc.base == null ? "N/A" : fmtNum(G.spec.ipc.base)} / ${b == null ? "N/A" : fmtNum(b)}`]);
-    SW.forEach((sw, i) => { if (i) items.push([`IPC change, ${LET(i)} ${sw.label}`, `${gmPct(G.spec.ipc.ratio[i - 1])} / ${gmPct(G.agentic.ipc.ratio[i - 1])}`]); });
+  const su = G ? suites().filter((s) => G[s] && G[s].ipc) : [];
+  if (su.length) {
+    const sl = su.map((s) => SUITE_LABEL[s]).join(" / ");
+    items.push([`Geomean IPC, A (${sl})`, su.map((s) => G[s].ipc.base == null ? "N/A" : fmtNum(G[s].ipc.base)).join(" / ")]);
+    VISO().forEach((i) => items.push([`IPC change, ${LET(i)} ${SW[i].label}`, su.map((s) => gmPct(G[s].ipc.ratio[i - 1])).join(" / ")]));
   }
   $("strip").innerHTML = items.map(([k, v]) => `<div class="kv"><span class="k">${esc(k)}</span><span class="v">${v}</span></div>`).join("");
 }
@@ -341,7 +383,7 @@ function drawStrip() {
 // Every metric, per suite: A's aggregate, then each other sweep's change.
 function drawAgg() {
   const G = gmFor(); if (!G) return;
-  const su = SUITES.filter((s) => G[s]);
+  const su = suites().filter((s) => G[s]);
   const cell = (g, m, i) => {
     if (!g) return "N/A";
     if (i === 0) return g.base == null ? "N/A" : isPct(m) ? (g.base * 100).toPrecision(3) + "%" : fmtNum(g.base);
@@ -349,12 +391,12 @@ function drawAgg() {
     const v = g.agg === "mean" ? ppDiff(r == null || g.base == null ? null : g.base * (r - 1)) : gmPct(r);
     return v + (x && r != null && g.agg !== "mean" ? ` <span class="x" title="checkpoints left out: a zero or missing value">excl. ${x}</span>` : "");
   };
-  const cols = SW.map((sw, i) => i);
-  let head = `<tr><th rowspan="2">Metric</th>` + su.map((s) => `<th class="suite" colspan="${SW.length}">${SUITE_LABEL[s]}${s === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""} · ${G[s][D.metrics[0].key] ? G[s][D.metrics[0].key].n : 0}</th>`).join("") + "</tr><tr>" +
-    su.map(() => cols.map((i) => `<th class="${i ? "" : "first"}" title="${esc(SW[i].label)}"><span class="sw" style="background:var(--s${i})"></span>${LET(i)}${i ? " Δ" : ""}</th>`).join("")).join("") + "</tr>";
+  const cols = VIS();
+  let head = `<tr><th rowspan="2">Metric</th>` + su.map((s) => `<th class="suite" colspan="${cols.length}">${SUITE_LABEL[s]}${s === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""} · ${G[s][D.metrics[0].key] ? G[s][D.metrics[0].key].n : 0}</th>`).join("") + "</tr><tr>" +
+    su.map(() => cols.map((i) => `<th class="${i ? "" : "first"}" title="${esc(SW[i].label)}"><span class="sw" style="background:${SC(i)}"></span>${LET(i)}${i ? " Δ" : ""}</th>`).join("")).join("") + "</tr>";
   let body = "", grp = null;
   for (const m of D.metrics) {
-    if (m.group !== grp) { grp = m.group; body += `<tr class="grp"><td colspan="${1 + su.length * SW.length}">${esc(grp)}</td></tr>`; }
+    if (m.group !== grp) { grp = m.group; body += `<tr class="grp"><td colspan="${1 + su.length * cols.length}">${esc(grp)}</td></tr>`; }
     const indent = m.level > 1 ? `padding-left:${10 + 14 * (m.level - 1)}px` : "";
     body += `<tr title="${esc(m.desc || "")}"><td style="${indent}">${esc(m.label)} <span class="x">${esc(m.unit)}</span></td>` +
       su.map((s) => cols.map((i) => `<td class="${i ? "" : "first"}">${cell(G[s][m.key], m, i)}</td>`).join("")).join("") + "</tr>";
@@ -438,22 +480,23 @@ function drawTdAgg() {
   $("td-agg-wrap").hidden = false;
   tdCol = tdColors(); drawTdControls();
   const ch = tdChosen(), keys = tdShown().map((n) => n.key), pk = ch && ch.n.key;
-  const per = SUITES.map((su) => ({ su, means: tdMeans(D.runs.filter((r) => r.suite === su)) }));
+  const per = suites().map((su) => ({ su, means: tdMeans(D.runs.filter((r) => r.suite === su)) }));
   per.forEach((p) => (tdAggMeans[p.su] = p.means));
-  const ax = tdAxis(per.flatMap((p) => p.means.map((m) => pk ? m[pk] : null)));
-  const n = SW.length, bw = n > 4 ? 30 : 44, L = 40, Rm = 8, T = 8, B = 18, H = 230;
+  const vis = VIS();
+  const ax = tdAxis(per.flatMap((p) => vis.map((i) => pk ? p.means[i][pk] : null)));
+  const n = vis.length, bw = n > 4 ? 30 : 44, L = 40, Rm = 8, T = 8, B = 18, H = 230;
   const W = Math.max(240, L + Rm + n * (bw + 14));
   const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(1, v / ax.top)));
   $("td-agg").innerHTML = per.map(({ su, means }) => {
     let s = `<svg viewBox="0 0 ${W} ${H}" style="max-width:${W * 1.4}px" role="img" aria-label="Top-down breakdown, ${SUITE_LABEL[su]} mean per sweep">`;
     for (const tv of ax.ticks) s += `<text x="${L - 5}" y="${y(tv) + 3}" text-anchor="end">${tickLab(tv)}</text>` + (tv > 0 ? `<line x1="${L}" x2="${W - Rm}" y1="${y(tv)}" y2="${y(tv)}" stroke="var(--grid)" stroke-dasharray="2 3"/>` : "");
-    means.forEach((m, i) => {
-      const x = L + 7 + i * (bw + 14);
+    vis.forEach((i, q) => {
+      const m = means[i], x = L + 7 + q * (bw + 14);
       s += `<text x="${x + bw / 2}" y="${H - 4}" text-anchor="middle" style="fill:var(--ink-2)">${LET(i)}</text>`;
       if (keys.some((k) => m[k] == null)) return;
       s += stackBar(x, bw, keys.map((k) => m[k]), keys, y, (k) => `data-td-su="${su}" data-td-i="${i}" data-td-k="${k}"`, true);
     });
-    const total = pk ? " · " + SW.map((_, i) => `${LET(i)} ${means[i][pk] == null ? "N/A" : (means[i][pk] * 100).toFixed(1) + "%"}`).join(" · ") : "";
+    const total = pk ? " · " + vis.map((i) => `${LET(i)} ${means[i][pk] == null ? "N/A" : (means[i][pk] * 100).toFixed(1) + "%"}`).join(" · ") : "";
     return `<div class="panel"><div class="t">${SUITE_LABEL[su]}${su === "agentic" && cat !== "all" ? " · " + esc(catDef().label) + " slices" : ""}</div><div class="u">mean of ${means[0].n} checkpoints${pk ? ` · ${esc(mdef(pk).label)}${total}` : ""}</div>${s}</svg></div>`;
   }).join("");
 }
@@ -461,17 +504,18 @@ function drawTdAgg() {
 // axis shared by every card.
 function drawTdCards() {
   const ch = tdChosen(), keys = tdShown().map((n) => n.key), pk = ch && ch.n.key;
-  const groups = SUITES.map((su) => ({ su, runs: D.runs.filter((r) => r.suite === su && matches(r.name)).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.runs.length);
-  const ax = tdAxis(pk ? groups.flatMap((g) => g.runs.flatMap((r) => SW.map((_, i) => tdVal(r, pk, i)))) : []);
-  const n = SW.length, bw = n > 4 ? 16 : 22, L = 34, Rm = 4, T = 6, B = 16, H = 150 + T + B;
+  const groups = suites().map((su) => ({ su, runs: D.runs.filter((r) => r.suite === su && matches(r.name)).sort((a, b) => a.name.localeCompare(b.name)) })).filter((g) => g.runs.length);
+  const vis = VIS();
+  const ax = tdAxis(pk ? groups.flatMap((g) => g.runs.flatMap((r) => vis.map((i) => tdVal(r, pk, i)))) : []);
+  const n = vis.length, bw = n > 4 ? 16 : 22, L = 34, Rm = 4, T = 6, B = 16, H = 150 + T + B;
   // at least wide enough for a checkpoint name, the bars centred
   const W = Math.max(130, L + Rm + n * (bw + 6)), off = (W - L - Rm - n * (bw + 6)) / 2;
   const y = (v) => T + (H - T - B) * (1 - Math.max(0, Math.min(1, v / ax.top)));
   const card = (r) => {
     let s = `<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" role="img" aria-label="Top-down breakdown of ${esc(r.name)}">`;
     for (const tv of ax.ticks) s += `<text x="${L - 4}" y="${y(tv) + 3}" text-anchor="end">${tickLab(tv)}</text>` + (tv > 0 && ch ? `<line x1="${L}" x2="${W - Rm}" y1="${y(tv)}" y2="${y(tv)}" stroke="var(--grid)" stroke-dasharray="2 3"/>` : "");
-    SW.forEach((_, i) => {
-      const x = L + off + 3 + i * (bw + 6), vals = keys.map((k) => tdVal(r, k, i));
+    vis.forEach((i, q) => {
+      const x = L + off + 3 + q * (bw + 6), vals = keys.map((k) => tdVal(r, k, i));
       s += `<text x="${x + bw / 2}" y="${H - 3}" text-anchor="middle">${LET(i)}</text>`;
       if (vals.some((v) => v == null)) { s += `<rect x="${x}" y="${T}" width="${bw}" height="${H - T - B}" fill="none" stroke="var(--rule)" stroke-dasharray="3 3"/>`; return; }
       s += stackBar(x, bw, vals, keys, y, (k) => `data-td-name="${esc(r.name)}" data-td-i="${i}" data-td-k="${k}"`, false);
@@ -494,8 +538,10 @@ function tdTip(rect) {
 // or each other sweep's ratio to or difference from A.
 function pcRuns(su, m) {
   const rs = D.runs.filter((r) => r.suite === su);
-  const key = (r) => pcSort === "base" ? mval(r, m, 0, "value") : pcSort === "change" ? mval(r, m, 1, isPct(m) ? "diff" : "ratio") : null;
-  return pcSort === "name" ? rs.sort((a, b) => a.name.localeCompare(b.name))
+  // "change" sorts by the first shown sweep after A; with none, by name
+  const b = VISO()[0];
+  const key = (r) => pcSort === "base" ? mval(r, m, 0, "value") : pcSort === "change" ? mval(r, m, b, isPct(m) ? "diff" : "ratio") : null;
+  return pcSort === "name" || (pcSort === "change" && b == null) ? rs.sort((a, b) => a.name.localeCompare(b.name))
     : rs.sort((a, b) => { const x = key(a), y = key(b); if (x == null) return 1; if (y == null) return -1; return y - x; });
 }
 function drawPc() {
@@ -503,21 +549,23 @@ function drawPc() {
   $("pc-modes").hidden = pcMetric === "td";
   $("pc-sort").disabled = pcMetric === "td";
   $("pc-tbl-wrap").hidden = pcMetric === "td";
+  const b = VISO()[0];
+  $("pc-sort-change").textContent = b == null ? "by change (no sweep shown but A)" : `by change, ${LET(b)} against A`;
   if (pcMetric === "td") {
     $("pc-hint").textContent = `Top-down breakdown of each checkpoint at the level chosen above, one bar per sweep${sliceNote()}; a dashed outline marks a sweep with no value. Hover a bar for its values.`;
     drawTdCards(); highlight(); return;
   }
-  const m = mdef(pcMetric), md = pcMode, idx = SW.map((_, i) => i).filter((i) => md === "value" || i > 0);
+  const m = mdef(pcMetric), md = pcMode, idx = VIS().filter((i) => md === "value" || i > 0);
   $("pc-hint").textContent = `${m.label} (${unitOf(m, md)})${sliceNote()}. ${md === "value" ? "One bar per sweep." : "One bar per sweep against A; the dark line marks no change."} Hover a column for its values; click to keep the highlight.`;
   // Vertical grouped bars: every checkpoint on the x axis, one bar per
   // sweep, the colours named in the legend above the charts.
   const Wd = Math.max(480, $("pc-charts").clientWidth || 900), L = 58, Rm = 8, T = 12, PH = 230;
   const ref = md === "ratio" ? 1 : 0;
-  const legend = `<div class="legend pclegend">` + idx.map((i) => `<span><span class="sw" style="background:var(--s${i})"></span><b>${LET(i)}</b>&nbsp;${esc(SW[i].label)}</span>`).join("") +
+  const legend = `<div class="legend pclegend">` + idx.map((i) => `<span><span class="sw" style="background:${SC(i)}"></span><b>${LET(i)}</b>&nbsp;${esc(SW[i].label)}</span>`).join("") +
     (md === "value" ? "" : `<span class="hint">change against <b>A</b> ${esc(SW[0].label)}</span>`) + `</div>`;
-  $("pc-charts").innerHTML = legend + SUITES.map((su) => {
+  $("pc-charts").innerHTML = legend + suites().map((su) => {
     const runs = pcRuns(su, m).filter((r) => matches(r.name));
-    if (!runs.length) return "";
+    if (!runs.length || !idx.length) return "";
     const vs = runs.flatMap((r) => idx.map((i) => mval(r, m, i, md))).filter((v) => v != null && isFinite(v));
     let lo = Math.min(ref, ...vs), hi = Math.max(ref, ...vs);
     if (hi === lo) hi = lo + 1;
@@ -544,7 +592,7 @@ function drawPc() {
           return;
         }
         const ya = y(Math.max(v, ref)), yb = y(Math.min(v, ref));
-        s += `<rect x="${bx.toFixed(1)}" y="${ya.toFixed(1)}" width="${Math.max(1, bw - (bw > 4 ? 1 : 0)).toFixed(1)}" height="${Math.max(1, yb - ya).toFixed(1)}" fill="var(--s${i})"/>`;
+        s += `<rect x="${bx.toFixed(1)}" y="${ya.toFixed(1)}" width="${Math.max(1, bw - (bw > 4 ? 1 : 0)).toFixed(1)}" height="${Math.max(1, yb - ya).toFixed(1)}" fill="${SC(i)}"/>`;
       });
       s += "</g>";
     });
@@ -555,8 +603,8 @@ function drawPc() {
 }
 function pcTip(name) {
   const r = D.runs.find((x) => x.name === name), m = mdef(pcMetric);
-  return `<b>${esc(name)}</b><br>${esc(m.label)}<br>` + SW.map((sw, i) => {
-    const v = mval(r, m, i, "value");
+  return `<b>${esc(name)}</b><br>${esc(m.label)}<br>` + VIS().map((i) => {
+    const sw = SW[i], v = mval(r, m, i, "value");
     const d = i ? ` (${isPct(m) ? fmt(mval(r, m, i, "diff"), m, "diff") : fmt(mval(r, m, i, "ratio"), m, "ratio")})` : "";
     return `${LET(i)} ${esc(sw.label)}: ${fmt(v, m)}${d}`;
   }).join("<br>");
@@ -564,9 +612,9 @@ function pcTip(name) {
 function drawTable() {
   const m = mdef(pcMetric); if (!m) return;
   const cols = [{ k: "suite", l: "Suite" }, { k: "name", l: "Checkpoint" }]
-    .concat(SW.map((_, i) => i).filter((i) => pcMode === "value" || i > 0).map((i) => ({ k: "c" + i, i, l: `${LET(i)} ${SW[i].label}` })));
+    .concat(VIS().filter((i) => pcMode === "value" || i > 0).map((i) => ({ k: "c" + i, i, l: `${LET(i)} ${SW[i].label}` })));
   const val = (r, c) => c.i != null ? mval(r, m, c.i, pcMode) : r[c.k];
-  const rows = D.runs.filter((r) => matches(r.name));
+  const su = suites(), rows = D.runs.filter((r) => su.includes(r.suite) && matches(r.name));
   const sc = cols.find((c) => c.k === sortKey) || cols[1];
   rows.sort((a, b) => {
     const x = val(a, sc), y2 = val(b, sc);
@@ -581,10 +629,10 @@ function drawTable() {
 // ---- violins ---------------------------------------------------------------
 const useLog = () => logScale && vMode === "value";
 function panelMulti(m) {
-  const idx = SW.map((_, i) => i).filter((i) => vMode === "value" || i > 0), G = SUITES.length * idx.length;
+  const SU = suites(), idx = VIS().filter((i) => vMode === "value" || i > 0), G = Math.max(1, SU.length * idx.length);
   const W = Math.max(400, 60 + 34 * G), H = 260, L = 46, R = 8, T = 8, B = 34;
   const groups = [];
-  SUITES.forEach((su) => idx.forEach((i) => groups.push({ su, i,
+  SU.forEach((su) => idx.forEach((i) => groups.push({ su, i,
     pts: D.runs.filter((r) => r.suite === su).map((r) => ({ r, v: mval(r, m, i, vMode) }))
       .filter((p) => p.v != null && isFinite(p.v) && (!useLog() || p.v > 0)) })));
   const all = groups.flatMap((g) => g.pts.map((p) => p.v));
@@ -595,7 +643,7 @@ function panelMulti(m) {
     return xs.length ? `${LET(i)} ${fmt(quantile(xs, 0.5), m, vMode)}` : "";
   }).filter(Boolean).join(" · ") || "N/A";
   div.innerHTML = `<div class="t">${esc(m.label)}</div><div class="u">${esc(unitOf(m, vMode))}</div>` +
-    SUITES.map((su) => `<div class="med">${SUITE_LABEL[su]} median ${meds(su)}</div>`).join("");
+    SU.map((su) => `<div class="med">${SUITE_LABEL[su]} median ${meds(su)}</div>`).join("");
   if (!all.length) { div.insertAdjacentHTML("beforeend", `<div class="hint" style="padding:30px 0">N/A</div>`); return div; }
   const lg = useLog(), signed = vMode !== "value", ref = vMode === "ratio" ? 1 : 0;
   const tf = lg ? Math.log10 : (x) => x, itf = lg ? (x) => Math.pow(10, x) : (x) => x;
@@ -613,13 +661,13 @@ function panelMulti(m) {
   }
   // Suite separator and suite labels under each group of violins.
   const xsep = L + step * idx.length;
-  s += `<line x1="${xsep}" x2="${xsep}" y1="${T}" y2="${H - B + 4}" stroke="var(--rule)"/>`;
-  SUITES.forEach((su, k) => {
+  if (SU.length > 1) s += `<line x1="${xsep}" x2="${xsep}" y1="${T}" y2="${H - B + 4}" stroke="var(--rule)"/>`;
+  SU.forEach((su, k) => {
     const c = L + step * idx.length * (k + 0.5);
     s += `<text x="${c}" y="${H - 2}" text-anchor="middle" style="fill:var(--ink-2)">${SUITE_LABEL[su]}</text>`;
   });
   groups.forEach((g, j) => {
-    const xs = g.pts.map((p) => tf(p.v)), c = cx(j), col = `var(--s${g.i})`;
+    const xs = g.pts.map((p) => tf(p.v)), c = cx(j), col = SC(g.i);
     s += `<text x="${c}" y="${H - B + 14}" text-anchor="middle">${LET(g.i)}</text>`;
     if (xs.length > 1) {
       const k = kde(xs, Math.min(...xs), Math.max(...xs)), dmax = Math.max(...k.map((p) => p[1])) || 1;
@@ -665,7 +713,8 @@ function drawShare() {
   const runs = D.runs.filter((r) => r.suite === "agentic" && r.share);
   const pct = (v) => (v * 100).toFixed(1) + "%";
   const groups = [];
-  CATS.forEach((c, ci) => SW.forEach((sw, i) => groups.push({ c, ci, i,
+  const vis = VIS();
+  CATS.forEach((c, ci) => vis.forEach((i) => groups.push({ c, ci, i,
     pts: runs.map((r) => ({ r, v: r.share[c.key][shareQ][i] })).filter((p) => p.v != null) })));
   const G = groups.length, W = Math.max(640, 60 + 30 * G), H = 260, L = 46, Rm = 8, T = 8, B = 36;
   const hi = Math.min(1, Math.max(0.01, ...groups.flatMap((g) => g.pts.map((p) => p.v))) * 1.04);
@@ -678,12 +727,12 @@ function drawShare() {
     s += `<line x1="${L}" x2="${W - Rm}" y1="${yy}" y2="${yy}" stroke="var(--grid)"/><text x="${L - 5}" y="${yy + 3}" text-anchor="end">${(t * 100).toFixed(0)}%</text>`;
   }
   CATS.forEach((c, ci) => {
-    const x0 = L + step * SW.length * ci;
+    const x0 = L + step * vis.length * ci;
     if (ci) s += `<line x1="${x0}" x2="${x0}" y1="${T}" y2="${H - B + 4}" stroke="var(--rule)"/>`;
-    s += `<text x="${x0 + step * SW.length / 2}" y="${H - 2}" text-anchor="middle" style="fill:var(--ink-2)">${esc(c.label)}</text>`;
+    s += `<text x="${x0 + step * vis.length / 2}" y="${H - 2}" text-anchor="middle" style="fill:var(--ink-2)">${esc(c.label)}</text>`;
   });
   groups.forEach((g, j) => {
-    const xs = g.pts.map((p) => p.v), c = cx(j), col = `var(--s${g.i})`;
+    const xs = g.pts.map((p) => p.v), c = cx(j), col = SC(g.i);
     s += `<text x="${c}" y="${H - B + 14}" text-anchor="middle">${LET(g.i)}</text>`;
     if (xs.length > 1 && Math.max(...xs) > Math.min(...xs)) {
       const k = kde(xs, Math.min(...xs), Math.max(...xs)), dmax = Math.max(...k.map((p) => p[1])) || 1;
@@ -758,7 +807,27 @@ $("tbl").addEventListener("keydown", (e) => { if (e.key === "Enter" && e.target.
 // ---- controls --------------------------------------------------------------
 function drawAll() { drawStrip(); drawTdAgg(); drawAgg(); drawShare(); drawPc(); drawPanels(); }
 $("sub").textContent = D.name;
-$("legend").innerHTML = SW.map((sw, i) => `<span><span class="sw" style="background:var(--s${i})"></span>${LET(i)} ${esc(sw.label)}${i ? "" : " (baseline)"}</span>`).join("");
+// The legend is the sweep picker: every sweep a toggle (A, the reference
+// of every change, always on), then all / only A.
+function drawPick() {
+  $("legend").innerHTML = SW.map((sw, i) => `<button data-sw="${i}" aria-pressed="${shown.has(i)}"${i ? "" : " disabled"} title="${esc(sw.dir || sw.label)}"><span class="sw" style="background:${SC(i)}"></span>${LET(i)}&nbsp;${esc(sw.label)}${i ? "" : " (baseline)"}</button>`).join("") +
+    (SW.length > 2 ? `<button class="act" data-act="all">all</button><button class="act" data-act="none">only A</button>` : "");
+  $("pick-hint").textContent = SW.length > 2 ? `Click a sweep to show or hide it in every table and chart (${shown.size} of ${SW.length} shown). Changes are always against A.` : "";
+}
+$("legend").onclick = (e) => {
+  const b = e.target.closest("button"); if (!b || b.disabled) return;
+  if (b.dataset.act === "all") shown = new Set(SW.map((_, i) => i));
+  else if (b.dataset.act === "none") shown = new Set([0]);
+  else { const i = +b.dataset.sw; if (shown.has(i)) shown.delete(i); else shown.add(i); }
+  drawPick(); save(); drawAll();
+};
+drawPick();
+if (HAS_SPEC) {
+  $("suites-wrap").hidden = false;
+  const setSuites = () => document.querySelectorAll("#suites button").forEach((b) => b.setAttribute("aria-pressed", (b.dataset.spec === "1") === showSpec));
+  setSuites();
+  $("suites").onclick = (e) => { const b = e.target.closest("button"); if (b) { showSpec = b.dataset.spec === "1"; setSuites(); save(); drawAll(); } };
+}
 if (D.notes && D.notes.length) { $("notes").hidden = false; $("notes").innerHTML = "Check: " + D.notes.map(esc).join(" · "); }
 if (CATS.length) {
   $("cats").hidden = false;

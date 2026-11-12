@@ -5,7 +5,7 @@ Usage:
     python3 analysis_scripts/tasktrace/sweep_compare.py A B [C ...] [-o OUT]
         [--pdf] [--labels TEXT TEXT ...] [--label-a TEXT] [--label-b TEXT]
 
-A, B, ... (two to eight) are sweep directories as
+A, B, ... (two to 26) are sweep directories as
 run_scripts/tasktrace/sweep.sh lays them out (or anything sweep_summary.py
 accepts). Each sweep's per-run values come from <dir>/summary/
 sweep.view.json when it exists, else they are computed as sweep_summary.py
@@ -20,7 +20,9 @@ against the first for the others), compare.view.json and compare.html.
 The page leads with the aggregate over checkpoints, per suite: every
 metric in one table and the top-down breakdown as one stacked bar per
 sweep; then, collapsed, one metric (or the breakdown) checkpoint by
-checkpoint against the baseline, and the violins of every metric.
+checkpoint against the baseline, and the violins of every metric. The
+legend picks which sweeps every view shows, and the SPEC runs can be
+hidden.
 
 Aggregates, also in compare_geomean.csv: for most metrics, the geometric
 mean of the first sweep's window values, and for every other sweep the
@@ -99,7 +101,8 @@ def change(a, b):
     return ss.r4(b - a), ss.r4(rel)
 
 
-MAX_SWEEPS = 8   # categorical colour slots in compare_view.html
+MAX_SWEEPS = 26  # sweeps are lettered A to Z; colours cycle past the 16
+# categorical slots of compare_view.html
 CATS = [c for c, _, _ in ss.CATEGORIES]
 
 
@@ -371,7 +374,9 @@ def write_pdfs(rows, defs, labels, out):
 
     # Same categorical order as compare_view.html (light mode).
     colors = ["#2a78d6", "#eb6834", "#1baf7a", "#eda100", "#e87ba4",
-              "#008300", "#6250d6", "#e34948"]
+              "#008300", "#6250d6", "#e34948", "#0e8fa3", "#9c4fb3",
+              "#8c6d3f", "#7f9a1f", "#5d6b78", "#c4366f", "#3f5bb5",
+              "#d98a5b"]
     for fsuffix, title, first in (
             ("", "Window value per checkpoint", 0),
             ("_change", f"Ratio to {labels[0]} (×)", 1)):
@@ -386,6 +391,7 @@ def write_pdfs(rows, defs, labels, out):
             pos, ticks, tlabels = 0, [], []
             for si, suite in enumerate(ss.SUITES):
                 for i in range(first, len(labels)):
+                    col = colors[i % len(colors)]
                     xs = []
                     for r in rows:
                         if r["suite"] != suite:
@@ -398,14 +404,14 @@ def write_pdfs(rows, defs, labels, out):
                     if len(xs) > 1:
                         parts = ax.violinplot([xs], positions=[pos],
                                               showmedians=True, widths=0.8)
-                        parts["bodies"][0].set_facecolor(colors[i])
+                        parts["bodies"][0].set_facecolor(col)
                         parts["bodies"][0].set_alpha(0.35)
                         for c in ("cmedians", "cmins", "cmaxes", "cbars"):
                             parts[c].set_color("#4a535c")
                             parts[c].set_linewidth(0.8)
                     ax.scatter([pos + 0.12 * math.sin(j * 2.399)
                                 for j in range(len(xs))], xs, s=5,
-                               color=colors[i], zorder=3)
+                               color=col, zorder=3)
                     ticks.append(pos)
                     tlabels.append(chr(ord("A") + i))
                     pos += 1
