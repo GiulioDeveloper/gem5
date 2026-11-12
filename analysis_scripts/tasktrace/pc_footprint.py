@@ -4,6 +4,7 @@ thread, from a run's PC trace (pc_trace.py) and task trace.
 usage:
   python3 analysis_scripts/tasktrace/pc_footprint.py <run> [-o OUT]
       [--vmlinux VMLINUX] [--limit N] [--bins N,...] [--caches LEVEL:SIZE,...]
+      [--mnemonic-versions]
 
 A process instance ("PID") is a tgid between execs (threads share it): an
 exec event, placed at its exact instruction by the global instruction
@@ -50,6 +51,23 @@ lines (code size) and branches; reported as the mean over the thread's
 whole bins, each bin weighted by its instructions, and the largest bin. A
 thread shorter than one bin has only a partial bin, which then counts
 (flagged `partial_only`).
+
+Code versions: a PC can hold different instructions over time (a JIT
+writing code, the kernel patching itself). With encodings in the PC trace
+(v2, ExecEncoding), every encoding a PC shows in its address space after
+the first is a new instruction, and a line whose PC shows a new encoding
+becomes a new line (once per visit to the line: one visit reads one
+snapshot of it): the distinct counts, branches, LRU stacks, repeat
+distances and bins count rewritten code as new code (pages do not). The
+rw_ columns give that part: rw_insts and rw_lines the later versions,
+rw_br the later versions of branches, rw_pcs the PCs with more than one
+encoding, rw_flips the times a PC went back to an earlier encoding,
+rw_lines_lb a lower bound on the line versions (per line, the most
+encodings any one PC had, minus one; rw_insts is an upper bound), and *_rw_cold the cold misses on rewritten lines.
+Without encodings (v1 traces) every PC has one version;
+--mnemonic-versions then takes the mnemonic as the encoding, a lower bound
+that misses rewrites keeping the mnemonic (most JIT patching: new
+immediates or branch targets).
 
 The cache sizes (--caches, default the Neoverse V2 L1I and L2 at x1, x4
 and x8) set the LRU capacities of the pass and the footprint multiples;
@@ -185,7 +203,7 @@ def bin_label(n):
     return str(n)
 
 
-def run_pass(run, out, vmlinux, limit, bins, caches):
+def run_pass(run, out, vmlinux, limit, bins, caches, mnemonic=False):
     exe = build()
     sw, ex = side_files(run, out)
     v0, v1 = vector_tables(vmlinux)
@@ -194,6 +212,8 @@ def run_pass(run, out, vmlinux, limit, bins, caches):
     if limit:   # zstd ends with SIGPIPE (141) when head stops reading
         src = f"{{ {src} || [ $? -eq 141 ]; }} | head -n {int(limit)}"
     opt = f"--bins={','.join(str(b) for b in bins)} " if bins else ""
+    if mnemonic:
+        opt += "--mnemonic-versions "
     cmd = (f"{src} | {exe} {opt}{sw} {ex} {out} {v0} {v1} " + " ".join(caps))
     subprocess.run(["bash", "-o", "pipefail", "-c", cmd], check=True)
     (out / "caches.json").write_text(json.dumps(caches) + "\n")
@@ -232,6 +252,11 @@ def rates(n, caches, prefix=""):
     for b in BRANCHES:
         r[f"br_{b}"] = int(n[f"{prefix}br_{b}"])
         r[f"br_{b}_taken"] = int(n[f"{prefix}br_{b}_taken"])
+    # Rewritten code (0 without encodings, or in a pass before them).
+    for k in ("rw_insts", "rw_lines", "rw_br"):
+        r[k] = int(n.get(prefix + k, 0))
+    r["rw_cold_mpki"] = (n.get(prefix + "priv_rw_cold", 0) / insts * 1000
+                         if insts else None)
     return r
 
 
@@ -353,6 +378,10 @@ def summarize_threads(out, caches):
         r["branches"] = int(sum(n[f"br_{b}"] for b in BRANCHES))
         r["branches_taken"] = int(sum(n[f"br_{b}_taken"] for b in BRANCHES))
         r["k_branches"] = int(sum(n[f"k_br_{b}"] for b in BRANCHES))
+        for k in ("u_rw_insts", "k_rw_insts", "u_rw_lines", "k_rw_lines",
+                  "rw_br"):
+            r[k] = int(n.get(k, 0))
+        r["rw_cold_mpki"] = n.get("priv_rw_cold", 0) / insts * 1000
         for b in BRANCHES:
             r[f"br_{b}"] = int(n[f"br_{b}"])
             r[f"br_{b}_taken"] = int(n[f"br_{b}_taken"])
@@ -441,6 +470,53 @@ def thread_section(lines, threads, caches):
     lines.append("")
 
 
+def rewrite_section(lines, table, threads):
+    """Code written at run time: only when the pass saw any."""
+    rows = [r for r in table if r["rw_pcs"] or r["rw_insts"]]
+    if not rows:
+        return
+    lines.append("## Rewritten code")
+    lines.append("")
+    lines.append("PCs that held more than one instruction (a JIT writing "
+                 "code, the kernel patching itself), each process "
+                 "separate. Every later encoding counts as a new "
+                 "instruction and its line (once per visit) as a new "
+                 "line; *address* is the footprint by address alone. Line "
+                 "versions, and their lower bound from the PC with the "
+                 "most encodings. Rewrite misses: cold misses on rewritten "
+                 "lines, per 1,000 instructions, the process's code alone.")
+    lines.append("")
+    lines.append("| process | instructions | PCs rewritten | later versions "
+                 "| flips back | distinct insts (address) | line versions "
+                 "(lower bound) | code KiB (address) | branch versions "
+                 "| rewrite MPKI |")
+    lines.append("|---|---|---|---|---|---|---|---|---|---|")
+    for r in rows:
+        lines.append(
+            f"| {r['group']} | {r['insts'] / 1e6:,.1f}M | {r['rw_pcs']:,} "
+            f"| {r['rw_insts']:,} | {r['rw_flips']:,} "
+            f"| {r['uniq_insts']:,} ({r['uniq_insts'] - r['rw_insts']:,}) "
+            f"| {r['rw_lines']:,} ({r['rw_lines_lb']:,}) "
+            f"| {r['code_kib']:,.0f} "
+            f"({(r['uniq_lines'] - r['rw_lines']) * LINE / 1024:,.0f}) "
+            f"| {r['rw_br']:,} | {fmt(r['rw_cold_mpki'], 3)} |")
+    lines.append("")
+    trows = [t for t in threads if t["u_rw_insts"] or t["k_rw_insts"]]
+    if trows:
+        lines.append("By thread (user + kernel versions):")
+        lines.append("")
+        lines.append("| thread | instructions | later versions | line "
+                     "versions | branch versions | rewrite MPKI |")
+        lines.append("|---|---|---|---|---|---|")
+        for t in trows[:20]:
+            lines.append(
+                f"| {thread_label(t)} | {t['insts'] / 1e6:,.1f}M "
+                f"| {t['u_rw_insts'] + t['k_rw_insts']:,} "
+                f"| {t['u_rw_lines'] + t['k_rw_lines']:,} | {t['rw_br']:,} "
+                f"| {fmt(t['rw_cold_mpki'], 3)} |")
+        lines.append("")
+
+
 def bin_section(lines, threads, bins):
     if not bins:
         return
@@ -496,6 +572,8 @@ def summarize(out):
         r["k_insts"] = int(n["k_insts"])
         r["k_uniq_insts"] = int(n["k_uniq_insts"])
         r["k_uniq_lines"] = int(n["k_uniq_lines"])
+        for k in ("rw_pcs", "rw_flips", "rw_lines_lb"):
+            r[k] = int(n.get(k, 0))
         table.append(r)
     table.sort(key=lambda r: -(r["insts"] or r["k_insts"]))
     write_csv(out / "footprint.csv", table)
@@ -510,6 +588,8 @@ def summarize(out):
              "exec": int(i["generation"]), "process": i["group"],
              "insts": int(n["insts"]), "k_insts": int(n["k_insts"])}
         r.update(rates(n, caches))
+        for k in ("rw_pcs", "rw_flips", "rw_lines_lb"):
+            r[k] = int(n.get(k, 0))
         pids.append(r)
     # A fork child that runs a little of its parent's code and then execs
     # (the same PID has a later exec) is not a run of the parent's program.
@@ -660,6 +740,7 @@ def summarize(out):
                      + " | ".join(fmt(r[f"k_shared_mpki_{key_of(l)}"])
                                   for l, _ in first) + " |")
     threads = summarize_threads(out, caches)
+    rewrite_section(lines, table, threads)
     thread_section(lines, threads, caches)
     bin_section(lines, threads, summarize_bins(out))
     (out / "summary.md").write_text("\n".join(lines) + "\n")
@@ -680,6 +761,9 @@ def main():
     ap.add_argument("--caches", default=CACHES,
                     help="cache sizes for the LRU hit rates and footprint "
                     "multiples, LEVEL:SIZE comma separated (default: %(default)s)")
+    ap.add_argument("--mnemonic-versions", action="store_true",
+                    help="without encodings in the trace (v1), take the "
+                    "mnemonic as the encoding: a lower bound on rewrites")
     ap.add_argument("--summary-only", action="store_true",
                     help="reformat an existing OUT without rerunning")
     args = ap.parse_args()
@@ -688,7 +772,7 @@ def main():
     if not args.summary_only:
         bins = [int(float(b)) for b in args.bins.split(",") if b]
         run_pass(args.run, out, args.vmlinux, args.limit, bins,
-                 parse_caches(args.caches))
+                 parse_caches(args.caches), args.mnemonic_versions)
     summarize(out)
     pc_footprint_report.write_report(out)
 

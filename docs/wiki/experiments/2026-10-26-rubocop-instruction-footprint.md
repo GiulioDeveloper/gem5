@@ -202,3 +202,7 @@ per 500M, 93K per 1G; JITWorker 1263: 69K whole, 37K per 100M.
   per 4 KiB page for the instruction TLB: not computed.
 - Inside OpenCode's main thread, JIT code vs the Bun runtime: needs the
   code's mapping (JIT regions vs the binary).
+- These numbers count code by address: a PC rewritten by the JIT counts
+  once. The trace format and pass now count each encoding at a PC
+  ([[2026-11-12-jit-code-versions]]); this run's trace is v1 (no
+  encodings), so redoing these numbers needs a new trace.

@@ -18,10 +18,23 @@ Output format (text, one line per committed instruction):
                         an exception vector, or the first line after a
                         marker)
   <mnemonic>            the PC is the previous PC + 4
+  ...\t<encoding hex>   either form, with the instruction's 32-bit
+                        encoding (v2, Exec traces with ExecEncoding): given
+                        when it differs from the last encoding seen under
+                        the same decode key, or none was; otherwise it is
+                        that last encoding
   #...                  header and marker lines; a task marker is
   #\ttask\t<tick>\t<tgid>\t<pid>\t<u|k>\t<process>\t<comm>
                         every instruction after it, up to the next marker,
                         ran as that task (tick: the tracer's switch tick)
+
+Decode key of an instruction's encoding: the PC alone for kernel code (PC
+bit 63); for user code, the PC and the tgid of the current marker, except
+between the first marker and the second (the instructions before the first
+switch, whose owner the reducer learns only at that switch), where the
+tgid is taken as -1. A reader rebuilds every encoding from the trace alone
+(read_pc_trace(..., encodings=True)). Code written at run time (a JIT, the
+kernel patching itself) shows as a new encoding at a PC already seen.
 
 Task markers come from the task trace's switch events. The tracer reports
 a switch once per pass through __switch_to, when its first instruction is
@@ -45,12 +58,16 @@ import subprocess
 import sys
 from collections import Counter
 
-# tick: object: [A<asid> ][T<n> : ]0x<pc>[ @sym[+off]][.NN] : <disassembly>
+# tick: object: [A<asid> ][T<n> : ]0x<pc>[ @sym[+off]][.NN] :
+#     [E=<bytes> ]<disassembly>
 LINE_RE = re.compile(
     r"^(\d+): [^:]+: (?:A\d+ )?(?:T\d+ : )?0x([0-9a-f]+)"
-    r"(?: @\S+)?(\.[ \d]\d)?\s+:\s+(\S+)"
+    r"(?: @\S+)?(\.[ \d]\d)?\s+:\s+(?:E=([0-9a-f]+)\s+)?(\S+)"
 )
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+# ExecEncoding prints the ExtMachInst on Arm: the encoding in the low 32
+# bits, decoder state above.
+ENCODING_MASK = 0xFFFFFFFF
 SWITCH_SYMBOL = "__switch_to"
 DEFAULT_VMLINUX = os.path.join(
     os.environ.get("CKPTS", "/home/snapshots/gem5-ckpts"),
@@ -73,13 +90,28 @@ def open_text(path, mode="rt", level=9):
 
 
 def exec_insts(path):
-    """Yield (tick, pc, mnemonic) once per architectural instruction."""
+    """Yield (tick, pc, mnemonic, encoding or None) once per architectural
+    instruction."""
     with open_text(path) as f:
         for line in f:
             m = LINE_RE.match(line)
             if not m or m.group(3):  # not an Exec line, or a micro-op
                 continue
-            yield int(m.group(1)), int(m.group(2), 16), m.group(4)
+            enc = m.group(4)
+            if m.group(5).startswith("E="):   # the format drifted
+                raise SystemExit(f"cannot parse the encoding: {line!r}")
+            yield (int(m.group(1)), int(m.group(2), 16), m.group(5),
+                   None if enc is None else int(enc, 16) & ENCODING_MASK)
+
+
+def decode_key(pc, tgid):
+    """The key an encoding is remembered under (see the format above);
+    tgid is an int, -1 when unknown or before the first switch."""
+    return pc if pc >> 63 else ((tgid + 2) << 64) | pc
+
+
+def marker_tgid(field):
+    return -1 if field == "?" else int(field)
 
 
 def symbol_address(vmlinux, symbol):
@@ -158,12 +190,14 @@ def reduce_trace(src, out, tasktrace=None, vmlinux=DEFAULT_VMLINUX, level=9):
     per_task = Counter()
     task = None
     prev_pc = None
+    tgid = -1   # decode-key tgid: -1 until the first switch
+    last_enc = {}
     with open_text(out, "wt", level) as real:
         real.write(f"#\tpc_trace\tv{FORMAT_VERSION}\n")
         # Until the first switch, its prev (the owner of everything before
         # it) is unknown when streaming: hold those lines in memory.
         w = io.StringIO()
-        for tick, pc, mnem in exec_insts(src):
+        for tick, pc, mnem, enc in exec_insts(src):
             if link is not None and switch_pc is None:
                 feed.read_more()
                 if feed.slide is not None:
@@ -187,11 +221,22 @@ def reduce_trace(src, out, tasktrace=None, vmlinux=DEFAULT_VMLINUX, level=9):
                         per_task[first] += per_task.pop(None, 0)
                         w = real
                     w.write("#\ttask\t%d\t%s\n" % (tick0, "\t".join(task)))
+                    tgid = marker_tgid(task[0])
                     seq = False  # the first line after a marker has its PC
+            tail = ""
+            if enc is not None:
+                key = decode_key(pc, tgid)
+                last = last_enc.get(key)
+                if last != enc:
+                    last_enc[key] = enc
+                    tail = f"\t{enc:08x}"
+                    stats["encodings written"] += 1
+                    if last is not None:
+                        stats["encoding changes"] += 1
             if seq:
-                w.write(mnem + "\n")
+                w.write(f"{mnem}{tail}\n")
             else:
-                w.write(f"{pc:x} {mnem}\n")
+                w.write(f"{pc:x} {mnem}{tail}\n")
                 stats["explicit"] += 1
             prev_pc = pc
             stats["instructions"] += 1
@@ -205,50 +250,65 @@ def reduce_trace(src, out, tasktrace=None, vmlinux=DEFAULT_VMLINUX, level=9):
     return stats, per_task
 
 
-def read_pc_trace(path):
-    """Yield ("task", fields) and ("inst", pc, mnemonic) from a PC trace.
+def read_pc_trace(path, encodings=False):
+    """Yield ("task", fields) and ("inst", pc, mnemonic) from a PC trace;
+    with encodings, ("inst", pc, mnemonic, encoding or None).
 
     fields = (tick, tgid, pid, kind, process, comm).
     """
     pc = None
+    markers, tgid = 0, -1
+    last_enc = {}
     with open_text(path) as f:
         for line in f:
             line = line.rstrip("\n")
             if line.startswith("#"):
                 parts = line.split("\t")
                 if len(parts) >= 8 and parts[1] == "task":
+                    markers += 1
+                    if markers >= 2:
+                        tgid = marker_tgid(parts[3])
                     yield ("task", tuple(parts[2:8]))
                 continue
+            line, _, enc = line.partition("\t")
             if " " in line:
                 addr, mnem = line.split(" ", 1)
                 pc = int(addr, 16)
             else:
                 pc += 4
                 mnem = line
-            yield ("inst", pc, mnem)
+            if not encodings:
+                yield ("inst", pc, mnem)
+                continue
+            key = decode_key(pc, tgid)
+            if enc:
+                last_enc[key] = int(enc, 16)
+            yield ("inst", pc, mnem, last_enc.get(key))
 
 
 def verify(src, reduced, tasktrace=None):
     """Check the PC trace expands to the Exec trace's PC sequence."""
     a = exec_insts(src)
-    n = 0
-    for item in read_pc_trace(reduced):
+    n = encs = 0
+    for item in read_pc_trace(reduced, encodings=True):
         if item[0] == "task":
             continue
         try:
-            _, pc, mnem = next(a)
+            _, pc, mnem, enc = next(a)
         except StopIteration:
             print(f"FAIL: PC trace is longer than the Exec trace ({n})")
             return False
-        if (pc, mnem) != item[1:]:
-            print(f"FAIL at instruction {n}: Exec {pc:#x} {mnem}, "
-                  f"PC trace {item[1]:#x} {item[2]}")
+        if (pc, mnem, enc) != item[1:]:
+            print(f"FAIL at instruction {n}: Exec {pc:#x} {mnem} {enc}, "
+                  f"PC trace {item[1]:#x} {item[2]} {item[3]}")
             return False
         n += 1
+        encs += enc is not None
     if next(a, None) is not None:
         print(f"FAIL: Exec trace is longer than the PC trace ({n})")
         return False
-    print(f"OK: {n} instructions match PC for PC")
+    print(f"OK: {n} instructions match PC for PC"
+          + (f", with their encodings ({encs})" if encs else ""))
     if tasktrace:
         check_counts(tasktrace, reduced)
     return True
@@ -308,6 +368,10 @@ def main():
         print(f"{n} instructions ({stats['nops']} NOPs), {explicit} with an "
               f"explicit PC ({n / max(1, explicit):.1f} per run), "
               f"{stats['switches']} switches", file=sys.stderr)
+        if stats["encodings written"]:
+            print(f"encodings: {stats['encodings written']} written, "
+                  f"{stats['encoding changes']} of them a change at a PC "
+                  "already seen", file=sys.stderr)
         for key in ("switch PCs without a switch event",
                     "switch events after the last instruction",
                     "switch ticks before their Exec tick"):

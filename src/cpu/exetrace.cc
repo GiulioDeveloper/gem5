@@ -98,6 +98,21 @@ ExeTracerRecord::traceInst(const StaticInstPtr &inst, bool ran)
 
     ccprintf(outs, " : ");
 
+    // The instruction's bytes as the ISA stores them (asBytes), printed as
+    // one little-endian word: a PC can hold different instructions over
+    // time (code written at run time), which the disassembly alone does not
+    // always tell apart. On Arm this is the ExtMachInst: the encoding in
+    // the low 32 bits, decoder state above.
+    if (debug::ExecEncoding) {
+        uint8_t bytes[8];
+        size_t size = inst->asBytes(bytes, sizeof(bytes));
+        uint64_t word = 0;
+        for (size_t i = 0; i < size; i++)
+            word |= uint64_t(bytes[i]) << (8 * i);
+        if (size)
+            ccprintf(outs, "E=%0*x ", int(2 * size), word);
+    }
+
     //
     //  Print decoded instruction
     //

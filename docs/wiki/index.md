@@ -1,7 +1,7 @@
 ---
 type: meta
 status: current
-updated: 2026-11-02
+updated: 2026-11-12
 ---
 
 # Index
@@ -59,6 +59,7 @@ Human-facing outputs: [[publish]].
 - [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep running (20261104-1115)
 - [[2026-11-03-top-down-validation]]: top-down accounting (PR #2392) merged and fixed; 3 SPEC + 2 agentic 30M windows; front-end bound ~50% for both, much of it the fetch model
 - [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, 1B sweep running (20261104-1115)
+- [[2026-11-12-jit-code-versions]]: a PC can hold several instructions (JIT); the PC trace (v2) keeps encodings and the footprint pass counts each encoding at a PC as new code; guest JIT runs no per-line cache maintenance (cached `CTR_EL0` IDC = DIC = 1); 1G rubocop: 38 PCs rewritten, footprint and branches change <0.01%
 - [[2026-11-06-perfect-l1d]]: `--perfect-l1d` built and validated: LSQ serves plain loads/stores and atomics functionally at the 4-cycle hit latency; agentic sweep IPC +43% (with perfect L1I +59%, with perfect TLB +49%); PerfectCache and hacked-cache alternatives compared
 - [[2026-11-05-front-end-width]]: gem5's 6-wide fetch/decode caps micro-ops into 8-wide rename; `--front-end-width 8` vs 6, agentic 1B + SPEC 200M sweeps launching
 

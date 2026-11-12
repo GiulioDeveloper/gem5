@@ -1,9 +1,10 @@
 ---
 type: howto
 status: current
-updated: 2026-11-02
+updated: 2026-11-12
 sources:
   - analysis_scripts/tasktrace/pc_trace.py
+  - "[[2026-11-12-jit-code-versions]]"
   - run_scripts/tasktrace/pc-trace.sh
   - runs/old-tests/traced-test/
   - src/cpu/exetrace.cc
@@ -17,8 +18,11 @@ line per committed instruction (its PC only when it is not the previous
 PC + 4, plus the mnemonic), with task markers joined from the
 [[task-tracer]]. It rebuilds the exact committed PC stream, so it supports
 instruction footprint by process, unique branches (taken or not) and PC
-repeat distance, computed offline. No gem5 change: it uses the existing
-`Exec` debug flags and the existing tracer. On a 2M-instruction gin-2121
+repeat distance, computed offline. Since 2026-11-12 (format v2) it also
+keeps each instruction's encoding where it is new at its PC, so code
+rewritten at run time (JIT) shows; that needs gem5's `ExecEncoding` flag
+([[#Encodings and code versions]]). Otherwise it uses the existing `Exec`
+debug flags and the existing tracer. On a 2M-instruction gin-2121
 window it is **138 KB** (zstd level 9) against 30 MB for the gzipped
 `Exec` trace.
 
@@ -77,15 +81,15 @@ stats 20–22 GB of text → 0.23–0.27 GB as a table
 ## Format
 
 ```
-#	pc_trace	v1
-#	kaslr_slide	0x405244c00000
-#	task	0	1235	1308	u	opencode	JITWorker
-fffffbfffddf6480 msr          ← PC given: not previous PC + 4
-movz                          ← PC = previous + 4
-b
+#	pc_trace	v2
+#	kaslr_slide	0x36f7e8800000
+#	switch_pc	0xffffb6f86985d6dc
+#	task	0	1235	1290	u	opencode	Bun Pool 0
+fffffbfffddf6408 b	14000001     ← PC given: not previous PC + 4; encoding new here
+subs	f10007de                    ← PC = previous + 4
+b.ne	54ffffc1
+fffffbfffddf6408 b               ← jump target; encoding as last seen at this PC
 subs
-b.ne
-fffffbfffddf6488 b            ← jump target; the line before it jumped
 #	task	209306074077	1235	1303	u	opencode	JITWorker
 ```
 
@@ -99,7 +103,12 @@ fffffbfffddf6488 b            ← jump target; the line before it jumped
   gets `not recorded`.
 - Kernel vs user mode: PC bit 63. Reading in Python:
   `pc_trace.read_pc_trace(path)` yields `("task", fields)` and
-  `("inst", pc, mnemonic)`.
+  `("inst", pc, mnemonic)`; with `encodings=True`, `("inst", pc,
+  mnemonic, encoding)`.
+- `\t<hex>` after the mnemonic (v2): the instruction's 32-bit encoding,
+  given when it differs from the last one seen under the same decode key,
+  or none was ([[#Encodings and code versions]]). v1 traces (before
+  2026-11-12) have none and still read.
 
 ## How the join works: by PC
 
@@ -143,8 +152,9 @@ switch are held in memory until that switch names their owner (its `prev`).
 
 ## Exec flags: use the lean set
 
-`--debug-flags=ExecEnable,ExecUser,ExecKernel,ExecMacro` (what the launcher
-uses). With `ExecMicro` off, `exetrace.cc` prints each architectural
+`--debug-flags=ExecEnable,ExecUser,ExecKernel,ExecMacro,ExecEncoding` (what
+the launcher uses; `ExecEncoding` since 2026-11-12, without it the trace
+has no encodings). With `ExecMicro` off, `exetrace.cc` prints each architectural
 instruction once (the macro-op at its last micro-op); with it on, the
 micro-op lines (`0x….  0`, `. 1`) are dropped by the reducer anyway.
 
@@ -170,6 +180,36 @@ micro-op lines (`0x….  0`, `. 1`) are dropped by the reducer anyway.
 | rechecked 2026-11-02 | o3-check `verify`: identical, 2,538,421 instructions, its complete slice equal; rubocop-smoke: 61/61 slices equal, 62/62 markers on `switch_pc`; rubocop-15G `normal` (68 warnings): 20,213 slices equal, 0 different |
 | footprint pass, 2026-10-27: count check at every marker | 0 off on O3 (o3-check, rubocop-smoke, launcher-check, rubocop cache8x) and on the atomic `fifo-check`; the stored atomic sample is off at its first switch by its 3 faulting lines (see the warning above) |
 | size | 2.3 MB of raw text with no mnemonics (run-length) → this format 10.6 MB raw, 138 KB zstd-9 (113 KB zstd-19) |
+
+## Encodings and code versions
+
+A PC can hold different instructions over time: a JIT writes and patches
+code (OpenCode's JavaScriptCore), the kernel patches itself. The guest does
+not run per-line cache maintenance after writing code (the `CTR_EL0` value
+OpenCode uses has IDC = DIC = 1), so the trace cannot learn from flushes
+which code changed ([[2026-11-12-jit-code-versions]]); the encodings show
+it directly.
+
+- **gem5:** `ExecEncoding` (`src/cpu/exetrace.cc`) prints `E=<bytes>`
+  before the disassembly: `StaticInst::asBytes()` as one little-endian
+  word. On Arm that is the `ExtMachInst`, the encoding in the low 32 bits
+  and decoder state above (`E=0000000414000001` is `b` `14000001`); the
+  reducer keeps the low 32 bits. Off by default; in `ExecAll`, not in
+  `Exec`.
+- **Decode key:** kernel code by PC alone; user code by PC and the tgid of
+  the current marker, -1 for the instructions between the first and
+  second marker (those before the first switch, whose owner the reducer
+  learns only at that switch). The reducer writes an encoding when it is
+  new or changed under its key, so every encoding is rebuilt from the
+  trace alone, without exec events. On the 30M check: 340,661 encodings
+  written, the trace 1.76 MB (0.059 bytes per instruction).
+- **Checks** (2026-11-12, rubocop-13560, atomic 30M): `verify` rebuilds PC,
+  mnemonic and encoding of every instruction (30,000,001 identical); every
+  taken direct branch's encoded offset gives its next PC (2,570,748, 0
+  wrong); all NOPs `d503201f`.
+- The reducer stops on a mnemonic starting with `E=` (gem5 pads the
+  disassembly; a first regex read the encoding as the mnemonic, and
+  `verify` could not see it because both sides parsed alike).
 
 ## Footprint, hit rates and branches
 
@@ -260,6 +300,25 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   growth plot shows the picked threads' code size and distinct taken
   branches against the bin size, with the cache sizes and the baseline
   BTB's 12K entries as references.
+- **Code versions** (v2 traces, since 2026-11-12): per address space (a
+  process instance, or the kernel) the pass keeps each PC's encodings in
+  first-seen order. Every later encoding is a new instruction with its own
+  key, and the line it is in becomes a new line, at most once per visit
+  (the stream entering and leaving the line reads one snapshot). Distinct
+  instructions, lines and branches, the LRU stacks, repeat distances and
+  bins then count rewritten code as new code; pages (TLB reach) and the
+  kernel code counted on behalf of a group stay by address. `rw_` columns
+  give the part from later versions: `rw_insts`, `rw_lines`, `rw_br`;
+  `rw_pcs` (PCs with several encodings), `rw_flips` (a PC going back to an
+  earlier encoding), `rw_lines_lb` (per line, the most encodings at one PC
+  minus one: a lower bound on the line versions; `rw_insts` is an upper
+  bound), `*_rw_cold` (cold misses on rewritten lines). `summary.md` has a
+  *Rewritten code* section when there are any. On a v1 trace every PC has
+  one version and the output is the same as before (every old column
+  identical on a 300M-line prefix of the 15G rubocop trace);
+  `--mnemonic-versions` takes the mnemonic as the encoding there, a lower
+  bound that misses JIT patching (new immediates and branch targets keep
+  the mnemonic). Checked against a hand-made trace with known rewrites.
 - **Branches:** distinct addresses of `b.cond`/`cbz`/`cbnz`/`tbz`/`tbnz`
   (cond), `b`, `bl`, `blr*`, `br*`, `ret*`, `eret*`; *taken* when the next
   instruction is not at PC + 4. A transfer into the kernel's EL1 vector
@@ -273,8 +332,11 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   (the tracer names a task only when it switches).
 - The atomic core's schedule differs from O3's, so event positions differ
   ([[window-placement]]); stream statistics should not.
-- JIT code can reuse an address for different code: footprint counts
-  addresses touched per address space, not distinct code.
+- JIT code can reuse an address for different code: on v1 traces the
+  footprint counts addresses touched per address space, not distinct
+  code; v2 traces count each encoding at a PC ([[#Encodings and code
+  versions]]). A rewrite is seen only when the new code runs at a PC that
+  already ran in the same address space.
 - `report.html` has fixed axes (code 4 KiB–64 MiB, repeat distance up to
   2^25 instructions and 2^22 lines, widened to twice the largest cache);
   values beyond them sit at the edge. The BTB line (12K entries,

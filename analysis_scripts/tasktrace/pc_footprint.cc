@@ -12,9 +12,28 @@
 // instructions, cut either by the thread's own instruction count or by
 // the run's (global windows).
 //
-// usage: zstd -dc pc_trace.zst | pc_footprint [--bins=N1,N2,...] SWITCHES
-//            EXECS OUTDIR VEC0 VEC1 CAP1 [CAP2 ...]
+//
+// Code versions. A PC can hold different instructions over time (a JIT
+// writing code, the kernel patching itself). With encodings in the trace
+// (pc_trace v2), each address space (a process instance's user code, or
+// the kernel) keeps the encodings seen at each PC, in first-seen order: the
+// first is the PC itself, every later one a new instruction with its own
+// key. A line's version goes up when one of its PCs shows an encoding it
+// never had, at most once per visit (until the stream leaves the line: one
+// visit reads one snapshot of the line); each line version is a line of
+// its own. So distinct
+// instructions, lines and branches, the LRU stacks, repeat distances and
+// bins all count rewritten code as new code; pages (TLB reach) and the
+// kernel code counted on behalf of a group do not. The rw_ columns give the
+// part that comes from versions after the first.
+//
+// usage: zstd -dc pc_trace.zst | pc_footprint [--bins=N1,N2,...]
+//            [--mnemonic-versions] SWITCHES EXECS OUTDIR VEC0 VEC1 CAP1
+//            [CAP2 ...]
 //   --bins    bin sizes in instructions for thread_bins.tsv (default none)
+//   --mnemonic-versions  without encodings in the trace (v1), take the
+//             mnemonic as the encoding: a lower bound on rewrites (only
+//             those that change the mnemonic)
 //   SWITCHES  global instruction count of each switch event, one per line,
 //             in trace order (the markers after the first one)
 //   EXECS     "insts tgid name" per exec event, by instruction count
@@ -261,20 +280,25 @@ classify(const char *m)
 struct Stats
 {
     uint64_t insts = 0, accesses = 0, privCold = 0, sharedCold = 0;
+    // Of the cold misses, those on a rewritten line (a version after the
+    // first): the refetch after the code changed.
+    uint64_t privRwCold = 0, sharedRwCold = 0;
     std::vector<uint64_t> privHits, sharedHits;
     uint64_t privHist[kHistBuckets] = {}, sharedHist[kHistBuckets] = {};
     StackDistance *priv = nullptr;   // this group's or instance's code alone
 
     explicit Stats(size_t nc = 0) : privHits(nc), sharedHits(nc) {}
 
-    // Records one access: dp from the private stack, ds from the shared.
+    // Records one access: dp from the private stack, ds from the shared;
+    // rw: the line is a rewritten version.
     void
-    record(int64_t dp, int64_t ds, const std::vector<int64_t> &caps)
+    record(int64_t dp, int64_t ds, const std::vector<int64_t> &caps,
+           bool rw)
     {
         accesses++;
-        if (dp < 0) privCold++;
+        if (dp < 0) privCold++, privRwCold += rw;
         else privHist[bucket(dp)]++;
-        if (ds < 0) sharedCold++;
+        if (ds < 0) sharedCold++, sharedRwCold += rw;
         else sharedHist[bucket(ds)]++;
         for (size_t c = 0; c < caps.size(); c++) {
             if (dp >= 0 && dp < caps[c]) privHits[c]++;
@@ -381,10 +405,11 @@ struct Thread
     {}
 
     // Counts one committed instruction in every bin; own and run are the
-    // thread's and the run's instruction counts before it.
+    // thread's and the run's instruction counts before it; pc and line are
+    // the thread's keys of the instruction and its line (versioned).
     void
     binStep(const std::vector<uint64_t> &sizes, uint64_t own, uint64_t run,
-            uint64_t pc, bool kernel, Branch br)
+            uint64_t pc, uint64_t line, bool kernel, Branch br)
     {
         if (sizes.empty())
             return;
@@ -393,7 +418,6 @@ struct Thread
         uint32_t pi = *binPc.get(pc, binPc.size(), &ins);
         if (ins)
             pcMark.resize(pcMark.size() + 2 * nb, 0);
-        uint64_t line = pc >> 6;
         bool newLine = line != lastLine;
         uint32_t li = 0;
         if (newLine) {
@@ -457,9 +481,48 @@ struct Exec
 
 // Distinct instructions, lines and pages of one address view, with each
 // instruction's group (bits 0-15), branch type (16-23) and taken flag (24).
+// insts holds the first version of each PC, keyed by (space, address);
+// rwInsts the later versions, keyed by (space, version serial). lines holds
+// both: a later line version's key has bit 47 set (a real line number has
+// at most 42 bits), with its serial below.
 struct Footprint
 {
-    FlatMap insts{1 << 24}, lines{1 << 20}, pages{1 << 16};
+    FlatMap insts{1 << 24}, rwInsts{1 << 10}, lines{1 << 20}, pages{1 << 16};
+};
+
+constexpr uint64_t kRwLineBit = 1ull << 47;
+
+// The encodings seen at one PC of one address space: a list in first-seen
+// order (the head is the first). serial: 0 for the first, else a run-wide
+// serial number that keys the version. cur (head only): the list node
+// executed last.
+struct CodeVersion
+{
+    uint32_t enc, next, serial, cur;
+};
+
+// One line of one address space: its current version's serial (0: the
+// first) and the most encodings any of its PCs has had.
+struct LineVersion
+{
+    uint32_t serial, maxPcVersions;
+};
+
+uint32_t
+fnv1a(const char *s)
+{
+    uint32_t h = 2166136261u;
+    for (; *s; s++)
+        h = (h ^ uint8_t(*s)) * 16777619u;
+    return h;
+}
+
+// Rewrites in one address space (an instance, or the kernel).
+struct RwCount
+{
+    uint64_t pcs = 0;      // PCs that had more than one encoding
+    uint64_t flips = 0;    // a PC going back to an encoding it had before
+    uint64_t linesLb = 0;  // sum over lines of (most encodings at a PC - 1)
 };
 
 void
@@ -470,6 +533,7 @@ writeStatsHeader(FILE *o, const char *prefix,
             prefix, prefix, prefix, prefix);
     for (auto c : caps) fprintf(o, "\t%spriv_hits_%" PRId64, prefix, c);
     for (auto c : caps) fprintf(o, "\t%sshared_hits_%" PRId64, prefix, c);
+    fprintf(o, "\t%spriv_rw_cold\t%sshared_rw_cold", prefix, prefix);
 }
 
 void
@@ -479,36 +543,44 @@ writeStats(FILE *o, const Stats &s)
             s.accesses, s.privCold, s.sharedCold);
     for (auto h : s.privHits) fprintf(o, "\t%" PRIu64, h);
     for (auto h : s.sharedHits) fprintf(o, "\t%" PRIu64, h);
+    fprintf(o, "\t%" PRIu64 "\t%" PRIu64, s.privRwCold, s.sharedRwCold);
 }
 
 // Distinct counts and branches of one footprint, per space (the key's top
 // 16 bits) or per group (the value's low 16 bits).
 struct Distinct
 {
-    std::vector<uint64_t> insts, lines, pages;
+    std::vector<uint64_t> insts, lines, pages, rwInsts, rwLines, rwBr;
     std::vector<std::vector<uint64_t>> br, taken;
 
     Distinct(const Footprint &fp, size_t n, bool bySpace)
-        : insts(n), lines(n), pages(n),
+        : insts(n), lines(n), pages(n), rwInsts(n), rwLines(n), rwBr(n),
           br(n, std::vector<uint64_t>(NumBranch)), taken(br)
     {
         auto id = [&](uint64_t k, uint32_t v) -> size_t {
             size_t i = bySpace ? k >> 48 : v & 0xffff;
             return i < n ? i : n;   // n: not counted (the kernel space)
         };
-        fp.insts.each([&](uint64_t k, uint32_t v) {
+        auto inst = [&](uint64_t k, uint32_t v, bool rw) {
             size_t i = id(k, v);
             if (i == n) return;
             insts[i]++;
+            rwInsts[i] += rw;
             Branch b = Branch((v >> 16) & 0xff);
             if (b != NotBranch) {
                 br[i][b]++;
+                rwBr[i] += rw;
                 if (v >> 24 & 1) taken[i][b]++;
             }
-        });
+        };
+        fp.insts.each([&](uint64_t k, uint32_t v) { inst(k, v, false); });
+        fp.rwInsts.each([&](uint64_t k, uint32_t v) { inst(k, v, true); });
         fp.lines.each([&](uint64_t k, uint32_t v) {
             size_t i = id(k, v);
-            if (i < n) lines[i]++;
+            if (i < n) {
+                lines[i]++;
+                rwLines[i] += (k & kRwLineBit) != 0;
+            }
         });
         fp.pages.each([&](uint64_t k, uint32_t v) {
             size_t i = id(k, v);
@@ -523,6 +595,8 @@ struct Distinct
                 pages[i]);
         for (int b = 1; b < NumBranch; b++)
             fprintf(o, "\t%" PRIu64 "\t%" PRIu64, br[i][b], taken[i][b]);
+        fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, rwInsts[i],
+                rwLines[i], rwBr[i]);
     }
 
     static void
@@ -533,6 +607,8 @@ struct Distinct
         for (int b = 1; b < NumBranch; b++)
             fprintf(o, "\t%sbr_%s\t%sbr_%s_taken", prefix, kBranchNames[b],
                     prefix, kBranchNames[b]);
+        fprintf(o, "\t%srw_insts\t%srw_lines\t%srw_br", prefix, prefix,
+                prefix);
     }
 };
 
@@ -553,15 +629,24 @@ int
 main(int argc, char **argv)
 {
     std::vector<uint64_t> binSizes;
-    if (argc > 1 && startsWith(argv[1], "--bins=")) {
-        for (char *s = strtok(argv[1] + 7, ","); s; s = strtok(nullptr, ","))
-            binSizes.push_back(strtoull(s, nullptr, 10));
+    bool proxy = false;   // --mnemonic-versions
+    while (argc > 1 && startsWith(argv[1], "--")) {
+        if (startsWith(argv[1], "--bins=")) {
+            for (char *s = strtok(argv[1] + 7, ","); s;
+                 s = strtok(nullptr, ","))
+                binSizes.push_back(strtoull(s, nullptr, 10));
+        } else if (!strcmp(argv[1], "--mnemonic-versions")) {
+            proxy = true;
+        } else {
+            fprintf(stderr, "unknown option %s\n", argv[1]);
+            return 2;
+        }
         argv++;
         argc--;
     }
     if (argc < 7) {
-        fprintf(stderr, "usage: %s [--bins=N,...] SWITCHES EXECS OUTDIR VEC0 "
-                "VEC1 CAP...\n", argv[0]);
+        fprintf(stderr, "usage: %s [--bins=N,...] [--mnemonic-versions] "
+                "SWITCHES EXECS OUTDIR VEC0 VEC1 CAP...\n", argv[0]);
         return 2;
     }
     std::vector<uint64_t> switches;
@@ -670,9 +755,27 @@ main(int argc, char **argv)
     bool haveMarker = false;
 
     uint64_t prevPc = 0, prevKey = kEmpty, prevNameKey = kEmpty;
+    uint64_t prevThPc = kEmpty;
+    FlatMap *prevInstMap = &fpInst.insts, *prevNameMap = &fpName.insts;
     uint64_t prevLine = kEmpty;
     Branch prevBranch = NotBranch;
     uint64_t total = 0;
+
+    // Code versions (see the top of the file). versionsOn once the trace
+    // shows an encoding (or with --mnemonic-versions). decodeEnc rebuilds
+    // each instruction's encoding (pc_trace.py's decode key); pcVersion
+    // maps (space, address) to the head of its CodeVersion list;
+    // lineVersion holds the lines that were ever rewritten.
+    bool versionsOn = proxy;
+    std::vector<CodeVersion> versions(1);   // index 0: none
+    std::vector<LineVersion> lineVersions(1);
+    FlatMap decodeEnc(1 << 16), pcVersion(1 << 16), lineVersion(1 << 10);
+    std::vector<RwCount> rw(1);   // per instance; 0: the kernel
+    uint32_t nextSerial = 0;
+    uint64_t missingEnc = 0, encFields = 0;
+    uint64_t prevRawLine = kEmpty;
+    uint32_t curLineSerial = 0;
+    bool bumpedThisVisit = false;
 
     static char buf[1 << 16];
     while (fgets(buf, sizeof buf, stdin)) {
@@ -753,6 +856,15 @@ main(int argc, char **argv)
             }
         }
 
+        // "[pc ]mnemonic[\tencoding]"
+        bool hasEnc = false;
+        uint32_t encField = 0;
+        if (char *tab = strchr(buf, '\t')) {
+            *tab = '\0';
+            encField = strtoul(tab + 1, nullptr, 16);
+            hasEnc = versionsOn = true;
+            encFields++;
+        }
         char *sp = strchr(buf, ' ');
         uint64_t pc;
         const char *mnem;
@@ -768,12 +880,12 @@ main(int argc, char **argv)
             bool exception = (pc >= vec[0] && pc < vec[0] + 0x800) ||
                              (pc >= vec[1] && pc < vec[1] + 0x800);
             if (!exception) {
-                if (uint32_t *v = fpInst.insts.find(prevKey)) *v |= 1u << 24;
-                if (uint32_t *v = fpName.insts.find(prevNameKey))
+                if (uint32_t *v = prevInstMap->find(prevKey)) *v |= 1u << 24;
+                if (uint32_t *v = prevNameMap->find(prevNameKey))
                     *v |= 1u << 24;
-                if (uint32_t *v = threads[prevThread]->pcs.find(prevPc))
+                if (uint32_t *v = threads[prevThread]->pcs.find(prevThPc))
                     *v |= 1u << 8;
-                threads[prevThread]->binTaken(prevPc);
+                threads[prevThread]->binTaken(prevThPc);
             }
         }
 
@@ -783,24 +895,130 @@ main(int argc, char **argv)
         uint64_t spInst = kernel ? 0xffffull : curInst;
         uint64_t spName = kernel ? 0xffffull : curGroup;
         uint64_t key = (spInst << 48) | va;
-        uint64_t nameKey = (spName << 48) | va;
-        uint64_t line = (spInst << 48) | (va >> 6);
-        uint64_t nameLine = (spName << 48) | (va >> 6);
+        uint64_t rawLine = (spInst << 48) | (va >> 6);
+
+        // ---- code version of this instruction and its line --------------
+        uint32_t pcSerial = 0;
+        bool rewrote = false;
+        if (versionsOn) {
+            if (rawLine != prevRawLine)
+                bumpedThisVisit = false;
+            const size_t space = kernel ? 0 : curInst;
+            if (rw.size() <= space)
+                rw.resize(instances.size());
+            uint32_t enc = 0;
+            bool known = true;
+            if (proxy && !hasEnc) {
+                enc = fnv1a(mnem);
+            } else {
+                // pc_trace.py's decode key: the PC for kernel code; for
+                // user code the PC and the marker's tgid, -1 before the
+                // first switch (between the first and second marker).
+                int64_t dt = markers >= 2 ? curTgid : -1;
+                if (!kernel && uint64_t(dt + 2) >= 0xffff) {
+                    fprintf(stderr, "tgid %" PRId64 " too large for the "
+                            "decode key\n", dt);
+                    return 1;
+                }
+                uint64_t dk = kernel ? pc : (uint64_t(dt + 2) << 48) | va;
+                bool ins;
+                if (hasEnc) {
+                    enc = *decodeEnc.get(dk, encField, &ins) = encField;
+                } else if (uint32_t *e = decodeEnc.find(dk)) {
+                    enc = *e;
+                } else {
+                    missingEnc++;
+                    known = false;
+                }
+            }
+            if (known) {
+                bool ins;
+                uint32_t *h = pcVersion.get(key, 0, &ins);
+                if (ins) {
+                    *h = versions.size();
+                    versions.push_back({enc, 0, 0, *h});
+                } else {
+                    const uint32_t head = *h;
+                    uint32_t i = head, last = 0, n = 0;
+                    while (i && versions[i].enc != enc) {
+                        last = i;
+                        i = versions[i].next;
+                        n++;
+                    }
+                    if (!i) {   // an encoding this PC never had
+                        i = versions.size();
+                        versions.push_back({enc, 0, ++nextSerial, 0});
+                        versions[last].next = i;
+                        const uint32_t count = n + 1;   // encodings now
+                        if (count == 2)
+                            rw[space].pcs++;
+                        uint32_t *l = lineVersion.get(rawLine,
+                                                      lineVersions.size(),
+                                                      &ins);
+                        if (ins)
+                            lineVersions.push_back({0, 1});
+                        LineVersion &lv = lineVersions[*l];
+                        lv.maxPcVersions = std::max(lv.maxPcVersions, count);
+                        // One visit to a line (until the stream leaves it)
+                        // reads one snapshot of it: new encodings found in
+                        // the same visit belong to the same new version.
+                        if (!bumpedThisVisit) {
+                            lv.serial = ++nextSerial;
+                            bumpedThisVisit = true;
+                            rewrote = true;
+                        }
+                    } else if (versions[head].cur != i) {
+                        rw[space].flips++;
+                    }
+                    versions[head].cur = i;
+                    pcSerial = versions[i].serial;
+                }
+            }
+            if (rawLine != prevRawLine || rewrote) {
+                uint32_t *l = lineVersion.find(rawLine);
+                curLineSerial = l ? lineVersions[*l].serial : 0;
+                prevRawLine = rawLine;
+            }
+        }
+        const uint32_t lineSerial = versionsOn ? curLineSerial : 0;
+        const bool rwLine = lineSerial != 0;
+        // Keys of this instruction and line: the address for a first
+        // version, the serial for a later one.
+        FlatMap &instMap = pcSerial ? fpInst.rwInsts : fpInst.insts;
+        FlatMap &nameMap = pcSerial ? fpName.rwInsts : fpName.insts;
+        if (pcSerial)
+            key = (spInst << 48) | pcSerial;
+        uint64_t nameKey = (spName << 48) | (pcSerial ? pcSerial : va);
+        uint64_t line = rwLine ? (spInst << 48) | kRwLineBit | lineSerial
+                               : rawLine;
+        uint64_t nameLine = (spName << 48) |
+            (rwLine ? kRwLineBit | lineSerial : va >> 6);
+        // The thread's keys: raw PC and PC >> 6 for a first version; later
+        // versions apart from every real address (user: top bits 0x4000 or
+        // bit 50; kernel: 0xc000 or bit 57 alone, so bit 63 and bit 57
+        // still tell kernel code).
+        uint64_t thPc = pcSerial ? ((kernel ? 0xc000ull : 0x4000ull) << 48) |
+                                       pcSerial
+                                 : pc;
+        uint64_t thLine = rwLine ? (kernel ? 1ull << 57 : 1ull << 50) |
+                                       lineSerial
+                                 : pc >> 6;
+
         Branch br = classify(mnem);
         uint32_t init = gid | (uint32_t(br) << 16);
         bool ins;
-        fpInst.insts.get(key, init, &ins);
-        fpName.insts.get(nameKey, init, &ins);
+        instMap.get(key, init, &ins);
+        nameMap.get(nameKey, init, &ins);
         Group &grp = groups[gid];
         Instance &inst = instances[kernel ? 0 : curInst];
         grp.byInstance.insts++;
         grp.byName.insts++;
         if (!kernel) inst.stats.insts++;
         Thread &th = *threads[curThread];
-        th.binStep(binSizes, th.lines.insts, total, pc, kernel, br);
+        th.binStep(binSizes, th.lines.insts, total, thPc, thLine, kernel, br);
         th.lines.insts++;
-        th.pcs.get(pc, br, &ins);
-        int64_t dpc = th.pcStack.access(pc);
+        th.pcs.get(thPc, br, &ins);
+        int64_t dpc = th.pcStack.access(thPc);
         if (dpc < 0) th.pcCold++;
         else th.pcHist[Stats::bucket(dpc)]++;
         if (kernel) {
@@ -818,13 +1036,15 @@ main(int argc, char **argv)
                 kLinesBehalf.get((uint64_t(behalf) << 48) | (va >> 6), 0,
                                  &ins);
             int64_t ds = sharedInst.access(line);
-            grp.byInstance.record(grp.byInstance.privAccess(line), ds, caps);
+            grp.byInstance.record(grp.byInstance.privAccess(line), ds, caps,
+                                  rwLine);
             if (!kernel)
-                inst.stats.record(inst.stats.privAccess(line), ds, caps);
-            th.uniqLines.get(pc >> 6, 0, &ins);
-            th.lines.record(th.lines.privAccess(pc >> 6), ds, caps);
+                inst.stats.record(inst.stats.privAccess(line), ds, caps,
+                                  rwLine);
+            th.uniqLines.get(thLine, 0, &ins);
+            th.lines.record(th.lines.privAccess(thLine), ds, caps, rwLine);
             grp.byName.record(grp.byName.privAccess(nameLine),
-                              sharedName.access(nameLine), caps);
+                              sharedName.access(nameLine), caps, rwLine);
             if (kernel) {
                 Group &b = groups[behalf];
                 b.kAccesses++;
@@ -838,6 +1058,9 @@ main(int argc, char **argv)
         prevThread = curThread;
         prevKey = key;
         prevNameKey = nameKey;
+        prevThPc = thPc;
+        prevInstMap = &instMap;
+        prevNameMap = &nameMap;
         prevBranch = br;
         total++;
         if (strcmp(mnem, "nop") != 0)
@@ -857,6 +1080,23 @@ main(int argc, char **argv)
     std::vector<uint64_t> instancesOf(ng);
     for (size_t i = 1; i < ni; i++)
         instancesOf[instances[i].group]++;
+    // Rewrites per instance (0: the kernel) and per group.
+    rw.resize(ni);
+    lineVersion.each([&](uint64_t k, uint32_t v) {
+        uint64_t s = k >> 48;
+        rw[s == 0xffff ? 0 : s].linesLb += lineVersions[v].maxPcVersions - 1;
+    });
+    std::vector<RwCount> rwGroup(ng);
+    for (size_t i = 0; i < ni; i++) {
+        RwCount &d = rwGroup[i ? instances[i].group : kernelGroup];
+        d.pcs += rw[i].pcs;
+        d.flips += rw[i].flips;
+        d.linesLb += rw[i].linesLb;
+    }
+    auto writeRw = [](FILE *f, const RwCount &r) {
+        fprintf(f, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, r.pcs, r.flips,
+                r.linesLb);
+    };
 
     // groups.tsv: per name; plain columns in the per-instance view, m_
     // columns in the per-name view.
@@ -868,7 +1108,8 @@ main(int argc, char **argv)
     Distinct::header(o, "m_");
     fprintf(o, "\tk_insts\tk_accesses\tk_shared_cold");
     for (auto c : caps) fprintf(o, "\tk_shared_hits_%" PRId64, c);
-    fprintf(o, "\tk_uniq_insts\tk_uniq_lines\n");
+    fprintf(o, "\tk_uniq_insts\tk_uniq_lines\trw_pcs\trw_flips\t"
+            "rw_lines_lb\n");
     for (size_t i = 0; i < ng; i++) {
         const Group &gr = groups[i];
         fprintf(o, "%s\t%d\t%" PRIu64, gr.name.c_str(), gr.kernel,
@@ -880,7 +1121,9 @@ main(int argc, char **argv)
         fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, gr.kInsts,
                 gr.kAccesses, gr.kSharedCold);
         for (auto h : gr.kSharedHits) fprintf(o, "\t%" PRIu64, h);
-        fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\n", kbInsts[i], kbLines[i]);
+        fprintf(o, "\t%" PRIu64 "\t%" PRIu64, kbInsts[i], kbLines[i]);
+        writeRw(o, rwGroup[i]);
+        fprintf(o, "\n");
     }
     fclose(o);
 
@@ -889,14 +1132,16 @@ main(int argc, char **argv)
     fprintf(o, "instance\ttgid\tgeneration\tgroup");
     writeStatsHeader(o, "", caps);
     Distinct::header(o, "");
-    fprintf(o, "\tk_insts\n");
+    fprintf(o, "\tk_insts\trw_pcs\trw_flips\trw_lines_lb\n");
     for (size_t i = 1; i < ni; i++) {
         const Instance &in = instances[i];
         fprintf(o, "%zu\t%" PRId64 "\t%d\t%s", i, in.tgid, in.gen,
                 groups[in.group].name.c_str());
         writeStats(o, in.stats);
         dInst.write(o, i);
-        fprintf(o, "\t%" PRIu64 "\n", in.kInsts);
+        fprintf(o, "\t%" PRIu64, in.kInsts);
+        writeRw(o, rw[i]);
+        fprintf(o, "\n");
     }
     fclose(o);
 
@@ -911,24 +1156,35 @@ main(int argc, char **argv)
     for (int b = 1; b < NumBranch; b++)
         fprintf(o, "\tbr_%s\tbr_%s_taken\tk_br_%s", kBranchNames[b],
                 kBranchNames[b], kBranchNames[b]);
-    fprintf(o, "\n");
+    fprintf(o, "\tu_rw_insts\tk_rw_insts\tu_rw_lines\tk_rw_lines\trw_br\n");
     for (size_t i = 0; i < threads.size(); i++) {
         const Thread &t = *threads[i];
         if (!t.lines.insts)
             continue;
         uint64_t ui[2] = {}, ul[2] = {}, br[NumBranch] = {},
                  tk[NumBranch] = {}, kbr[NumBranch] = {};
+        uint64_t rwi[2] = {}, rwl[2] = {}, rwb = 0;
         t.pcs.each([&](uint64_t pc, uint32_t v) {
             int k = pc >> 63;
+            uint64_t top = pc >> 48;
+            bool rwPc = top == 0x4000 || top == 0xc000;   // a later version
             ui[k]++;
+            rwi[k] += rwPc;
             Branch b = Branch(v & 0xff);
             if (b != NotBranch) {
                 br[b]++;
+                rwb += rwPc;
                 if (v >> 8 & 1) tk[b]++;
                 if (k) kbr[b]++;
             }
         });
-        t.uniqLines.each([&](uint64_t l, uint32_t) { ul[l >> 57]++; });
+        t.uniqLines.each([&](uint64_t l, uint32_t) {
+            int k = l >> 57;
+            ul[k]++;
+            // A later version: user bit 50; kernel bit 57 with bits 42-56
+            // clear (a real kernel line has them all set).
+            rwl[k] += k ? ((l >> 42) & 0x7fff) == 0 : (l >> 50) & 1;
+        });
         fprintf(o, "%zu\t%" PRId64 "\t%" PRId64 "\t%u\t%s\t%s\t%d\t%"
                 PRIu64, i, t.tgid, t.pid, t.instance,
                 groups[t.group].name.c_str(), t.comm.c_str(), t.kthread,
@@ -939,7 +1195,8 @@ main(int argc, char **argv)
         for (int b = 1; b < NumBranch; b++)
             fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, br[b], tk[b],
                     kbr[b]);
-        fprintf(o, "\n");
+        fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64
+                "\t%" PRIu64 "\n", rwi[0], rwi[1], rwl[0], rwl[1], rwb);
     }
     fclose(o);
 
@@ -1022,5 +1279,16 @@ main(int argc, char **argv)
             countNops == 1 ? gNops : g,
             countNops < 0 ? "undecided" : countNops ? "counted" : "not counted",
             countMismatches, maxMismatch);
+    uint64_t rwPcs = 0, rwFlips = 0;
+    for (const RwCount &r : rw) rwPcs += r.pcs, rwFlips += r.flips;
+    fprintf(stderr, "code versions: %s; %" PRIu64 " encodings in the trace, "
+            "%zu PC versions (%u serials), %" PRIu64 " PCs with several "
+            "encodings, %zu lines rewritten, %" PRIu64 " flips back; %"
+            PRIu64 " instructions without a known encoding\n",
+            !versionsOn ? "off (no encodings in the trace)"
+                        : proxy && !encFields ? "mnemonics as encodings"
+                                              : "encodings",
+            encFields, versions.size() - 1, nextSerial, rwPcs,
+            lineVersions.size() - 1, rwFlips, missingEnc);
     return 0;
 }

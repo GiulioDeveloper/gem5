@@ -22,7 +22,9 @@ pc_trace_start() {
         --level "${PC_TRACE_LEVEL:-9}" \
         2> "$PC_TRACE_DIR/pc_trace.log" &
     PC_TRACE_PID=$!
-    PC_TRACE_G5=(--debug-flags=ExecEnable,ExecUser,ExecKernel,ExecMacro
+    # ExecEncoding: each instruction's encoding, which the reducer keeps
+    # where it is new at a PC (pc_trace v2), so rewritten code shows.
+    PC_TRACE_G5=(--debug-flags=ExecEnable,ExecUser,ExecKernel,ExecMacro,ExecEncoding
                  --debug-file=exec.fifo)
 }
 

@@ -49,6 +49,8 @@ DebugFlag('ExecEnable',
         'Filter: Enable exec tracing (no tracing without this)')
 DebugFlag('ExecCPSeq', 'Format: Instruction sequence number')
 DebugFlag('ExecEffAddr', 'Format: Include effective address')
+DebugFlag('ExecEncoding',
+        'Format: Include the instruction encoding (raw bytes as a word)')
 DebugFlag('ExecFaulting', 'Trace faulting instructions')
 DebugFlag('ExecFetchSeq', 'Format: Fetch sequence number')
 DebugFlag('ExecOpClass', 'Format: Include operand class')
@@ -71,7 +73,7 @@ DebugFlag('Quiesce')
 DebugFlag('Mwait')
 
 CompoundFlag('ExecAll', [ 'ExecEnable', 'ExecCPSeq', 'ExecEffAddr',
-    'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',
+    'ExecEncoding', 'ExecFaulting', 'ExecFetchSeq', 'ExecOpClass', 'ExecRegDelta',
     'ExecResult', 'ExecSymbol', 'ExecThread',
     'ExecMicro', 'ExecMacro', 'ExecUser', 'ExecKernel',
     'ExecAsid', 'ExecFlags' ])

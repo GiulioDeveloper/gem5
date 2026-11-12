@@ -775,3 +775,23 @@ cache path ignores byte-enables (gap 1) and skips queued masked writes
 
 - 81/81 runs done. Geomean IPC vs base: pl1d 1.432, pl1d+pl1i 1.588, pl1d+ptlb 1.488
   (pl1i 1.096, ptlb 1.043). Page: [[2026-11-06-perfect-l1d]].
+
+## [2026-11-12] experiment | JIT code versions in the PC trace and footprint pass
+
+- New [[2026-11-12-jit-code-versions]]. gem5 debug flag `ExecEncoding`
+  (`src/cpu/exetrace.cc`, `src/cpu/SConscript`), on in the PC-trace
+  launchers (`pc-trace-lib.sh`); `pc_trace.py` writes format v2
+  (encodings where new at a PC, decode key by PC and tgid), `verify`
+  checks encodings; `pc_footprint.cc`/`.py` count each encoding at a PC as
+  a new instruction and its line (once per visit) as a new line, with
+  `rw_` columns and a *Rewritten code* summary section;
+  `--mnemonic-versions` for v1 traces.
+- Decided with the user: one encoding map per address space keyed by PC,
+  the encodings as the value; a PC with two instructions counts twice.
+- Found: no per-line cache maintenance in the guest's JIT (Bun's cached
+  `CTR_EL0` = `0xb444c004`, IDC = DIC = 1, not gem5's value; origin open);
+  on a 1G rubocop window only 38 PCs rewritten against 236 flush calls,
+  footprint and branch counts change by under 0.01%.
+- Updated [[pc-trace]] (format, flags, new section *Encodings and code
+  versions*, footprint and limits), [[2026-10-26-rubocop-instruction-footprint]]
+  (open item), [[questions]], [[index]].
