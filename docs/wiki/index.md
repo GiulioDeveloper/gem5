@@ -58,9 +58,10 @@ Human-facing outputs: [[publish]].
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
 - [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep running (20261104-1115)
 - [[2026-11-03-top-down-validation]]: top-down accounting (PR #2392) merged and fixed; 3 SPEC + 2 agentic 30M windows; front-end bound ~50% for both, much of it the fetch model
-- [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, 1B sweep running (20261104-1115)
-- [[2026-11-12-jit-code-versions]]: a PC can hold several instructions (JIT); the PC trace (v2) keeps encodings and the footprint pass counts each encoding at a PC as new code; guest JIT runs no per-line cache maintenance (cached `CTR_EL0` IDC = DIC = 1); 1G rubocop: 38 PCs rewritten, footprint and branches change <0.01%
+- [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, 1B sweeps done; width 8 with a 1-cycle perfect or real L1I (`--l1i-cycles`), FDP on and off, agentic and SPEC
 - [[2026-11-06-perfect-l1d]]: `--perfect-l1d` built and validated: LSQ serves plain loads/stores and atomics functionally at the 4-cycle hit latency; agentic sweep IPC +43% (with perfect L1I +59%, with perfect TLB +49%); PerfectCache and hacked-cache alternatives compared
+- [[2026-11-12-jit-code-versions]]: a PC can hold several instructions (JIT); the PC trace (v2) keeps encodings and the footprint pass counts each encoding at a PC as new code; guest JIT runs no per-line cache maintenance (cached `CTR_EL0` IDC = DIC = 1); 1G rubocop: 38 PCs rewritten, footprint and branches change <0.01%
+- [[2026-11-12-miss-count-vs-miss-cost]]: why FDP off (+138% L1I MPKI) costs only ~3% and why agentic gains +43% from a perfect L1D with SPEC-like MPKI: miss latency, L2 miss rate and overlap, not counts; SPEC is bimodal
 - [[2026-11-05-front-end-width]]: gem5's 6-wide fetch/decode caps micro-ops into 8-wide rename; `--front-end-width 8` vs 6, agentic 1B + SPEC 200M sweeps launching
 
 ## Findings
@@ -122,6 +123,11 @@ Human-facing outputs: [[publish]].
 - [[memory-renaming]]: Stage 2, MRN up to the value-file rendezvous (1.0092), and why it closed
 - [[value-prediction]]: Stage 3, the VP framework, LVP, VTAGE, E-VTAGE (1.0238), EVES
 - [[garfield-lessons]]: what transfers: measuring, trusting the simulator, O3 facts, FS restores
+
+## Presentations
+
+- [[general-guidance]]: how we make decks: neutral titles, observations in the body, short decks, the figure scripts in `analysis_scripts/presentations/`
+- [[2026-11-10-cache-hierarchy-headroom]]: perfect-cache limit studies, 3 slides (IPC comparison of perfect L1I/L1D/L2/TLB)
 
 ## Sources outside the wiki
 

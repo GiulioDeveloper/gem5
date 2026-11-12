@@ -21,6 +21,10 @@ date.
 | tracer-design | collaborators (why and how it works, validation, findings so far) | [[task-tracer]], [[trace-format]], [[trace-analysis]], [[checkpoints]], [[validation-checks]], [[instruction-counts]], [[context-switch-classification]], [[gem5-tracing-under-kaslr]], [[functional-translation-perturbs]], [[replay-polling-in-measurement]], [[switch-cost-is-around-the-switch]], [[opencode-harness]] | https://claude.ai/artifact/Q3B6N7NjRqWv7ykGraqbgT | 2026-11-02 | committed together with this row |
 | long-runs-guide | users running and analysing multi-billion-instruction runs (launch, compaction, stall split, checks, comparisons, per-process views) | [[long-runs]], [[pc-trace]], [[stats-blocks]], [[run-and-analysis-scripts]], [[guest-trng-hvc-stall]], [[comparing-configurations]], [[aggregating-metrics]], [[2026-10-23-rubocop-15g-cache-btb-tlb]], [[run-output-compression]] | https://claude.ai/artifact/Q59pV5tfkzizJsRkw87vGH | 2026-11-12 | 68192bbe68 |
 
+Slide decks are not in this table: the user edits them in place, so they
+are not rebuilt. They are registered in `presentations/`, one page each:
+[[2026-11-10-cache-hierarchy-headroom]].
+
 All pages are private artifacts: share them from the page's Share menu.
 Rebuild by editing `docs/wiki/_publish/<name>.html` from the current source
 pages and publishing the same file path, which keeps the URL.

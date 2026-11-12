@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-05
+updated: 2026-11-09
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -203,14 +203,26 @@ whose context they run in.
 sweep_compare.py A B [C ...] [--labels ...] [-o OUT] [--pdf]
 ```
 
-Pairs runs by suite and checkpoint (A is the baseline) and compares 2 to 8
-sweeps the same way (2026-11-05: two sweeps no longer have a page of their
+Pairs runs by suite and checkpoint (A is the baseline) and compares 2 to 26
+sweeps, lettered A to Z, the same way (2026-11-05: two sweeps no longer have a page of their
 own). Writes `compare.{html,csv,view.json}`, in `B/compare-<A>/` for two
 sweeps and `A/compare-multi/` for more (`-o` overrides). Labels come from
 `--labels`, or `--label-a`/`--label-b` for two, else each sweep's `extra`.
 Outputs written before 2026-11-05 are named `compare_multi*` (three or more
 sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
 `_diff`, `_rel`).
+
+**What is shown** (2026-11-09; before, at most 8 sweeps, all always shown):
+- **The legend is the sweep picker.** Click a sweep to show or hide it in
+  every table and chart, the aggregate table and top-down bars included;
+  *all* and *only A* reset it. A stays, since every change is against it.
+  The choice is remembered per comparison (by label).
+- **SPEC: Shown / Hidden** drops the SPEC runs from every view (offered
+  only when the comparison has SPEC runs).
+- **Colours:** 16 categorical slots (`--s0`…`--s15`), cycling beyond that;
+  a sweep keeps its colour whatever is hidden. Neighbouring slots can look
+  alike, so the letters under every bar and violin are what identify a
+  sweep. The `--pdf` violins use the same 16 colours and show every sweep.
 
 **The page leads with the aggregate over checkpoints**, per suite:
 - **Top-down** ([[top-down-accounting]]): one stacked bar per sweep and
@@ -244,7 +256,7 @@ sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
   checkpoint. A metric gets a column chart: every checkpoint on the x axis,
   a vertical bar per sweep (named in a legend above the chart), as window
   values, ratio to A or difference from A (these two leave A out), sorted
-  by name, A's value or B's change, plus a sortable table. The breakdown gets a card per
+  by name, A's value or the change of the first shown sweep after A, plus a sortable table. The breakdown gets a card per
   checkpoint with a stacked bar per sweep, at the level chosen above, on
   an axis shared by every card.
 - *Distributions over checkpoints*: violins of every Level 1 metric, SPEC
@@ -287,6 +299,7 @@ comparison: [[comparing-configurations]].
 | `runs/sweep/20261014-110051` | baseline (FDP on) | [[2026-10-14-baseline-sweep]] |
 | `runs/sweep/20261014-154546-nofdp` | `--disable-fdp` | [[2026-10-14-fdp-off-sweep]] |
 | `runs/sweep/20261016-172546-{infbtb,inftlb,infbtb-inftlb}` | limit studies | [[2026-10-16-btb-tlb-limit-study]] |
-| `runs/sweep/20261104-1115-*` | 9 perfect L1I / L2 / TLB and FDP-off configs, 1B windows (running) | [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]] |
+| `runs/sweep/20261104-1115-*` | 9 perfect L1I / L2 / TLB and FDP-off configs, 1B windows | [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]] |
+| `runs/sweep/20261104-1115-base/compare-1B-all/` | every agentic 1B-window sweep (13: the 11-04 nine, `20261105-1143-fe8`, `20261106-2004-{pl1d,pl1d-pl1i,pl1d-ptlb}`) against the 11-04 base | [[2026-11-06-perfect-l1d]], [[2026-11-05-front-end-width]] |
 | `runs/sweep/20261019-compare-5way/` | five-way comparison | same |
 | `runs/sweep/20261020-skip100M/` | the five re-summarised skipping 100M | same |

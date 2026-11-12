@@ -1,7 +1,7 @@
 ---
 type: concept
 status: draft
-updated: 2026-11-05
+updated: 2026-11-09
 sources:
   - src/cpu/o3/tdm.cc
   - src/cpu/o3/rename.cc
@@ -72,6 +72,47 @@ Agentic code reads `TPIDR_EL0` (thread-local storage) and `CNTVCT_EL0`
 (timers) often; a real core likely does not drain for those, so serialize
 bound on agentic windows is probably overstated (not checked: which
 instructions dominate is open).
+
+### How memory bound is measured, and what it misses (2026-11-09)
+
+The code path: `InstructionQueue` calls `TopDownStats::countIssueCycle`
+every cycle (`inst_queue.cc`). Idle cycles replay the state saved at
+`noteIdle`. `countBackend` (`tdm.cc`) counts:
+- an execution stall when the ROB is not empty and ≤ 2 instructions issued;
+- a load stall when 0 issued and `LSQ::deepestOutstandingLoad() ≥ 0`;
+- a store stall when 0 issued, no load outstanding and the SQ is full.
+
+The depth is the largest `Request::getAccessDepth()` over every LQ entry
+with a request outstanding (in translation, in flight, or a writeback
+pending), not just the oldest load. `BaseCache::incMissCount` adds 1 for
+each cache that misses (`BaseCache::access`, before the MSHR lookup). So 0
+means an L1D hit or a translation in progress, 1 an L1D miss, and ≥ 2 an L2
+miss. Level 3 is not measured slot by slot: `memoryBound` is shared out in
+proportion to the stall cycles of each depth.
+
+Blind spots, from the code and jq-2598 in the 11-04 base sweep (per 1,000
+instructions):
+- **Cycles where 1 or 2 instructions issue go to core bound,** even with a
+  DRAM miss outstanding. This is the paper's definition (few micro-ops
+  executed count as core). jq-2598 has 299 execution-stall cycles per
+  1,000 instructions; only 75 are load or store stalls, so 224 go to core
+  bound. Under `--perfect-l1d`, core bound falls 63% (agentic mean,
+  [[2026-11-06-perfect-l1d]]), so much of it waits on memory. A split by
+  outstanding miss would not be a paper category.
+- **Secondary L1D misses stay at depth 1.** A load that merges into an
+  L1D MSHR is never sent to the L2, so it counts as L2 bound even when the
+  fill comes from DRAM. That is unless another load in the LQ has depth 2.
+  It happens when the primary miss is an L1D prefetch (`pfLate` 0.94 per
+  1,000 instructions), a store's ownership request, or a squashed load. On
+  jq-2598, 60% of demand L1D misses are MSHR hits (1.96 of 3.23). The
+  skew is from external memory toward L2, but small: L1-miss stall cycles
+  are 45.5, of which 38.5 are at depth ≥ 2.
+- **The depth rises only when the next cache sees the request.** A
+  DRAM-bound load is at depth 1 for its first L1D + crossbar cycles: about
+  15 of its ~333.
+- **Walks count as L1 bound.** A load waiting for a table walk is
+  outstanding at depth 0, even if the walk goes to DRAM; the walker's
+  requests are its own. Intel also files DTLB misses under L1 bound.
 
 ## Conventions to keep in mind
 

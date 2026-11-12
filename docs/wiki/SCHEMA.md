@@ -1,13 +1,13 @@
 ---
 type: meta
 status: current
-updated: 2026-10-21
+updated: 2026-11-10
 ---
 
 # Wiki schema
 
 How this knowledge base is laid out and maintained. It follows the LLM-wiki
-pattern ([[raw/llm-wiki]]): raw sources stay immutable, the LLM writes and
+pattern (`~/llm-wiki/llm-wiki.md`): raw sources stay immutable, the LLM writes and
 maintains the wiki, and this file is the contract between the two. The user
 and the LLM change this file together when a convention stops working.
 
@@ -15,7 +15,7 @@ and the LLM change this file together when a convention stops working.
 
 | folder | owner | editable | what it holds |
 |---|---|---|---|
-| `docs/raw/` | user | **never** (append new files only) | external sources: papers (`papers/`), snapshots of external docs (`external/`), the llm-wiki note |
+| `docs/raw/` | user | **never** (append new files only) | external sources: papers (`papers/`), snapshots of external docs (`external/`) |
 | `docs/legacy-log/` | frozen | **never** | the pre-wiki notebooks: research logs, Garfield docs, specs/plans, the old tracing guide, commit notes. Historic record, *not* strict truth: claims there may be stale or wrong. See [[legacy-log/README]] |
 | `docs/wiki/` | LLM | yes (by the LLM) | everything below |
 
@@ -39,6 +39,7 @@ path, knowing they are not versioned.
 | `pitfalls/` | pitfall | simulator or analysis trap that has bitten us or would |
 | `gem5/` | gem5 | gem5 itself: building, testing, SimObjects, code generation, core, ISAs, memory |
 | `garfield/` | garfield | reference: one synthesis page per Garfield stage plus lessons learned |
+| `presentations/` | presentation | slide deck (link, slides, sources, observations), plus [[general-guidance]]; keep this folder compact |
 
 Special files: `index.md` (catalog), `log.md` (timeline), `publish.md`
 (registry of human-facing outputs), this `SCHEMA.md`.
@@ -51,7 +52,7 @@ Special files: `index.md` (catalog), `log.md` (timeline), `publish.md`
 
   ```yaml
   ---
-  type: overview | entity | concept | howto | experiment | finding | method | pitfall | gem5 | garfield | meta
+  type: overview | entity | concept | howto | experiment | finding | method | pitfall | gem5 | garfield | presentation | meta
   status: current | draft | open | superseded
   updated: 2026-10-21          # date of the last content change
   sources:                     # what the page rests on
@@ -164,6 +165,10 @@ never edited by hand: fixes go into the wiki, then the output is rebuilt.
 
 Lint flags an output as stale when one of its source pages has an `updated`
 date after the output's build date.
+
+Slide decks are the exception: the user edits them in place, so the deck
+artifact is the record and is not rebuilt from the wiki. Each deck has a
+page in `presentations/` (conventions: [[general-guidance]]).
 
 ## log.md format
 

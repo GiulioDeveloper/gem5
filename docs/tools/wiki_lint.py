@@ -45,6 +45,7 @@ TYPES = {
     "pitfall",
     "gem5",
     "garfield",
+    "presentation",
     "meta",
 }
 STATUSES = {"current", "draft", "open", "superseded"}

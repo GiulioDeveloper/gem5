@@ -40,8 +40,10 @@ here when answered, with a link.
   ([[2026-11-03-top-down-validation]])
 - **What makes jq-2598 serialise?** Rename in `SerializeStall` 9.5% of
   cycles. ([[2026-11-03-top-down-validation]])
-- **What do L1D misses cost?** Perfect L1D, design stage: LSQ-functional
-  model recommended. ([[2026-11-06-perfect-l1d]])
+- **What do L1D misses cost?** Agentic +43% with a perfect L1D, tracking
+  exposed L2-miss latency, not MPKI. Open: a SPEC perfect-L1D sweep, an
+  MLP-during-miss counter, and whether the low overlap is dependences or
+  the IQ. ([[2026-11-06-perfect-l1d]], [[2026-11-12-miss-count-vs-miss-cost]])
 - **What realistic structures get close to the ceilings?** Larger or
   ASID-tagged BTBs, a modelled L2 TLB latency, better instruction
   prefetching for JIT and short-lived code.

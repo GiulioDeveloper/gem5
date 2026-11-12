@@ -1,9 +1,10 @@
 ---
 type: finding
 status: current
-updated: 2026-10-21
+updated: 2026-11-12
 sources:
   - "[[2026-10-14-fdp-off-sweep]]"
+  - "[[2026-11-12-miss-count-vs-miss-cost]]"
 tags: [fdp, front-end, prefetch]
 ---
 
@@ -27,6 +28,13 @@ agentic still stalls on the I-cache for 22% of cycles with it.
   translations dominate iTLB miss counts ([[fdp-inflates-itlb-misses]]).
 - FDP's coverage of L1I misses is 0.79 on agentic and 0.96 on SPEC;
   accuracy 0.30 vs 0.21 ([[2026-10-14-baseline-sweep]]).
+
+Why so little for so many misses (1B sweeps, [[2026-11-12-miss-count-vs-miss-cost]]):
+FDP off adds only about 2 misses per 1,000 instructions, mostly L2 hits
+(primary latency 56 cycles, against 112 for the misses FDP leaves). About
+78% of the extra fetch-stall cycles overlap with back-end stalls, and
+back-end bound falls by about 12 cycle-equivalents per 1,000 instructions
+without FDP's L2 traffic. Net: about 13 cycles per extra miss.
 
 Implication (interpretation): FDP depends on BTB detection, so a better BTB
 or prefetch translations that hit make FDP more useful; the limit-study

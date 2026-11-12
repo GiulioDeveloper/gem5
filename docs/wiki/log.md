@@ -12,7 +12,7 @@ passes, publishes, restructures. Newest last. Format: [[SCHEMA#log.md format]].
 ## [2026-10-21] restructure | Pass 1: knowledge base scaffold
 
 Decided with the user: the knowledge moves to an LLM-maintained wiki
-([[raw/llm-wiki]]). The current project is CPU architecture for agentic
+(`~/llm-wiki/llm-wiki.md`). The current project is CPU architecture for agentic
 workloads; Garfield is kept as a reference.
 
 - Moved `docs/{research-log,garfield,superpowers,agentic,commit-notes}` to
@@ -776,6 +776,89 @@ cache path ignores byte-enables (gap 1) and skips queued masked writes
 - 81/81 runs done. Geomean IPC vs base: pl1d 1.432, pl1d+pl1i 1.588, pl1d+ptlb 1.488
   (pl1i 1.096, ptlb 1.043). Page: [[2026-11-06-perfect-l1d]].
 
+## [2026-11-09] tool | Comparison page: more sweeps, sweep picker, SPEC toggle
+
+- `sweep_compare.py` takes up to 26 sweeps (was 8); `compare_view.html` has 16
+  colour slots, cycling beyond, and the letters tell sweeps apart.
+- The page legend is now a picker: shown sweeps apply to every table and chart
+  (A always on), remembered per comparison. A Shown/Hidden toggle drops SPEC
+  from every view. "Sort by change" uses the first shown sweep after A.
+- Built the 13-sweep comparison of every agentic 1B-window sweep:
+  `runs/sweep/20261104-1115-base/compare-1B-all/`. Page: [[sweeps]].
+
+## [2026-11-09] analysis | L2 occupancy: instruction vs data lines
+
+- From `l2caches.tags.occupancies` over the 1B agentic windows: in base,
+  instruction lines are ≥28% of the L2 (mostly FDP fills), ≤69% counting the
+  mixed writeback and BOP lines, ~45% by a rough proxy; 3.5% without FDP.
+  Under pl1i, data rises from 27.5% to 42.4%. Page: [[2026-11-03-perfect-l1i]].
+
+## [2026-11-09] analysis | How top-down measures memory bound
+
+- Read `tdm.cc`, `LSQ::deepestOutstandingLoad`, `BaseCache::incMissCount`.
+  Memory bound counts only zero-issue cycles; 1–2-issue cycles with a DRAM
+  miss outstanding go to core bound (the paper's definition), which is why it
+  shows ~12% of slots while a perfect L1D gives 1.43×. Secondary L1D misses
+  stay at depth 1 (L2 bound). Page: [[top-down-accounting]].
+
+## [2026-11-09] run | Width 8 + 1-cycle perfect L1I sweep launched
+
+`runs/sweep/20261109-1619-fe8-pl1i1` (`runs/fe8-pl1i/launch.sh`, PAR 12):
+`--front-end-width 8 --perfect-l1i --perfect-l1i-cycles 1`, 27 agentic
+tasks × 1B, at `b4f8943064` (binary rebuilt). Tests whether the +9.6% of
+`--perfect-l1i` is held back by fetch width or the per-line L1I wait.
+Updated [[2026-11-03-perfect-l1i]].
+Added the SPEC counterpart, `runs/sweep/20261109-1619-spec-fe8-pl1i1`
+(26 × 200M, settings of `20261105-1143-spec-fe{6,8}`).
+
+## [2026-11-10] experiment | Width 8 + 1-cycle perfect L1I results; L1I latency switch
+
+`fe8-pl1i1` and `spec-fe8-pl1i1` finished (53 runs, no failures):
+geomean IPC +14.5% agentic, +8.2% SPEC over width 6. Front-end bound
+falls to about 18-19% of slots, but the freed slots go mostly to
+back-end bound and bad speculation. Comparison with both suites on one
+page: agentic and SPEC summaries merged per configuration
+(`runs/fe8-pl1i/merge_suites.py`). Added `--l1i-cycles N`
+(`ef0ca350ae`: real L1I tag/data/response latency; validated) and
+launched `runs/sweep/20261110-0949-{fe8-l1i1,fe8-l1i1-nofdp}` and their
+SPEC counterparts. Updated [[2026-11-03-perfect-l1i]].
+
+## [2026-11-10] restructure | Presentations category
+
+- New folder `presentations/` (page type `presentation`, added to SCHEMA and
+  `wiki_lint.py`): [[general-guidance]] and one page per deck, starting
+  with [[2026-11-10-cache-hierarchy-headroom]] (the Slides artifact of the
+  perfect-cache studies, cut by the user from 8 slides to 3).
+- User decision: slide titles are neutral ("IPC Comparison"); observations
+  go in the body. Keep this side of the wiki compact.
+- Decks are the record and are not rebuilt from the wiki; `publish.md`
+  points at `presentations/` instead of listing them.
+- New `analysis_scripts/presentations/`: `slide_bars.py` (native bar rows
+  from `compare_geomean.csv`) and `slide_violins.py` (slide-sized violins in
+  `sweep_compare.py --pdf` style).
+
+## [2026-11-10] publish | Cache Hierarchy Headroom deck: polish and top-down slide
+
+- Aligned slides 2-3 to the margins and tightened the observations. Added
+  slide 4, "Top-Down Breakdown": stacked slot shares for base and the 8
+  perfect configurations, marked work in progress. Observations are the
+  user's reading (perfect L1I barely helps the front end; maybe the V2
+  model's fetch latency and width). Speaker notes add that per instruction,
+  pL2 removes as many front-end slots as pL1I. Page:
+  [[2026-11-10-cache-hierarchy-headroom]].
+
+## [2026-11-11] experiment | Width 8 and a 1-cycle real L1I: results
+
+The four `runs/sweep/20261110-0949-*` sweeps finished (106 runs, no
+failures; paused about 2.5 h on 2026-11-10 for a build). IPC geomean
+against width 6 / 2 cycles: agentic +4.6% (FDP on) and +3.0% (FDP off),
+against +14.5% for the 1-cycle perfect L1I; SPEC +6.4% and +5.3%, against
++8.2%. SPEC's perfect-L1I gain is mostly the hit latency; agentic's is
+mostly the misses. FDP is worth 1.6% (agentic) and 1.0% (SPEC) at width 8
+with a 1-cycle hit, against 3.3% at width 6 with 2 cycles. Comparison
+pages under `runs/sweep/20261110-0949-compare*`. Updated
+[[2026-11-03-perfect-l1i]] and `index.md`.
+
 ## [2026-11-12] experiment | JIT code versions in the PC trace and footprint pass
 
 - New [[2026-11-12-jit-code-versions]]. gem5 debug flag `ExecEncoding`
@@ -810,3 +893,25 @@ cache path ignores byte-enables (gap 1) and skips queued masked writes
   runs; top-down shares averaged in comparisons
   ([[comparing-configurations]]).
 - Rows in [[publish]] updated (built 2026-11-12, commit 68192bbe68).
+
+## [2026-11-12] query | Miss counts vs miss cost (FDP off, perfect L1D)
+
+- New [[2026-11-12-miss-count-vs-miss-cost]], from summed raw counters of
+  the 1B `base`, `nofdp`, `pl1d` and the SPEC `spec-fe6` sweeps
+  (`runs/metric-why/deep_stats.py`, `pl1d_corr.py`). FDP off: +2 L1I
+  misses per 1,000 instructions, mostly L2 hits, 78% of the extra fetch
+  stall hidden; ~13 cycles per extra miss. Perfect L1D: agentic misses
+  take 88 vs 44 cycles (L2 miss rate 26% vs 8.5%), low overlap; gain
+  tracks L2-miss load stall (r 0.96); barriers and atomics anti-correlate.
+  SPEC's L1D picture is bimodal, so the median comparison misleads.
+- Updated [[fdp-value]] (why the IPC effect is small),
+  [[2026-11-06-perfect-l1d]] (Conclusions), [[questions]], [[index]].
+
+## [2026-11-12] query | Top-down memory-bound vs perfect-L1D savings
+
+- [[2026-11-12-miss-count-vs-miss-cost]]: new section. SPEC's suite-mean
+  past-L2 share (9.8%) exceeds agentic's (8.1%), driven by five
+  benchmarks. Only 39% of agentic's perfect-L1D saving comes out of
+  memory-bound; 37% comes out of core bound. A face-value top-down estimate gives
+  +14% vs the measured +43%. Whether agentic gains more than SPEC is not
+  established without a SPEC perfect-L1D sweep.
