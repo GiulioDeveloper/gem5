@@ -525,8 +525,10 @@ class Rename
     void incrFullStat(const FullSource &source);
 
     /** Top-down: classify the slots rename could fill this cycle but
-     * the front end left empty (see TopDownStats). */
-    void countFrontendBubbles(ThreadID tid, int insts_available);
+     * the front end left empty (see TopDownStats). None are counted
+     * when rename stopped for a back-end reason (backend_stop). */
+    void countFrontendBubbles(ThreadID tid, int insts_available,
+                              bool backend_stop);
 
     /** Cycle in which rename last finished squashing. */
     Cycles lastSquashCycle;

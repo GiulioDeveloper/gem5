@@ -915,3 +915,61 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   memory-bound; 37% comes out of core bound. A face-value top-down estimate gives
   +14% vs the measured +43%. Whether agentic gains more than SPEC is not
   established without a SPEC perfect-L1D sweep.
+
+## [2026-11-12] query | "Issue" in the top-down code vs the paper
+
+- [[top-down-accounting]] (Conventions): this project uses gem5's terms,
+  dispatch = rename → IQ and issue = IQ → function units. The paper's
+  "issue" is our rename/dispatch and its "executed" is our issue. Added a
+  mapping table (`SlotsIssued` = `rename.renamedInsts`, `OpsExecuted` =
+  `total_issued` in `countIssueCycle`).
+
+## [2026-11-13] experiment | Top-down on microbenchmarks, review against the paper
+
+- New [[2026-11-13-top-down-microbenchmarks]]: 12 VRG microbenchmarks and
+  24 hand-written kernels (`runs/microbench-tma/`), base and
+  `--front-end-width 8 --l1i-cycles 1`. Pure cases right. Rename stalls on
+  registers or a full SQ leak into front-end bound (0.17-0.45 of slots);
+  overlapped work moves memory bound into core bound (L2 chase + 32
+  independent adds: memory 0.08, core 0.54).
+- [[top-down-accounting]]: added Names (paper, stat, viewer key, raw
+  counters) and Known problems, with two conflict callouts (back-end
+  Level 2/3 are not the paper's clock-normalised formulas; the "≤ 0.001"
+  effect of the ROB/IQ cap does not hold on the kernels). Corrected the
+  resteer convention against the paper text. Idle cycles: mostly L1I-miss
+  waits.
+- User decisions: fix the front-end leak; follow the paper in not forcing
+  back-end Level 2 to add up. The back-end split is still under
+  discussion. No code changed.
+- The paper (Yasin, ISPASS 2014) was read from a PDF the user supplied; it
+  is not in `docs/raw/papers/` yet.
+
+## [2026-11-13] publish | top-down-guide
+
+- New output `top-down-guide` (`docs/wiki/_publish/top-down-guide.html`),
+  registered in [[publish]]: names, exact formulas, reasons, pitfalls and
+  known problems of the top-down accounting.
+
+## [2026-11-13] code | Top-down: register, SQ and LQ stalls no longer front-end bound
+
+- `src/cpu/o3/rename.{cc,hh}` (uncommitted): front-end bubbles are counted
+  after the rename loop, and none when it stopped on an LQ, SQ, register
+  or serialize-before condition. 12 VRG benches and 48 kernel runs rerun
+  (`runs/microbench-tma/`): cycles identical, front-end bound down by up
+  to 0.27 of slots (chaseI8-MEM base 0.281 → 0.011), back-end bound up by
+  the same.
+- Agentic sweeps predate the fix: upper bound of the leak 0.076 of slots
+  at the median of `20261104-1115-base`, 0.023 on
+  `20261106-2004-pl1d-pl1i`. Flagged as a conflict on
+  [[top-down-accounting]]; needs a rerun for the exact effect.
+- Left open: the restart lag after a rename stall still counts as fetch
+  latency (store-L2 `fe8` 0.156). The user keeps the back-end split
+  unchanged for now.
+- [[2026-11-13-top-down-microbenchmarks]] and [[top-down-accounting]]
+  updated.
+
+## [2026-11-13] publish | top-down-guide rebuilt
+
+- Rebuilt `top-down-guide` after the front-end fix: new front-end rule
+  and its reasoning, the warning on runs before the fix, kernel table
+  from the rerun, decisions.

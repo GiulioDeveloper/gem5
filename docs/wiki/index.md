@@ -29,7 +29,7 @@ Human-facing outputs: [[publish]].
 - [[tlb-hierarchy]]: L1/L2 TLBs, zero-latency L2 hits, walk metrics
 - [[infinite-btb-model]]: `InfiniteBTB` design, stats, validation
 - [[infinite-l2-tlb]]: the 1M-entry L2 TLB, why stock `ArmTLB`, validation
-- [[top-down-accounting]]: the O3 top-down slot breakdown (`core.topDown.*`): definitions, conventions, fixes vs upstream PR #2392
+- [[top-down-accounting]]: the O3 top-down slot breakdown (`core.topDown.*`): names (paper, stat, viewer key), definitions, conventions, known problems, fixes vs upstream PR #2392
 
 ## Infrastructure
 
@@ -58,6 +58,7 @@ Human-facing outputs: [[publish]].
 - [[2026-10-23-rubocop-15g-cache-btb-tlb]]: 15G-instruction rubocop runs, caches ×1/×4/×8 × infinite BTB+TLB; work-mix shift; per-process gains; harness vs tools; cost around switches
 - [[2026-11-02-perfect-l2]]: `--perfect-l2`, an L2 that always hits (L1s on an L2-crossbar-timed bus in front of an 11-cycle `SimpleMemory`), and `--perfect-tlb`, demand TLB misses served by zero-time functional walks; both validated, 1B sweep running (20261104-1115)
 - [[2026-11-03-top-down-validation]]: top-down accounting (PR #2392) merged and fixed; 3 SPEC + 2 agentic 30M windows; front-end bound ~50% for both, much of it the fetch model
+- [[2026-11-13-top-down-microbenchmarks]]: top-down on kernels with a known answer (VRG suite + hand-written split kernels); pure cases right, register/SQ stalls leaked into front-end bound (fixed 2026-11-13), overlapped work turns memory into core
 - [[2026-11-03-perfect-l1i]]: `--perfect-l1i`, an L1I that always hits (functional fetch reads delivered at the 2-cycle hit latency; no instruction traffic in the caches); validated, 1B sweeps done; width 8 with a 1-cycle perfect or real L1I (`--l1i-cycles`), FDP on and off, agentic and SPEC
 - [[2026-11-06-perfect-l1d]]: `--perfect-l1d` built and validated: LSQ serves plain loads/stores and atomics functionally at the 4-cycle hit latency; agentic sweep IPC +43% (with perfect L1I +59%, with perfect TLB +49%); PerfectCache and hacked-cache alternatives compared
 - [[2026-11-12-jit-code-versions]]: a PC can hold several instructions (JIT); the PC trace (v2) keeps encodings and the footprint pass counts each encoding at a PC as new code; guest JIT runs no per-line cache maintenance (cached `CTR_EL0` IDC = DIC = 1); 1G rubocop: 38 PCs rewritten, footprint and branches change <0.01%

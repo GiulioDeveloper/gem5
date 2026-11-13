@@ -241,13 +241,17 @@ Rename::addIdleCycles(Cycles c)
 }
 
 void
-Rename::countFrontendBubbles(ThreadID tid, int insts_available)
+Rename::countFrontendBubbles(ThreadID tid, int insts_available,
+                             bool backend_stop)
 {
     // Slots the back end could take this cycle: a slot it could not take
-    // is back-end bound whatever the front end delivered.
+    // is back-end bound whatever the front end delivered. When rename
+    // stopped on an instruction for want of a back-end resource (LQ, SQ,
+    // physical registers) or to serialize, the slots after it are
+    // back-end bound too.
     const int capacity = std::min<int>(renameWidth,
         std::min(calcFreeROBEntries(tid), calcFreeIQEntries(tid)));
-    const int bubbles = capacity - insts_available;
+    const int bubbles = backend_stop ? 0 : capacity - insts_available;
     if (bubbles > 0) {
         if (cpu->curCycle() - lastSquashCycle < refillPenalty) {
             stats.refillBubbles += bubbles;
@@ -607,11 +611,15 @@ Rename::renameInsts(ThreadID tid)
     int insts_available = renameStatus[tid] == Unblocking ?
         skidBuffer[tid].size() : insts[tid].size();
 
-    countFrontendBubbles(tid, insts_available);
+    // Top-down: what the front end delivered, and whether rename stopped
+    // short of it for a back-end reason.
+    const int insts_delivered = insts_available;
+    bool backend_stop = false;
 
     // Check the decode queue to see if instructions are available.
     // If there are no available instructions to rename, then do nothing.
     if (insts_available == 0) {
+        countFrontendBubbles(tid, insts_delivered, backend_stop);
         DPRINTF(Rename, "[tid:%i] Nothing to do, breaking out early.\n",
                 tid);
         // Should I change status to idle?
@@ -649,6 +657,8 @@ Rename::renameInsts(ThreadID tid)
         block(tid);
 
         incrFullStat(source);
+
+        countFrontendBubbles(tid, insts_delivered, backend_stop);
 
         return;
     } else if (min_free_entries < insts_available) {
@@ -710,6 +720,7 @@ Rename::renameInsts(ThreadID tid)
                         tid);
                 source = LQ;
                 incrFullStat(source);
+                backend_stop = true;
                 break;
             }
         }
@@ -720,6 +731,7 @@ Rename::renameInsts(ThreadID tid)
                         tid);
                 source = SQ;
                 incrFullStat(source);
+                backend_stop = true;
                 break;
             }
         }
@@ -762,6 +774,7 @@ Rename::renameInsts(ThreadID tid)
             blockThisCycle = true;
             insts_to_rename.push_front(inst);
             ++stats.fullRegistersEvents;
+            backend_stop = true;
 
             break;
         }
@@ -799,6 +812,7 @@ Rename::renameInsts(ThreadID tid)
             serializeInst[tid] = inst;
 
             blockThisCycle = true;
+            backend_stop = true;
 
             break;
         } else if ((inst->isStoreConditional() || inst->isSerializeAfter()) &&
@@ -1047,6 +1061,9 @@ Rename::renameInsts(ThreadID tid)
         // Decrement how many instructions are available.
         --insts_available;
     }
+
+    // Before instsInProgress moves: it enters the free ROB and IQ counts.
+    countFrontendBubbles(tid, insts_delivered, backend_stop);
 
     instsInProgress[tid] += renamed_insts;
     stats.renamedInsts += renamed_insts;

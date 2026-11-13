@@ -1,0 +1,453 @@
+<title>Top-Down Guide</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:ital,wght@0,400;0,500;0,600;1,400&display=swap">
+<style>
+/* Layout: the lab-manual column of the tracer guides (same family), sticky contents rail on wide screens; one column on phones. */
+:root {
+  --bg: #f4f6f8;
+  --surface: #ffffff;
+  --fg: #18212b;
+  --muted: #566170;
+  --rule: #d8dde4;
+  --accent: #0e6a70;
+  --mark: #b0520c;
+  --code-bg: #eaeef2;
+  --keep: #0e6a70;
+  --drop: #c9d1da;
+  --f-display: "IBM Plex Sans Condensed", "Arial Narrow", system-ui, sans-serif;
+  --f-body: "IBM Plex Sans", system-ui, -apple-system, "Segoe UI", sans-serif;
+  --f-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", Menlo, Consolas, monospace;
+  --s-1: 0.8125rem; --s0: 1rem; --s1: 1.25rem; --s2: 1.625rem; --s3: 2.25rem;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+    --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630;
+    --keep: #4fb8bd; --drop: #2f3a47;
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #11161c; --surface: #171e26; --fg: #e3e8ee; --muted: #9aa6b4;
+  --rule: #2a3440; --accent: #4fb8bd; --mark: #e8924a; --code-bg: #1d2630;
+  --keep: #4fb8bd; --drop: #2f3a47;
+  color-scheme: dark;
+}
+* { box-sizing: border-box; }
+body {
+  background: var(--bg); color: var(--fg);
+  font-family: var(--f-body); font-size: var(--s0); line-height: 1.6;
+  padding-left: max(16px, env(safe-area-inset-left, 0px));
+  padding-right: max(16px, env(safe-area-inset-right, 0px));
+}
+.wrap { max-width: 1120px; margin: 0 auto; display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 48px; padding-block: 40px 80px; }
+@media (max-width: 860px) { .wrap { grid-template-columns: minmax(0, 1fr); gap: 24px; padding-block: 24px 56px; } }
+nav.toc { position: sticky; top: calc(24px + env(safe-area-inset-top, 0px)); align-self: start; font-size: var(--s-1); }
+@media (max-width: 860px) { nav.toc { position: static; } }
+nav.toc .label { font-family: var(--f-mono); text-transform: uppercase; letter-spacing: 0.08em; color: var(--muted); font-size: 0.72rem; margin-bottom: 8px; }
+nav.toc ol { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+nav.toc a { color: var(--fg); text-decoration: none; display: block; padding: 2px 0 2px 10px; border-left: 2px solid var(--rule); }
+nav.toc a:hover, nav.toc a:focus-visible { border-left-color: var(--accent); color: var(--accent); }
+main { min-width: 0; }
+.doc { max-width: 72ch; }
+header.masthead { display: grid; gap: 10px; margin-bottom: 28px; }
+.eyebrow { font-family: var(--f-mono); font-size: 0.75rem; letter-spacing: 0.08em; text-transform: uppercase; color: var(--accent); }
+h1, h2, h3 { font-family: var(--f-display); font-weight: 600; line-height: 1.2; text-wrap: balance; }
+h1 { font-size: var(--s3); margin: 0; }
+h2 { font-size: var(--s2); margin: 56px 0 12px; padding-top: 12px; border-top: 1px solid var(--rule); scroll-margin-top: 16px; }
+h3 { font-size: var(--s1); margin: 28px 0 8px; font-weight: 500; }
+p { margin: 0 0 14px; }
+.lede { font-size: 1.125rem; }
+.build { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); border: 1px solid var(--rule); padding: 10px 12px; background: var(--surface); line-height: 1.5; }
+a { color: var(--accent); }
+code { font-family: var(--f-mono); font-size: 0.875em; background: var(--code-bg); padding: 0.1em 0.35em; border-radius: 3px; }
+.codeblock { position: relative; margin: 0 0 16px; }
+.codeblock pre { margin: 0; overflow-x: auto; background: var(--code-bg); padding: 14px 16px; font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.55; border-left: 3px solid var(--accent); }
+.codeblock pre code { background: none; padding: 0; font-size: inherit; }
+.copy { position: absolute; top: 6px; right: 6px; font-family: var(--f-mono); font-size: 0.7rem; background: var(--surface); color: var(--muted); border: 1px solid var(--rule); padding: 3px 8px; cursor: pointer; border-radius: 3px; }
+.copy:hover, .copy:focus-visible { color: var(--accent); border-color: var(--accent); }
+.tablewrap { overflow-x: auto; margin: 0 0 18px; }
+table { border-collapse: collapse; width: 100%; font-size: 0.875rem; }
+th, td { text-align: left; vertical-align: top; padding: 8px 10px; border-bottom: 1px solid var(--rule); }
+th { font-family: var(--f-mono); font-weight: 500; font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); }
+td.num, th.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+td code { white-space: nowrap; }
+ul, ol.steps { padding-left: 1.25rem; margin: 0 0 16px; }
+li { margin-bottom: 6px; }
+.note { border-left: 3px solid var(--mark); background: var(--surface); padding: 12px 14px; margin: 0 0 18px; font-size: 0.9375rem; }
+.note strong { color: var(--mark); }
+figure { margin: 8px 0 24px; }
+figure .fig { overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: 12px; }
+figure svg { display: block; width: 100%; min-width: 560px; height: auto; }
+figcaption { font-size: var(--s-1); color: var(--muted); margin-top: 8px; }
+.svg-text { fill: var(--muted); font-family: var(--f-mono); font-size: 11px; }
+.svg-label { fill: var(--fg); font-family: var(--f-mono); font-size: 11px; }
+.pipeline { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin: 0 0 20px; }
+@media (max-width: 760px) { .pipeline { grid-template-columns: minmax(0, 1fr); } }
+.stage { background: var(--surface); border: 1px solid var(--rule); padding: 12px 12px; min-width: 0; }
+.stage .n { font-family: var(--f-mono); font-size: 0.72rem; color: var(--accent); letter-spacing: 0.06em; }
+.stage h4 { font-family: var(--f-display); font-weight: 600; margin: 4px 0 6px; font-size: 1.05rem; }
+.stage p { font-size: 0.8125rem; margin: 0; color: var(--muted); }
+.sizes { display: grid; gap: 14px; margin: 0 0 20px; }
+.size-row { display: grid; grid-template-columns: 9.5rem minmax(0, 1fr); gap: 4px 12px; align-items: center; font-size: 0.875rem; }
+@media (max-width: 520px) { .size-row { grid-template-columns: minmax(0, 1fr); } }
+.size-row .what { font-weight: 500; }
+.bars { display: grid; gap: 4px; min-width: 0; }
+.bar { display: flex; align-items: center; gap: 8px; font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); font-variant-numeric: tabular-nums; }
+.bar span.fill { display: block; height: 12px; background: var(--drop); flex: none; }
+.bar.small span.fill { background: var(--keep); min-width: 3px; }
+footer { margin-top: 64px; font-size: var(--s-1); color: var(--muted); border-top: 1px solid var(--rule); padding-top: 16px; }
+@media (prefers-reduced-motion: reduce) { * { scroll-behavior: auto !important; } }
+html { scroll-behavior: smooth; }
+
+/* top-down guide additions */
+.formula { margin: 0 0 14px; overflow-x: auto; background: var(--code-bg); padding: 12px 14px; font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.6; border-left: 3px solid var(--accent); white-space: pre; }
+.node { border: 1px solid var(--rule); background: var(--surface); padding: 14px 16px; margin: 0 0 18px; }
+.node h3 { margin: 0 0 4px; }
+.node .ids { font-family: var(--f-mono); font-size: 0.75rem; color: var(--muted); margin-bottom: 10px; overflow-wrap: anywhere; }
+.node dl { display: grid; grid-template-columns: 5.5rem minmax(0, 1fr); gap: 6px 12px; margin: 0; font-size: 0.9375rem; }
+@media (max-width: 520px) { .node dl { grid-template-columns: minmax(0, 1fr); gap: 2px; } .node dd { margin-bottom: 8px; } }
+.node dt { font-family: var(--f-mono); font-size: 0.72rem; letter-spacing: 0.06em; text-transform: uppercase; color: var(--muted); padding-top: 3px; }
+.node dd { margin: 0; min-width: 0; }
+.node dt.pit { color: var(--mark); }
+.tree { font-family: var(--f-mono); font-size: 0.8125rem; line-height: 1.7; overflow-x: auto; background: var(--surface); border: 1px solid var(--rule); padding: 14px 16px; margin: 0 0 18px; white-space: pre; }
+.tree .x { color: var(--mark); }
+.tree .m { color: var(--muted); }
+.tag { font-family: var(--f-mono); font-size: 0.7rem; border: 1px solid var(--rule); padding: 1px 6px; border-radius: 3px; white-space: nowrap; }
+.tag.bug { color: var(--mark); border-color: var(--mark); }
+.pipeline.six { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+@media (max-width: 760px) { .pipeline.six { grid-template-columns: minmax(0, 1fr); } }
+.stage.hot { border-color: var(--accent); border-width: 2px; }
+
+</style>
+
+<div class="wrap">
+<nav class="toc" aria-label="Contents">
+  <div class="label">Contents</div>
+  <ol>
+    <li><a href="#status">Status</a></li>
+    <li><a href="#words">Vocabulary</a></li>
+    <li><a href="#where">Where things are counted</a></li>
+    <li><a href="#tree">The tree and its names</a></li>
+    <li><a href="#l1">Level 1</a></li>
+    <li><a href="#fe">Front end</a></li>
+    <li><a href="#bs">Bad speculation</a></li>
+    <li><a href="#be">Back end</a></li>
+    <li><a href="#mem">Memory levels</a></li>
+    <li><a href="#idle">Idle cycles</a></li>
+    <li><a href="#read">Reading rules</a></li>
+    <li><a href="#problems">Known problems</a></li>
+    <li><a href="#open">Under discussion</a></li>
+    <li><a href="#code">Where it is in the code</a></li>
+  </ol>
+</nav>
+
+<main>
+<div class="doc">
+<header class="masthead">
+  <div class="eyebrow">gem5 fork · branch gfdev · O3 core · topDown.*</div>
+  <h1>Top-Down Guide</h1>
+  <p class="lede">What each top-down number in this project is called, exactly how the O3 core computes it, why it is computed that way, and where it can mislead you. The reference is Yasin's 2014 paper; every difference from it is marked.</p>
+  <div class="build">Built from the project wiki on 2026-11-13 from the tree that follows commit 387f75040f and includes the 2026-11-13 front-end fix. Sources: docs/wiki/hardware/top-down-accounting.md, docs/wiki/experiments/{2026-11-03-top-down-validation, 2026-11-13-top-down-microbenchmarks}.md. This page is generated: fix the wiki, then rebuild.</div>
+</header>
+
+<h2 id="status">Status</h2>
+<div class="note"><strong>The accounting is under review.</strong> This guide describes the code with the 2026-11-13 front-end fix. Before it, front-end bound absorbed some back-end stalls: <strong>every run made before that date reports front-end bound too high</strong> (by at most 0.076 of slots at the median of the agentic base sweep) and back-end bound too low by the same amount. Several back-end nodes differ from the paper and are unchanged; see <a href="#problems">Known problems</a>. Treat Level 2/3 of the back end as provisional.</div>
+<p>The counters do not change simulated timing: every other statistic is identical with and without them.</p>
+
+<h2 id="words">Vocabulary</h2>
+<p>The paper uses Intel's words; gem5 uses the same words for different pipeline points. This project follows gem5 in the code and on every wiki page.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Pipeline step</th><th>gem5 and this project</th><th>The paper (Intel)</th></tr></thead>
+<tbody>
+<tr><td>Micro-ops enter the back end (ROB, IQ)</td><td><strong>rename / dispatch</strong></td><td><strong>issue</strong> (allocate)</td></tr>
+<tr><td>Micro-ops leave the IQ for a function unit</td><td><strong>issue</strong></td><td><strong>execute</strong> (dispatch to ports)</td></tr>
+<tr><td>The queue of waiting micro-ops</td><td>IQ (instruction queue)</td><td>RS (reservation station), scheduler</td></tr>
+<tr><td>Micro-ops leave the ROB</td><td>commit</td><td>retire</td></tr>
+<tr><td>Wrong-path work thrown away</td><td>squash</td><td>clear, flush, nuke</td></tr>
+</tbody></table></div>
+<p>So the paper's "issue-pipeline slots" are our <strong>rename slots</strong>, and its "uops executed in a cycle" are our <strong>micro-ops issued in a cycle</strong>. In <code>tdm.cc</code>, "issued" always has the gem5 meaning.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Term</th><th>Meaning here</th></tr></thead>
+<tbody>
+<tr><td>Slot</td><td>One of the <code>renameWidth</code> = 8 places rename can fill in a cycle. All of Level 1 is in slots.</td></tr>
+<tr><td>Top-down cycle</td><td>A cycle the core is clocked: active cycles plus cycles gem5 skips because nothing is happening. WFI and quiesce are excluded. Counter: <code>topDown.cycles</code>.</td></tr>
+<tr><td>Bubble</td><td>A slot rename left empty.</td></tr>
+<tr><td>Refill</td><td>The first 5 cycles after rename finishes a squash (<code>fetchToDecodeDelay</code> 3 + <code>decodeToRenameDelay</code> 2): the least time the first correct-path micro-op needs to travel from fetch to rename.</td></tr>
+<tr><td>Resteer</td><td>After the refill, the further cycles until the first micro-op actually reaches rename.</td></tr>
+<tr><td>Execution stall</td><td>A cycle with work in the ROB in which at most 2 micro-ops issue (<code>fewIssuedThreshold</code>).</td></tr>
+<tr><td>Outstanding load</td><td>A load in the load queue whose translation, cache access or writeback is still pending.</td></tr>
+<tr><td>Miss depth</td><td>How many caches an access has missed so far: 0 none (L1D hit or translating), 1 missed the L1D, 2 missed the L2.</td></tr>
+</tbody></table></div>
+
+<h2 id="where">Where things are counted</h2>
+<p>Level 1 is counted at rename, in slots. The back-end split is counted at the IQ, in cycles. Keeping these two apart explains most of the confusion about the numbers.</p>
+<div class="pipeline six" aria-label="Pipeline and counting points">
+  <div class="stage"><div class="n">FETCH</div><h4>6 wide</h4><p>Nothing counted here. Its delays show up as bubbles at rename.</p></div>
+  <div class="stage"><div class="n">DECODE</div><h4>6 wide</h4><p>Nothing counted. Decode-time redirects cost front-end latency.</p></div>
+  <div class="stage hot"><div class="n">RENAME · SLOTS</div><h4>8 wide</h4><p>Total slots, renamed micro-ops, fetch bubbles, refill bubbles, squashing and serialize cycles.</p></div>
+  <div class="stage hot"><div class="n">IQ · CYCLES</div><h4>issue 8 wide</h4><p>Execution stalls, load stalls by depth, store stalls.</p></div>
+  <div class="stage"><div class="n">EXECUTE</div><h4>events</h4><p>Branch mispredict and memory-order violation counts.</p></div>
+  <div class="stage hot"><div class="n">COMMIT</div><h4>8 wide</h4><p>Committed micro-ops (retiring).</p></div>
+</div>
+
+<h2 id="tree">The tree and its names</h2>
+<p>Stat names are under <code>&lt;core&gt;.topDown.</code>, where <code>&lt;core&gt;</code> is <code>board.processor.start.core</code> in full-system runs and <code>board.processor.cores.core</code> in SE mode. The <code>td_*</code> keys are what the window viewer, the sweep tables and the comparison pages use.</p>
+<div class="tree">Retiring                 level1.retiring              td_retiring
+Bad Speculation          level1.badSpeculation        td_badspec
+├─ Branch Mispredicts    badSpec.branchMispredicts    td_bs_branch
+└─ Machine Clears        badSpec.machineClears        td_bs_clears
+Frontend Bound           level1.frontendBound         td_frontend
+├─ Fetch Latency         frontend.fetchLatency        td_fe_latency
+│  └─ Branch Resteers    frontend.branchResteers      td_fe_resteer    <span class="x">defined differently</span>
+└─ Fetch Bandwidth       frontend.fetchBandwidth      td_fe_bandwidth
+Backend Bound            level1.backendBound          td_backend
+├─ <span class="x">Serialize</span>             backend.serializeBound       td_be_serialize  <span class="x">not in the paper</span>
+├─ Memory Bound          backend.memoryBound          td_be_memory     <span class="x">normalised differently</span>
+│  ├─ L1 Bound           memory.l1Bound               td_mem_l1
+│  ├─ L2 Bound           memory.l2Bound               td_mem_l2
+│  ├─ Ext. Memory Bound  memory.extMemBound           td_mem_ext       <span class="m">DRAM: there is no L3</span>
+│  └─ Stores Bound       memory.storeBound            td_mem_store     <span class="x">narrower condition</span>
+└─ Core Bound            backend.coreBound            td_be_core       <span class="x">normalised differently</span></div>
+<p>Not implemented: MicroSequencer and BASE (under Retiring), L3 Bound (the V2 hierarchy has no L3), MEM Bandwidth and MEM Latency, and the leaves below Core Bound (Divider, Ports Utilization).</p>
+
+<h3>Raw counters</h3>
+<p>Every node is a formula over these counters. The left column is the paper's event (its Table 1).</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Paper event</th><th>Counter here</th><th>Same as the paper?</th></tr></thead>
+<tbody>
+<tr><td>TotalSlots</td><td><code>8 × topDown.cycles</code></td><td>yes</td></tr>
+<tr><td>SlotsIssued</td><td><code>rename.renamedInsts</code></td><td>yes</td></tr>
+<tr><td>SlotsRetired</td><td><code>commitStats0.numOps</code></td><td>yes</td></tr>
+<tr><td>FetchBubbles</td><td><code>rename.fetchBubbles</code></td><td>mostly: excludes the refill</td></tr>
+<tr><td>RecoveryBubbles</td><td><code>8 × rename.status::Squashing + rename.refillBubbles</code></td><td>wider: includes the refill</td></tr>
+<tr><td>BrMispredRetired</td><td><code>iew.branchMispredicts</code></td><td>no: counted at execute</td></tr>
+<tr><td>MachineClears</td><td><code>iew.memOrderViolationEvents</code></td><td>no: one kind of clear only</td></tr>
+<tr><td>OpsExecuted[= FEW]</td><td><code>topDown.execStallCycles</code></td><td>close: ROB test, not IQ test</td></tr>
+<tr><td>MemStalls.AnyLoad</td><td><code>topDown.loadStallCycles</code></td><td>yes</td></tr>
+<tr><td>MemStalls.L1miss, L2miss</td><td><code>topDown.loadStallL1Miss</code>, <code>loadStallL2Miss</code></td><td>yes</td></tr>
+<tr><td>MemStalls.Stores</td><td><code>topDown.storeStallCycles</code></td><td>narrower</td></tr>
+<tr><td>MsSlotsRetired, MemStalls.L3miss, ExtMemOutstanding</td><td>none</td><td>not implemented</td></tr>
+</tbody></table></div>
+
+<h2 id="l1">Level 1</h2>
+<p>Four shares of the slots that add up to 1. Three are measured; back-end bound is what is left.</p>
+<div class="formula">slots          = 8 × topDown.cycles
+committed      = commitStats0.numOps
+
+retiring       = committed / slots
+frontendBound  = rename.fetchBubbles / slots
+badSpeculation = (rename.renamedInsts − committed
+                  + rename.refillBubbles
+                  + 8 × rename.status::Squashing) / slots
+backendBound   = 1 − (retiring + frontendBound + badSpeculation)</div>
+
+<div class="node">
+<h3>Retiring</h3>
+<div class="ids">level1.retiring · td_retiring · paper: Retiring</div>
+<dl>
+<dt>What</dt><dd>Slots that held a micro-op which later committed. Equals committed micro-ops per cycle divided by 8.</dd>
+<dt>Why</dt><dd>Same as the paper. Counting micro-ops on both sides (renamed and committed) makes their difference exactly the squashed work.</dd>
+<dt class="pit">Pitfalls</dt><dd>100% is 8 micro-ops per cycle, which this model cannot reach with a 6-wide front end. Micro-ops are not instructions (about 1.07 to 1.16 per instruction on our workloads).</dd>
+</dl></div>
+
+<div class="node">
+<h3>Front-end bound</h3>
+<div class="ids">level1.frontendBound · td_frontend · paper: Frontend Bound</div>
+<dl>
+<dt>What</dt><dd>Slots the back end could have taken but the front end left empty, outside the refill after a squash.</dd>
+<dt>How</dt><dd>Each cycle rename runs: <code>capacity = min(8, free ROB entries, free IQ entries)</code>; <code>bubbles = capacity − micro-ops available</code>. Outside the refill window the bubbles go to <code>fetchBubbles</code>. When rename is <code>Blocked</code>, <code>Squashing</code> or in <code>SerializeStall</code>, nothing is counted. Nothing is counted either in a cycle where rename stopped on an instruction that had no load-queue entry, no store-queue entry or no physical register, or that must serialize.</dd>
+<dt>Why</dt><dd>The capacity cap is the paper's "while there is no backend-stall" condition: a slot the back end could not take is not the front end's fault. Rename is in order: once it stops on one instruction nothing behind it can be renamed, so the back end's capacity that cycle is the number renamed, and the front end delivered more than that. Only when rename took everything delivered is the capacity for the missing micro-ops a guess; the code assumes they would have fit up to the free ROB and IQ entries.</dd>
+<dt class="pit">Pitfalls</dt><dd><span class="tag">fixed 2026-11-13</span> Until this date the stop on registers, the store queue or the load queue was not excluded: rename retried every cycle and the slots its skid buffer did not cover were counted here. On kernels that fill the SQ or the register file the fix moved up to 0.27 of slots to back-end bound (L2 and DRAM chases with independent adds, streaming stores); cycle counts did not change. Runs from before the fix carry the leak.<br>After a rename stall ends, rename idles until decode and fetch restart. Those cycles count as fetch latency (0.16 of slots on a store kernel); a real core would have micro-ops queued. Open.<br>The 6-wide front end can never fill 8 slots, so 2 slots of every full-delivery cycle land here.<br>Fetch waits on every L1I hit after a taken branch, which inflates this on all workloads.</dd>
+</dl></div>
+
+<div class="node">
+<h3>Bad speculation</h3>
+<div class="ids">level1.badSpeculation · td_badspec · paper: Bad Speculation</div>
+<dl>
+<dt>What</dt><dd>Three parts: slots of micro-ops that were renamed and never committed; all 8 slots of each cycle rename spends squashing; and the refill bubbles (empty slots in the 5 cycles after a squash, plus squashed micro-ops that reach rename).</dd>
+<dt>Why</dt><dd>The first two are the paper's formula. The refill came with PR #2392: its idea is that the unavoidable pipeline refill is part of the misprediction cost.</dd>
+<dt class="pit">Pitfalls</dt><dd>The paper counts the fetch from the correct target as front end (Branch Resteers), so this node is larger than the paper's and front-end bound smaller, by up to 40 slots per squash.<br>Overlapping squashes restart one refill window; they do not add 5 cycles each.<br>Each squashed micro-op met at rename adds one refill bubble without using a slot, so a cycle can count more than 8.</dd>
+</dl></div>
+
+<div class="node">
+<h3>Back-end bound</h3>
+<div class="ids">level1.backendBound · td_backend · paper: Backend Bound</div>
+<dl>
+<dt>What</dt><dd>Every slot not claimed by the other three: slots rename could not fill because the ROB or IQ was full, it was blocked by the stage after it, or it was waiting to serialize.</dd>
+<dt>Why</dt><dd>Same as the paper (1 minus the rest).</dd>
+<dt class="pit">Pitfalls</dt><dd>It is a remainder, so any over-count elsewhere shrinks it silently. Before 2026-11-13 the front-end leak was taken straight out of this node.</dd>
+</dl></div>
+
+<h2 id="fe">Front end</h2>
+<div class="formula">fetchLatency   = rename.fetchLatencyBubbles / slots
+fetchBandwidth = (rename.fetchBubbles − rename.fetchLatencyBubbles) / slots
+branchResteers = rename.resteerBubbles / slots        (part of fetchLatency)</div>
+<div class="node">
+<h3>Fetch latency and fetch bandwidth</h3>
+<div class="ids">frontend.fetchLatency, frontend.fetchBandwidth · td_fe_latency, td_fe_bandwidth</div>
+<dl>
+<dt>What</dt><dd>Latency: the front-end bubbles of cycles in which <em>no</em> micro-op was available to rename. Bandwidth: the bubbles of cycles in which some arrived, but fewer than the back end could take.</dd>
+<dt>Why</dt><dd>The paper's split: latency is fetch starvation whatever its cause, bandwidth is under-delivery. The two add up to front-end bound by construction.</dd>
+<dt class="pit">Pitfalls</dt><dd>The paper counts latency in cycles with at least a full width of bubbles; here it is the bubbles of zero-delivery cycles, which is smaller when the back end could take fewer than 8.<br>Latency is not "instruction cache misses": on SPEC with almost no L1I misses fetch still waits on the L1I in 22 to 31% of cycles.<br>Bandwidth contains the 6-into-8 structural part and the register/SQ leak.</dd>
+</dl></div>
+<div class="node">
+<h3>Branch resteers</h3>
+<div class="ids">frontend.branchResteers · td_fe_resteer</div>
+<dl>
+<dt>What</dt><dd>The latency bubbles between the end of a squash's refill and the first micro-op to reach rename afterwards.</dd>
+<dt>Why</dt><dd>It shows how much longer than the 5-cycle minimum the front end takes to deliver the correct path.</dd>
+<dt class="pit">Pitfalls</dt><dd>The paper's Branch Resteers is the whole delay after a flush. Ours is only the part beyond the refill; the refill itself is in bad speculation. The viewers do not stack it.</dd>
+</dl></div>
+
+<h2 id="bs">Bad speculation</h2>
+<div class="formula">branchMispredicts = badSpeculation × iew.branchMispredicts
+                    / (iew.branchMispredicts + iew.memOrderViolationEvents)
+machineClears     = badSpeculation − branchMispredicts</div>
+<div class="node">
+<h3>Branch mispredicts and machine clears</h3>
+<div class="ids">badSpec.branchMispredicts, badSpec.machineClears · td_bs_branch, td_bs_clears</div>
+<dl>
+<dt>What</dt><dd>Bad speculation shared out in proportion to two event counts. Nothing is measured per slot.</dd>
+<dt>Why</dt><dd>The paper's method: a ratio of event counts applied to the parent.</dd>
+<dt class="pit">Pitfalls</dt><dd>Mispredicts are counted when a branch resolves at execute, including branches on a wrong path that an older squash later removes. The paper counts retired mispredicts.<br>The violation counter also counts violations that cause no squash because the core is already squashing.<br>Squashes started by commit (traps, interrupts, system calls, squash-after instructions) have no event, so their slots are shared between the two by proportion. Agentic windows have many of these.<br>Decode-time redirects are not in either: they never reach rename and cost front-end latency.</dd>
+</dl></div>
+
+<h2 id="be">Back end</h2>
+<p>This is where the code differs most from the paper. The code first, then the paper.</p>
+<h3>The cycle counters (at the IQ, every cycle)</h3>
+<div class="formula">if ROB empty or issued &gt; 2:        nothing
+else:                               execStallCycles += 1
+  if issued == 0:
+    if a load is outstanding:       loadStallCycles += 1
+        deepest depth ≥ 1:          loadStallL1Miss += 1
+        deepest depth ≥ 2:          loadStallL2Miss += 1
+    else if store queue full:       storeStallCycles += 1</div>
+<p>"Deepest" is the largest miss depth over all outstanding loads in the load queue, not only the oldest.</p>
+<h3>As coded</h3>
+<div class="formula">serializeBound = 8 × rename.status::SerializeStall / slots
+rest           = backendBound − serializeBound
+memoryBound    = rest × (loadStallCycles + storeStallCycles) / execStallCycles
+coreBound      = rest − memoryBound</div>
+<h3>In the paper (Table 2)</h3>
+<div class="formula">ExecutionStalls = cycles with few uops executed / Clocks
+Memory Bound    = (MemStalls.AnyLoad + MemStalls.Stores) / Clocks
+Core Bound      = ExecutionStalls − Memory Bound</div>
+<p>The paper's Memory and Core are fractions of <em>cycles</em> measured at execute. They add up to ExecutionStalls, not to Backend Bound, and the paper says only sibling nodes are comparable. The code instead scales the same ratio into the back-end slots so the children add up to the parent. The memory-to-core <em>ratio</em> is identical; the absolute values are not.</p>
+
+<div class="node">
+<h3>Serialize</h3>
+<div class="ids">backend.serializeBound · td_be_serialize · not in the paper</div>
+<dl>
+<dt>What</dt><dd>All 8 slots of each cycle rename waits for the ROB to drain before an instruction that must run alone.</dd>
+<dt>Why</dt><dd>It came with PR #2392. It is measured in slots, so it is exact where the other two children are estimates.</dd>
+<dt class="pit">Pitfalls</dt><dd>In this Arm model every system-register read (<code>MRS</code>) serializes, including thread-local-storage and timer reads that a real core likely does not drain for. It is large on agentic windows (about 0.08 of slots) and probably overstated.<br>The same cycles also count as execution stalls, so they dilute the memory/core ratio a second time.</dd>
+</dl></div>
+<div class="node">
+<h3>Memory bound</h3>
+<div class="ids">backend.memoryBound · td_be_memory · paper: Memory Bound</div>
+<dl>
+<dt>What</dt><dd>The share of the remaining back-end slots given by: cycles with nothing issued and a load outstanding (or the store queue full), over all execution-stall cycles.</dd>
+<dt>Why</dt><dd>The paper's heuristic: a miss only costs when the scheduler has nothing else ready. Work the core does under a miss is deliberately not charged to memory.</dd>
+<dt class="pit">Pitfalls</dt><dd><strong>It is a lower bound.</strong> A cycle that issues 1 or 2 micro-ops with a miss outstanding is a core stall. A pointer chase through the L2 with 32 independent adds per iteration takes exactly as long as the bare chase, yet reports memory 0.08 and core 0.54.<br>A load waiting on a page-table walk is at depth 0, so walks count as L1 bound even when the walk goes to DRAM.<br>The ratio comes from all cycles, not only cycles where rename was back-end stalled.</dd>
+</dl></div>
+<div class="node">
+<h3>Core bound</h3>
+<div class="ids">backend.coreBound · td_be_core · paper: Core Bound</div>
+<dl>
+<dt>What</dt><dd>The rest of the back-end slots: execution stalls that are not load or store stalls.</dd>
+<dt>Why</dt><dd>Same construction as the paper (execution stalls minus memory).</dd>
+<dt class="pit">Pitfalls</dt><dd><strong>It is an upper bound</strong>, for the reason above: under a perfect L1D, core bound falls 63% on the agentic sweep.<br>The threshold of 2 was chosen for 4-wide cores; on an 8-wide issue stage 3 or 4 issued is still half idle but not counted.<br>The stall test is "ROB not empty"; Intel's is "scheduler not empty", which here would be the IQ. Cycles where the front end starves the core therefore count as core stalls.</dd>
+</dl></div>
+
+<h2 id="mem">Memory levels</h2>
+<div class="formula">stalls      = loadStallCycles + storeStallCycles
+l1Bound     = memoryBound × (loadStallCycles − loadStallL1Miss) / stalls
+l2Bound     = memoryBound × (loadStallL1Miss − loadStallL2Miss) / stalls
+extMemBound = memoryBound × loadStallL2Miss / stalls
+storeBound  = memoryBound × storeStallCycles / stalls</div>
+<div class="tablewrap"><table>
+<thead><tr><th>Node</th><th>Stall cycles in which the deepest outstanding load…</th><th>Pitfalls</th></tr></thead>
+<tbody>
+<tr><td>L1 bound</td><td>has not missed the L1D</td><td>Includes loads still translating and table walks, and loads blocked on store forwarding.</td></tr>
+<tr><td>L2 bound</td><td>missed the L1D, not the L2</td><td>A load that joins an L1D miss already in progress stays at depth 1 even when the data comes from DRAM. A DRAM-bound load spends its first ~15 cycles here.</td></tr>
+<tr><td>Ext. memory bound</td><td>missed the L2</td><td>This is DRAM. The paper's L3 node does not exist here.</td></tr>
+<tr><td>Stores bound</td><td>(no load outstanding) the store queue is full</td><td>The paper: few micro-ops executed and no more stores can be issued. Ours needs zero issued and no load outstanding.</td></tr>
+</tbody></table></div>
+<p>The four add up to memory bound by construction, here and in the paper. The paper divides each by clocks; the code shares memory bound out in the same proportions.</p>
+
+<h2 id="idle">Idle cycles</h2>
+<p>gem5 stops ticking a core when nothing is active, for example while the only thing in flight is a cache miss. Real hardware would still be clocked, so those cycles are added back when the core wakes.</p>
+<ul>
+<li><strong>Slots:</strong> if rename was running or idle when the core stopped, the idle cycles are front-end latency (those inside the refill window: bad speculation). If rename was blocked, they fall to back-end bound.</li>
+<li><strong>Cycle counters:</strong> the back end records its state when the core stops (ROB empty, deepest outstanding load, SQ full) and counts the idle cycles as stalls in that state.</li>
+<li><code>subtractIdleCycles=True</code> leaves idle cycles out of everything.</li>
+</ul>
+<div class="note"><strong>Pitfall.</strong> Idle cycles are 5 to 11% of cycles on agentic windows and nearly vanish with a perfect L1I. They are mostly instruction-miss waits, not an idle operating system.</div>
+
+<h2 id="read">Reading rules</h2>
+<ul>
+<li><strong>Sum counters, then divide.</strong> Never average per-block fractions. Add the raw counters over the stats blocks of a window and apply the formulas once.</li>
+<li><strong>Compare siblings only.</strong> Fetch latency against fetch bandwidth, memory against core. A Level 2 value means little unless its parent is large.</li>
+<li><strong>Level 1 does not separate agentic from SPEC int</strong> on the windows read so far (front-end bound around half for both). The difference is in the make-up.</li>
+<li><strong>Use the limit studies for cause.</strong> Top-down says where slots are lost in this run. What a fix would gain comes from the perfect L1I, L1D, L2 and TLB runs.</li>
+<li><strong>Model effects to keep in mind:</strong> 6-wide fetch and decode into 8-wide rename; fetch waiting on L1I hits; serialization on every system-register read.</li>
+</ul>
+
+<h2 id="problems">Known problems</h2>
+<p>From the review against the paper and from kernels with a known answer. The first is fixed; the back-end ones are left as they are for now.</p>
+<div class="tablewrap"><table>
+<thead><tr><th>Problem</th><th>Effect</th><th>Kind</th></tr></thead>
+<tbody>
+<tr><td>Rename stalls on registers, SQ or LQ counted as front-end bandwidth</td><td>Front end too high, back end too low, in every run before the fix. Up to 0.27 of slots on kernels; at most 0.076 at the median of the agentic base sweep (an upper bound from the stall counts).</td><td><span class="tag">fixed 2026-11-13</span></td></tr>
+<tr><td>Restart lag after a rename stall counted as fetch latency</td><td>Front end slightly high on code that stalls rename often (0.16 on a store kernel).</td><td><span class="tag">open</span></td></tr>
+<tr><td>Back-end children scaled into slots</td><td>Level 2/3 values are not the paper's; the ratio is.</td><td><span class="tag">differs from paper</span></td></tr>
+<tr><td>Overlapped work counted as core</td><td>Memory is a lower bound, core an upper bound.</td><td><span class="tag">paper's definition</span></td></tr>
+<tr><td>Execution stall tests the ROB, not the IQ</td><td>Front-end starvation counted as core stalls.</td><td><span class="tag">differs from paper</span></td></tr>
+<tr><td>Serialize node</td><td>Extra node; double counted in the ratio.</td><td><span class="tag">not in paper</span></td></tr>
+<tr><td>Refill counted as bad speculation</td><td>Up to 40 slots per squash moved from front end.</td><td><span class="tag">differs from paper</span></td></tr>
+<tr><td>Mispredicts counted at execute; clears incomplete</td><td>The branch/clear split is unreliable, most on agentic windows.</td><td><span class="tag">differs from paper</span></td></tr>
+<tr><td>Store stall needs zero issued</td><td>Store bound narrower than the paper's.</td><td><span class="tag">differs from paper</span></td></tr>
+<tr><td>Threshold of 2 on an 8-wide core</td><td>Core bound under-counts half-idle cycles.</td><td><span class="tag">paper's value</span></td></tr>
+</tbody></table></div>
+<h3>What the kernels showed</h3>
+<div class="tablewrap"><table>
+<thead><tr><th>Kernel</th><th>Ground truth</th><th class="num">Memory</th><th class="num">Core</th><th class="num">Front end</th></tr></thead>
+<tbody>
+<tr><td>DRAM pointer chase</td><td>memory</td><td class="num">0.98</td><td class="num">0.02</td><td class="num">0.00</td></tr>
+<tr><td>Dependent multiply chain</td><td>core</td><td class="num">0.00</td><td class="num">0.94</td><td class="num">0.02</td></tr>
+<tr><td>Streaming stores to DRAM</td><td>store</td><td class="num">0.90</td><td class="num">0.07</td><td class="num">0.02</td></tr>
+<tr><td>L2 chase + 32 dependent adds</td><td>core 0.74</td><td class="num">0.22</td><td class="num">0.70</td><td class="num">0.03</td></tr>
+<tr><td>L2 chase + 32 independent adds</td><td>memory</td><td class="num">0.08</td><td class="num">0.56</td><td class="num">0.17</td></tr>
+</tbody></table></div>
+<p>One run each, SE mode, data prefetchers off, front end 8 wide with a 1-cycle L1I, after the fix. Source: <code>runs/microbench-tma/kernels/report-fe8.txt</code>.</p>
+
+<h2 id="open">Under discussion</h2>
+<ul>
+<li><strong>Done 2026-11-13:</strong> the front-end leak is fixed, by not counting front-end bubbles in a cycle where rename stopped for a back-end reason.</li>
+<li><strong>Decided 2026-11-13:</strong> the back-end split stays as it is for now; a redesign may come later.</li>
+<li><strong>Agreed, not implemented:</strong> follow the paper in not forcing the back-end children to add up to back-end bound.</li>
+<li><strong>Open:</strong> whether to replace the "few issued" test. The candidate attributes each back-end stall of rename to the oldest entry of the resource that stalled it (ROB head for the ROB, registers and LQ; oldest unissued micro-op for the IQ) and classifies what that entry waits on. It still cannot separate two bottlenecks that overlap.</li>
+<li><strong>Open:</strong> whether the restart lag after a rename stall should count as back-end bound.</li>
+<li><strong>Open:</strong> whether to keep the serialize node, and whether the refill belongs in bad speculation.</li>
+</ul>
+
+<h2 id="code">Where it is in the code</h2>
+<div class="tablewrap"><table>
+<thead><tr><th>What</th><th>File</th><th>Function</th></tr></thead>
+<tbody>
+<tr><td>All formulas, the cycle counters</td><td><code>src/cpu/o3/tdm.cc</code>, <code>tdm.hh</code></td><td><code>TopDownStats</code>, <code>countBackend</code>, <code>countIssueCycle</code></td></tr>
+<tr><td>Bubble counters, refill window</td><td><code>src/cpu/o3/rename.cc</code></td><td><code>renameInsts</code>, <code>countFrontendBubbles</code>, <code>addIdleCycles</code>, <code>checkSignalsAndUpdate</code></td></tr>
+<tr><td>Call per cycle with micro-ops issued</td><td><code>src/cpu/o3/inst_queue.cc</code></td><td><code>scheduleReadyInsts</code></td></tr>
+<tr><td>Deepest outstanding load</td><td><code>src/cpu/o3/lsq.cc</code></td><td><code>LSQ::deepestOutstandingLoad</code></td></tr>
+<tr><td>Miss depth</td><td><code>src/mem/cache/base.hh</code></td><td><code>BaseCache::incMissCount</code></td></tr>
+<tr><td>Cycles, idle cycles</td><td><code>src/cpu/o3/cpu.cc</code></td><td><code>CPU::tick</code>, <code>CPU::wakeCPU</code></td></tr>
+<tr><td>Recomputation for the viewers</td><td><code>analysis_scripts/tasktrace/window_view.py</code></td><td><code>topdown</code>, <code>TOPDOWN_TREE</code></td></tr>
+</tbody></table></div>
+
+<footer>Reference: A. Yasin, "A Top-Down Method for Performance Analysis and Counters Architecture", ISPASS 2014. Original gem5 implementation: PR #2392. This page is private; share it from the Share menu.</footer>
+</div>
+</main>
+</div>

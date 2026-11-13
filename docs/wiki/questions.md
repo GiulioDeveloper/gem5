@@ -1,7 +1,7 @@
 ---
 type: overview
 status: current
-updated: 2026-10-27
+updated: 2026-11-13
 sources:
   - "[[2026-10-16-btb-tlb-limit-study]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -47,6 +47,13 @@ here when answered, with a link.
 - **What realistic structures get close to the ceilings?** Larger or
   ASID-tagged BTBs, a modelled L2 TLB latency, better instruction
   prefetching for JIT and short-lived code.
+- **How should back-end bound be split into memory and core?** The paper's
+  "few issued" test counts work overlapped with a miss as core, and the
+  code scales the split into slots, which the paper does not
+  ([[top-down-accounting#Known problems]]). Candidate: attribute each
+  back-end stall of rename to the oldest entry of the resource that stalled
+  it. Kernels still to write: divide chain plus independent DRAM chase,
+  machine clears, L1I misses ([[2026-11-13-top-down-microbenchmarks]]).
 
 ## Workload and measurement
 
