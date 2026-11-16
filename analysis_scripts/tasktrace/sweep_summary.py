@@ -38,14 +38,25 @@ shared out by each slice's instruction overlap with each block, so a
 short slice partly inherits its block's other slices' events. Idle (WFI)
 time is in the "other" slices' cycles. Categories with fewer than
 MIN_CAT_INSTS instructions in a window have shares but no metric values.
+The same is computed over every slice but the replay infra's and the idle
+task's (NO_INFRA, a category of its own in the value tables though not a
+slice category): sweep_compare.py shows the agentic windows that way by
+default. Idle is left out because its WFI time would count as cycles
+there, unlike in the whole window, whose cycles are the core's own
+(numCycles, which stops while the core is idle).
 
 Edge settings (EDGES), for the indirect cost of a context switch: at
 setting k, the stats blocks within k - 1 of a block holding a switch are
 dropped (the first and last k blocks of every thread run), and every
 metric is recomputed over the rest, for the whole window, each category
 and each process; a kept block holds no switch, so it goes to one slice
-whole and nothing is shared out. Switch metrics and time shares stay
-those of the whole window.
+whole and nothing is shared out. The isolated settings ("<k>i") drop
+blocks only around isolated switches: a block holding exactly one switch,
+with no other block holding one within k blocks either side. A kept block
+may then hold a switch, and is shared out across its slices by
+instruction overlap (cycles by tick overlap). Switch metrics and time
+shares stay those of the whole window. Every value table carries
+kept_insts, the instructions its values are over.
 
 Writes <out>/sweep.csv (one row per run), sweep_slices.csv (one row per
 agentic run and category), sweep_processes.csv (one row per agentic run
@@ -102,9 +113,18 @@ CATEGORIES = (
      "idle"),
 )
 MIN_CAT_INSTS = 1e6
+# Every slice but the replay infra's and the idle task's: the default view
+# of an agentic window in sweep_compare.py. A value-table key next to the
+# CATEGORIES, with no time share and no page button of its own. Idle is
+# left out so that its WFI time does not count as cycles, as in the whole
+# window (numCycles stops while the core is idle).
+NO_INFRA = "noinfra"
+CAT_KEYS = tuple(c for c, _, _ in CATEGORIES) + (NO_INFRA,)
 # Stats blocks dropped at each end of every thread run (edge blocks), for
 # the indirect cost of a context switch; 0, the whole window, is the row.
+# EDGE_KEYS: each k, then each k around isolated switches only ("<k>i").
 EDGES = (1, 3, 5)
+EDGE_KEYS = tuple(map(str, EDGES)) + tuple(f"{k}i" for k in EDGES)
 # Scheduling metrics from the switch events themselves: (key, label, unit,
 # description). They and the switch rates are the same at every edge
 # setting.
@@ -210,15 +230,19 @@ def add_piece(a, task, insts, ticks, stats, scale):
 
 
 def by_category(procs):
-    """Per-process accumulators summed per slice category."""
-    acc = {c: new_acc() for c, _, _ in CATEGORIES}
-    for (c, _), a in procs.items():
-        t = acc[c]
-        t["insts"] += a["insts"]
-        t["ticks"] += a["ticks"]
-        for n, v in a["stats"].items():
-            t["stats"][n] += v
-        t["sw"].update(a["sw"])
+    """Per-process accumulators summed per slice category (CAT_KEYS:
+    NO_INFRA sums every process but the replay infra's and the idle task,
+    tgid 0)."""
+    acc = {c: new_acc() for c in CAT_KEYS}
+    for (c, tgid), a in procs.items():
+        into = (acc[c],) if c == "infra" or tgid == 0 else (acc[c],
+                                                            acc[NO_INFRA])
+        for t in into:
+            t["insts"] += a["insts"]
+            t["ticks"] += a["ticks"]
+            for n, v in a["stats"].items():
+                t["stats"][n] += v
+            t["sw"].update(a["sw"])
     return acc
 
 
@@ -287,22 +311,37 @@ def slice_metrics(d, blocks, events, tree, keys, masks):
     out = {"cat": {}, "share": {}, "edge": {},
            "procs": proc_rows(procs, keys, period, ticks, insts)}
     for c, a in acc.items():
-        out["share"][c] = {"time": r4(a["ticks"] / ticks),
-                           "insts": r4(a["insts"] / insts)}
+        if c != NO_INFRA:
+            out["share"][c] = {"time": r4(a["ticks"] / ticks),
+                               "insts": r4(a["insts"] / insts)}
         out["cat"][c] = (acc_values(a, keys, period)
                          if a["insts"] >= MIN_CAT_INSTS else {})
-    # Edge settings: a kept block holds no switch, so it lies in one slice
-    # and goes to that slice's process whole. Switch and SCHED values stay
-    # those of the whole window.
+        out["cat"][c]["kept_insts"] = a["insts"]
+    # Edge settings: each kept block is shared out across the slices it
+    # overlaps, instructions and events by instruction overlap and ticks by
+    # tick overlap. Around every switch (k), a kept block holds no switch
+    # and goes to one slice whole; around isolated switches only (ki), it
+    # may hold some. Switch and SCHED values stay those of the whole window.
     cut_at = [c[0] for c in cuts]
     whole = {(p["category"], p["tgid"]): p for p in out["procs"]}
     for k, keep in masks.items():
         pk = defaultdict(new_acc)
         for b, kept in zip(blocks, keep):
-            if kept:
-                task = cuts[bisect.bisect_right(cut_at, b["s"]) - 1][2]
-                add_piece(pk[key(task)], task, b["insts"], b["ticks"],
-                          b["stats"], 1)
+            if not kept:
+                continue
+            i = bisect.bisect_right(cut_at, b["s"]) - 1
+            b_t1 = b["t0"] + b["ticks"]
+            while i + 1 < len(cuts) and cuts[i][0] < b["e"]:
+                (s, ts, task), (e, te, _) = cuts[i], cuts[i + 1]
+                ov = min(e, b["e"]) - max(s, b["s"])
+                if ov > 0:
+                    if s <= b["s"] and e >= b["e"]:
+                        tov = b["ticks"]
+                    else:
+                        tov = max(0, min(te, b_t1) - max(ts, b["t0"]))
+                    add_piece(pk[key(task)], task, ov, tov, b["stats"],
+                              ov / b["insts"])
+                i += 1
         cat = {}
         for c, a in by_category(pk).items():
             v = (acc_values(a, keys, period)
@@ -310,6 +349,7 @@ def slice_metrics(d, blocks, events, tree, keys, masks):
             v.update({x: out["cat"][c].get(x) for x in SCHED_KEYS})
             full = acc[c]["insts"]
             v["kept"] = r4(a["insts"] / full) if full else None
+            v["kept_insts"] = a["insts"]
             cat[c] = v
         rows = proc_rows(pk, keys, period, ticks, insts)
         for r in rows:
@@ -320,18 +360,25 @@ def slice_metrics(d, blocks, events, tree, keys, masks):
 
 
 def edge_masks(blocks, switches):
-    """{k: kept flag per block} for k in EDGES: the blocks within k - 1 of
-    a block holding a context switch are dropped, i.e. the first and last k
-    blocks of every thread run."""
+    """{key: kept flag per block} for key in EDGE_KEYS. "<k>": the blocks
+    within k - 1 of a block holding a context switch are dropped, i.e. the
+    first and last k blocks of every thread run. "<k>i": the same around
+    isolated switches only, a block holding exactly one switch with no
+    other block holding one within k blocks either side."""
     starts = [b["s"] for b in blocks]
-    hit = {bisect.bisect_right(starts, x) - 1 for x in switches}
+    count = Counter(bisect.bisect_right(starts, x) - 1 for x in switches)
+    hit = sorted(count)
     masks = {}
     for k in EDGES:
-        keep = [True] * len(blocks)
-        for j in hit:
-            for i in range(max(0, j - k + 1), min(len(blocks), j + k)):
-                keep[i] = False
-        masks[k] = keep
+        iso = [j for n, j in enumerate(hit) if count[j] == 1
+               and (n == 0 or j - hit[n - 1] > k)
+               and (n + 1 == len(hit) or hit[n + 1] - j > k)]
+        for name, around in ((str(k), hit), (f"{k}i", iso)):
+            keep = [True] * len(blocks)
+            for j in around:
+                for i in range(max(0, j - k + 1), min(len(blocks), j + k)):
+                    keep[i] = False
+            masks[name] = keep
     return masks
 
 
@@ -364,7 +411,7 @@ def summarize(suite, name, d, skip_insts=0):
     lo, hi = blocks[0]["s"], blocks[-1]["e"]
     minsts = (hi - lo) / 1e6
     row = {"suite": suite, "name": name, "insts": hi - lo,
-           "blocks": len(blocks), "dir": str(d)}
+           "kept_insts": hi - lo, "blocks": len(blocks), "dir": str(d)}
     for k in KEYS:
         m = by.get(k)
         row[k] = m["whole"] if m else None
@@ -398,16 +445,17 @@ def summarize(suite, name, d, skip_insts=0):
             v = window_values(blocks, keep, keys, by)
             v.update({x: row[x] for x in SCHED_KEYS})
             v.update({x + "_cv": row.get(x + "_cv") for x in SCHED_KEYS})
-            v["kept"] = r4(sum(b["insts"] for b, f in zip(blocks, keep) if f)
-                           / (hi - lo))
-            row["edge"][str(k)] = v
+            v["kept_insts"] = sum(b["insts"]
+                                  for b, f in zip(blocks, keep) if f)
+            v["kept"] = r4(v["kept_insts"] / (hi - lo))
+            row["edge"][k] = v
         if suite == "agentic":
             sl = slice_metrics(d, blocks, events, tree, keys, masks)
             if sl:
                 row["cat"], row["share"] = sl["cat"], sl["share"]
                 row["procs"] = [dict(p, edge=0) for p in sl["procs"]]
                 for k, e in sl["edge"].items():
-                    row["edge"][str(k)]["cat"] = e["cat"]
+                    row["edge"][k]["cat"] = e["cat"]
                     row["procs"] += [dict(p, edge=k) for p in e["procs"]]
     return row, {m["key"]: m for m in metrics if m["key"] in KEYS}
 
@@ -528,16 +576,18 @@ def category_defs(rows):
 
 
 def write_slices_csv(rows, metric_defs, path):
-    """One row per agentic run and slice category."""
+    """One row per agentic run and slice category (and NO_INFRA, with no
+    shares)."""
     keys = [m["key"] for m in metric_defs]
     with open(path, "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["suite", "name", "category", "time_share",
                     "insts_share"] + keys)
         for r in sorted(rows, key=lambda r: (r["suite"], r["name"])):
-            for c, _, _ in CATEGORIES if "cat" in r else ():
-                w.writerow([r["suite"], r["name"], c, r["share"][c]["time"],
-                            r["share"][c]["insts"]]
+            for c in CAT_KEYS if "cat" in r else ():
+                sh = r["share"].get(c, {})
+                w.writerow([r["suite"], r["name"], c, sh.get("time"),
+                            sh.get("insts")]
                            + [r["cat"][c].get(k) for k in keys])
 
 
@@ -603,11 +653,13 @@ def main():
     for r in rows:      # per-process rows stay out of the page
         r.pop("procs", None)
     # The data sweep_compare.py reads; the pages are comparisons only.
-    model = {"version": 3, "name": str(args.paths[0])
+    model = {"version": 4, "name": str(args.paths[0])
              + (f" (first {args.skip_insts / 1e6:g}M instructions of each "
                 "window skipped)" if args.skip_insts else ""),
              "metrics": metric_defs, "categories": category_defs(rows),
              "edges": list(EDGES) if any("edge" in r for r in rows) else [],
+             "edge_keys": (list(EDGE_KEYS) if any("edge" in r for r in rows)
+                           else []),
              "topdown": topdown_tree(metric_defs),
              "cache": cache_view(metric_defs), "runs": rows}
     (out / "sweep.view.json").write_text(

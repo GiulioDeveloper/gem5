@@ -196,6 +196,28 @@ whose context they run in.
 - The difference from k = 0 is not purely the switch's cold-start cost.
   The dropped stretches are also the switch-heavy phases (docker CLI
   ping-pong, short tool processes), so a work-mix difference rides along.
+- **Isolated switches only** (2026-11-16, settings `1i`, `3i`, `5i`): the
+  same k blocks are dropped, but only around a switch that is alone in its
+  block, with no other block holding a switch within k blocks either side
+  (the isolation rule of the window view's event list). Blocks around
+  clustered switches are kept, so a kept block may hold a switch. It is
+  then shared out across its slices by instruction overlap (cycles by
+  tick overlap), as at k = 0. Isolated switches are rare: on axios-5892,
+  babel-15649 and carbon-2752 (base sweep) k = 1 drops 0.6–1.5% of the
+  instructions around isolated switches, against 7–29% around every switch.
+
+**No-infra values** (2026-11-16). Every agentic summary also has a
+`noinfra` entry next to the categories, at every edge setting: the values
+over every slice but the replay infra's and the idle task's (pid 0). It
+is not a slice category (no time share, no page button). Idle is left out
+because its WFI time would count as cycles there, while the whole window's
+cycles are the core's `numCycles`, which stop in WFI
+([[numcycles-excludes-wfi]]). Keeping idle in made axios-5892's no-infra
+IPC 0.019 (74% of its time is idle) against 0.83 without it.
+Like a category, it shares events out by instruction overlap at k = 0, so
+the default view carries that approximation for blocks shared with infra
+or idle. Every value table also has `kept_insts`, the instructions its
+values are over.
 
 ## Comparisons: `sweep_compare.py`
 
@@ -310,6 +332,26 @@ Summaries written before 2026-11-13 lack these metrics: rerun
   an axis shared by every card.
 - *Distributions over checkpoints*: violins of every Level 1 metric, SPEC
   beside agentic, a violin per sweep, as values, ratios or differences.
+
+**Replay infra excluded by default** (2026-11-16). The agentic values of
+"All slices" are the summary's `noinfra` values: no replay infra, no idle.
+A switch ("Replay infra: Excluded / Included") brings the whole window
+back. The "Replay infra" category button shows only while the infra is
+included. `compare.csv`, `compare_geomean.csv` and the violins use the
+same default; `sweep_compare.py --with-infra` makes the whole window the
+default instead. `compare_geomean_edges.csv` keeps category `all` as the
+whole window and adds `noinfra`. SPEC always shows the whole window.
+
+**Coverage** (2026-11-16). A line under the filters gives, per suite, how
+much of each checkpoint the shown values are over in A: stats blocks
+kept (exact when only whole blocks are kept, else instructions over the
+mean block length, marked ≈), the share of the work without infra and
+idle, and the share of the whole window (median and range). It also names
+the lowest checkpoint when it falls under half. The strip
+repeats the medians, chart hints append them, and the per-checkpoint table
+has a "Coverage (A)" column. `compare.csv` has `kept_share:<label>` per
+sweep. With edges on, a switch picks every switch or isolated switches
+only.
 
 The slice category, edge setting and checkpoint search apply to every view.
 A category's aggregates are over the checkpoints where it ran in the

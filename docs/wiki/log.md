@@ -1087,3 +1087,31 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   there and part of the no-prefetch loss is the MSHR target limit.
 - Reference statistics for the definitions:
   `runs/no-prefetch/reference/gin-2121-{nopf,pf}.cache-stats.txt`.
+
+## [2026-11-16] infra | Comparisons: replay infra excluded by default, coverage, isolated-switch edges
+
+- `sweep_summary.py` (view version 4): a `noinfra` value table next to the
+  slice categories, at every edge setting: every slice but the replay
+  infra's and the idle task's. Idle is left out because its WFI time would
+  count as cycles ([[numcycles-excludes-wfi]]): with it, axios-5892's
+  no-infra IPC was 0.019 against 0.83 without. `kept_insts` in every value
+  table. Edge settings `1i`/`3i`/`5i` drop blocks only around isolated
+  switches; per-category values at those settings share kept blocks
+  across slices. The old `1`/`3`/`5` values reproduce exactly.
+- `sweep_compare.py` (version 6): agentic defaults to `noinfra` in the
+  page, `compare.csv` (with `kept_share` columns), `compare_geomean.csv`
+  and the violins; `--with-infra` restores the whole window.
+- `compare_view.html`: a Replay infra Excluded/Included switch (the infra
+  category button only while included), an Every switch / Isolated
+  switches only switch with edges on, a coverage line (blocks kept, share
+  of the non-infra work and of the window, lowest checkpoint), coverage in
+  the strip, chart hints and a per-checkpoint table column.
+- Re-summarised the 13 sweeps of `compare-1B-all`
+  (`runs/sweep/resummarise-noinfra.sh`; old summaries in `summary-v3/`,
+  old comparison in `compare-1B-all-v5/`). The page grew from 3.2 to
+  11.8 MB. Perfect-cache IPC changes shift by at most 1.1 points
+  ([[2026-11-10-cache-hierarchy-headroom#Without replay infra (2026-11-16)]]);
+  new slide figures in `runs/perfect-slides-noinfra/`.
+- Isolated switches are rare: at k = 1 they cover 0.6–1.5% of the
+  instructions on three base checkpoints, against 7–29% for every switch.
+- Pages: [[sweeps]], [[metric-definitions]] (regenerated, not republished).

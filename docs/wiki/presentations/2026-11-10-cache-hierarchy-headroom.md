@@ -1,7 +1,7 @@
 ---
 type: presentation
 status: current
-updated: 2026-11-10
+updated: 2026-11-16
 sources:
   - https://claude.ai/artifact/XerHSEe8yAKWx29QVQzedy
   - runs/sweep/20261104-1115-base/compare-1B-all/
@@ -51,3 +51,25 @@ it after the first build.
   13.7%), per-task IPC and top-down violins, and caveats. The two violin
   PNGs are still uploaded to the deck. Regenerate them with
   `slide_violins.py` ([[general-guidance]]) into `runs/perfect-slides/`.
+
+## Without replay infra (2026-11-16)
+
+The deck's numbers are whole-window values, replay infra included. Since
+2026-11-16 the comparisons leave the replay infra and the idle task out of
+agentic values by default ([[sweeps]]).
+`runs/sweep/20261104-1115-base/compare-1B-all/` was rebuilt that way
+(`runs/sweep/resummarise-noinfra.sh`; the old one is in
+`compare-1B-all-v5/`). Geomean IPC (`compare_geomean.csv`): base 1.010
+(was 1.009), pTLB +4.6% (+4.3%), pL1I +8.5% (+9.6%), pL1I+pTLB +13.5%
+(+13.8%), pL1D +43.5% (+43.2%), pL2 +47.6% (+48.2%), pL1D+pTLB +49.1%
+(+48.8%), pL2+pTLB +49.1% (+49.6%), pL1D+pL1I +58.4% (+58.8%). Top-down
+means, base / pL1I / pL1D / pL2: front-end bound 41.9 / 37.4 / 53.8 /
+50.0%, back-end bound 34.0 / 36.3 / 12.9 / 14.7%. The ranking and the
+reading of slides 3–4 do not change. Rebuilt with `--with-infra`, all 43
+aggregates of the old comparison come out identical, so the shifts come
+only from the exclusion. Two checkpoints (axios-5892, bat-2835) are 94–97%
+infra by instructions; their values now rest on 30–55M instructions.
+New figures: `runs/perfect-slides-noinfra/` (`ipc_bars.html` from
+`slide_bars.py`, `ipc_violins.png`, `topdown_violins.png`). The deck
+itself has not been updated.
+

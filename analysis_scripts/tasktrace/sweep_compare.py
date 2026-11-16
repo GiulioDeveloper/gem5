@@ -3,7 +3,8 @@
 
 Usage:
     python3 analysis_scripts/tasktrace/sweep_compare.py A B [C ...] [-o OUT]
-        [--pdf] [--labels TEXT TEXT ...] [--label-a TEXT] [--label-b TEXT]
+        [--pdf] [--with-infra] [--labels TEXT TEXT ...] [--label-a TEXT]
+        [--label-b TEXT]
 
 A, B, ... (two to 26) are sweep directories as
 run_scripts/tasktrace/sweep.sh lays them out (or anything sweep_summary.py
@@ -14,6 +15,15 @@ from any sweep are listed and left out. The sweeps should differ only in
 the configuration under test: settings that differ in sweep.conf other
 than the extra flags are reported, and so are checkpoints whose windows
 differ by more than 0.1% in length.
+
+Agentic windows leave out the replay infra by default: their values are
+those over every slice but the replay infra's and the idle task's
+(sweep_summary.NO_INFRA), in compare.csv, compare_geomean.csv, the
+violins and the page (which has a switch to bring the infra back).
+--with-infra makes the whole window the default instead, as before. SPEC
+has no infra and always shows the whole window. compare.csv also gives,
+per sweep, the share of the window's instructions the values are over
+(kept_share).
 
 Writes <out>/compare.csv (each metric's value per sweep, and its change
 against the first for the others), compare.view.json and compare.html.
@@ -42,7 +52,8 @@ shows each category's share of time per sweep, and compare_slices.csv and
 compare_geomean_slices.csv hold the per-category values and aggregates (a
 category's over the checkpoints where it ran in the baseline). When they
 have edge settings (stats blocks dropped at each end of every thread run),
-every view and aggregate is also available at each setting, and
+every view and aggregate is also available at each setting, around
+every switch or around isolated ones only, and
 compare_geomean_edges.csv holds the aggregates at all of them. --pdf also
 writes violins.pdf/.png (the values) and violins_change.pdf/.png (the
 ratios). The output directory defaults to <B>/compare-<name of A> for two
@@ -105,7 +116,10 @@ def change(a, b):
 
 MAX_SWEEPS = 26  # sweeps are lettered A to Z; colours cycle past the 16
 # categorical slots of compare_view.html
-CATS = [c for c, _, _ in ss.CATEGORIES]
+# Value tables per category (the slice categories and NO_INFRA); time
+# shares exist for the slice categories only.
+CATS = list(ss.CAT_KEYS)
+SHARE_CATS = [c for c, _, _ in ss.CATEGORIES]
 
 
 def geomean(xs, n):
@@ -165,7 +179,17 @@ def geomeans(rows, defs, n, suites=ss.SUITES, get=lambda r: r):
     return out
 
 
-def compare(dirs, labels, out, pdf):
+def default_view(r, with_infra):
+    """The values a checkpoint shows by default: an agentic run's over
+    NO_INFRA unless with_infra, else the whole window."""
+    if with_infra or r["suite"] != "agentic" or "cat" not in r:
+        return r
+    v = r["cat"][ss.NO_INFRA]
+    return {"suite": r["suite"], "name": r["name"], "insts": r["insts"],
+            **{k: x for k, x in v.items()}}
+
+
+def compare(dirs, labels, out, pdf, with_infra=False):
     """Compare two or more sweeps against the first (see the docstring)."""
     confs = [read_conf(d) for d in dirs]
     labels = [lab or c.get("extra") or "baseline"
@@ -196,7 +220,8 @@ def compare(dirs, labels, out, pdf):
             defs.setdefault(k, m)
             pos.setdefault(k, order.index(k) if k in order else prev + 0.5)
     defs = sorted(defs.values(), key=lambda m: pos[m["key"]])
-    keys_kept = [m["key"] for m in defs] + ["kept"]
+    keys_kept = [m["key"] for m in defs] + ["kept", "kept_insts"]
+    keys_cat = [m["key"] for m in defs] + ["kept_insts"]
     by = [{(r["suite"], r["name"]): r for r in rows} for rows, _ in loaded]
     common = set.intersection(*(set(b) for b in by))
     for lab, b in zip(labels, by):
@@ -208,7 +233,9 @@ def compare(dirs, labels, out, pdf):
     for key in sorted(common):
         rs = [b[key] for b in by]
         row = {"suite": key[0], "name": key[1],
-               "insts": [r["insts"] for r in rs]}
+               "insts": [r["insts"] for r in rs],
+               "blocks": [r["blocks"] for r in rs],
+               "kept_insts": [r.get("kept_insts", r["insts"]) for r in rs]}
         if any(abs(r["insts"] - rs[0]["insts"]) > 1e-3 * rs[0]["insts"]
                for r in rs):
             notes.append(f"{key[1]}: windows of "
@@ -216,18 +243,18 @@ def compare(dirs, labels, out, pdf):
                          + " instructions")
         for m in defs:
             row[m["key"]] = [r.get(m["key"]) for r in rs]
-        if all("cat" in r for r in rs):
-            row["cat"] = {c: {m["key"]: [r["cat"][c].get(m["key"])
-                                         for r in rs] for m in defs}
-                          for c in CATS}
+        if all(ss.NO_INFRA in r.get("cat", {}) for r in rs):
+            row["cat"] = {c: {x: [r["cat"][c].get(x) for r in rs]
+                              for x in keys_cat} for c in CATS}
             row["share"] = {c: {q: [r["share"][c][q] for r in rs]
-                                for q in ("time", "insts")} for c in CATS}
-        if all("edge" in r for r in rs):
+                                for q in ("time", "insts")}
+                            for c in SHARE_CATS}
+        if all(set(ss.EDGE_KEYS) <= set(r.get("edge", {})) for r in rs):
             row["edge"] = {}
-            for k in map(str, ss.EDGES):
+            for k in ss.EDGE_KEYS:
                 es = [r["edge"][k] for r in rs]
                 e = {x: [v.get(x) for v in es] for x in keys_kept}
-                if all("cat" in v for v in es):
+                if all(ss.NO_INFRA in v.get("cat", {}) for v in es):
                     e["cat"] = {c: {x: [v["cat"][c].get(x) for v in es]
                                     for x in keys_kept} for c in CATS}
                 row["edge"][k] = e
@@ -235,20 +262,31 @@ def compare(dirs, labels, out, pdf):
     if not rows:
         raise SystemExit("no checkpoint is in every sweep")
     sliced = [r for r in rows if "cat" in r]
-    if sliced and len(sliced) < sum(r["suite"] == "agentic" for r in rows):
-        notes.append("slice categories missing in some agentic runs: "
-                     "rerun sweep_summary.py on every sweep")
+    agentic = [r for r in rows if r["suite"] == "agentic"]
+    if len(sliced) < len(agentic):
+        notes.append("slice categories (or the no-infra values) missing in "
+                     "some agentic runs, which show the whole window: rerun "
+                     "sweep_summary.py on every sweep")
+    if any("edge" not in r for r in rows if r["suite"] == "agentic"):
+        notes.append("edge settings missing in some runs: rerun "
+                     "sweep_summary.py on every sweep")
+    # The default values of each checkpoint (default_view), for the CSVs
+    # and the violins.
+    flat_rows = [default_view(r, with_infra) for r in rows]
 
     out.mkdir(parents=True, exist_ok=True)
-    cols = ["suite", "name"]
+    cols = ["suite", "name"] + [f"kept_share:{lab}" for lab in labels]
     for m in defs:
         cols += [f"{m['key']}:{lab}" for lab in labels]
         cols += [f"{m['key']}:{lab}:rel" for lab in labels[1:]]
     with open(out / "compare.csv", "w", newline="") as f:
         w = csv.DictWriter(f, fieldnames=cols)
         w.writeheader()
-        for r in rows:
+        for r in flat_rows:
             flat = {"suite": r["suite"], "name": r["name"]}
+            for lab, k, n in zip(labels, r.get("kept_insts", r["insts"]),
+                                 r["insts"]):
+                flat[f"kept_share:{lab}"] = ss.r4(k / n) if n else None
             for m in defs:
                 vals = r[m["key"]]
                 for lab, v in zip(labels, vals):
@@ -257,6 +295,7 @@ def compare(dirs, labels, out, pdf):
                     flat[f"{m['key']}:{lab}:rel"] = change(vals[0], v)[1]
             w.writerow(flat)
     gm = geomeans(rows, defs, len(labels))
+    gm_default = geomeans(flat_rows, defs, len(labels))
     with open(out / "compare_geomean.csv", "w", newline="") as f:
         w = csv.writer(f)
         w.writerow(["suite", "metric", "aggregate", "n", labels[0]]
@@ -264,7 +303,7 @@ def compare(dirs, labels, out, pdf):
                    + [f"{lab}:excluded" for lab in labels[1:]])
         for suite in ss.SUITES:
             for m in defs:
-                g = gm[suite][m["key"]]
+                g = gm_default[suite][m["key"]]
                 w.writerow([suite, m["key"], g["agg"], g["n"], g["base"]]
                            + g["ratio"] + g["excluded"])
     gm_cat = category_geomeans(sliced, defs, len(labels), lambda r: r)
@@ -273,14 +312,14 @@ def compare(dirs, labels, out, pdf):
     # The same at every edge setting (sweep_summary.EDGES).
     gm_edge = {}
     if all("edge" in r for r in rows):
-        for k in map(str, ss.EDGES):
+        for k in ss.EDGE_KEYS:
             get = lambda r, k=k: r["edge"][k]  # noqa: E731
             gm_edge[k] = {"all": geomeans(rows, defs, len(labels), get=get),
                           "cat": category_geomeans(
                               [r for r in sliced if "cat" in get(r)], defs,
                               len(labels), get)}
         write_edges(gm, gm_cat, gm_edge, defs, labels, out)
-    model = {"version": 5,
+    model = {"version": 6,
              "name": " · ".join(str(d) for d in dirs),
              "sweeps": [{"dir": str(d), "label": lab}
                         for d, lab in zip(dirs, labels)],
@@ -288,17 +327,20 @@ def compare(dirs, labels, out, pdf):
              "categories": ss.category_defs(sliced), "runs": rows,
              "geomean": gm, "geomean_cat": gm_cat,
              "edges": list(ss.EDGES) if gm_edge else [],
+             "with_infra": with_infra,
              "geomean_edge": gm_edge, "topdown": ss.topdown_tree(defs),
              "cache": ss.cache_view(defs)}
     write_page(model, out)
     if pdf:
-        write_pdfs(rows, defs, labels, out)
+        write_pdfs(flat_rows, defs, labels, out)
     for n in notes:
         print("note:", n, file=sys.stderr)
     counts = {s: sum(r["suite"] == s for r in rows) for s in ss.SUITES}
     print(f"{out}/compare.html: {len(rows)} checkpoints "
           f"({counts['spec']} spec, {counts['agentic']} agentic) in "
           f"{len(dirs)} sweeps against {labels[0]}"
+          + (", infra included" if with_infra else
+             ", agentic without the replay infra")
           + (", violins*.pdf/.png" if pdf else ""))
 
 
@@ -315,8 +357,10 @@ def category_geomeans(rows, defs, n, get):
 
 def write_edges(gm, gm_cat, gm_edge, defs, labels, out):
     """compare_geomean_edges.csv: the geometric means at every edge
-    setting, 0 (the whole window) included, per suite and per slice
-    category."""
+    setting ("<k>", or "<k>i" around isolated switches only), 0 (the
+    whole window) included, per suite and per slice category (and
+    sweep_summary.NO_INFRA); category "all" is the whole window, infra
+    included."""
     with open(out / "compare_geomean_edges.csv", "w",
               newline="") as f:
         w = csv.writer(f)
@@ -348,8 +392,10 @@ def write_slices(rows, defs, labels, gm_cat, out):
                    + [f"{m['key']}:{lab}" for m in defs for lab in labels])
         for r in rows:
             for c in CATS:
+                sh = r["share"].get(c, {})
                 w.writerow([r["suite"], r["name"], c]
-                           + r["share"][c]["time"] + r["share"][c]["insts"]
+                           + sh.get("time", [None] * len(labels))
+                           + sh.get("insts", [None] * len(labels))
                            + [v for m in defs for v in r["cat"][c][m["key"]]])
     with open(out / "compare_geomean_slices.csv", "w",
               newline="") as f:
@@ -469,6 +515,9 @@ def main():
     ap.add_argument("--pdf", action="store_true",
                     help="also write the violins as .pdf/.png "
                     "(needs matplotlib)")
+    ap.add_argument("--with-infra", action="store_true",
+                    help="agentic defaults: the whole window, replay infra "
+                    "included (default: without it)")
     args = ap.parse_args()
     dirs = [args.a] + args.b
     if len(dirs) > MAX_SWEEPS:
@@ -483,7 +532,7 @@ def main():
         labels[1] = args.label_b
     out = args.out or (args.b[0] / f"compare-{args.a.resolve().name}"
                        if len(dirs) == 2 else args.a / "compare-multi")
-    compare(dirs, labels, out, args.pdf)
+    compare(dirs, labels, out, args.pdf, args.with_infra)
 
 
 if __name__ == "__main__":

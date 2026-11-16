@@ -83,7 +83,17 @@ CONVENTIONS = [
      "WFI. Its event counts are shared out from the stats blocks by "
      "instruction overlap, so a short slice inherits part of its "
      "neighbours' events. With edge blocks dropped, every metric is "
-     "recomputed over the remaining blocks."),
+     "recomputed over the remaining blocks; around isolated switches only, "
+     "a kept block may hold a switch and is shared out the same way."),
+    ("Replay infra excluded (agentic default)",
+     "By default an agentic value is over every slice but the replay "
+     "infra's and the idle task's, computed as for a category: cycles are "
+     "simulated time (idle is left out, so WFI is not in them), and the "
+     "events of a block shared with infra or idle are shared out by "
+     "instruction overlap. With the infra included, it is the whole window "
+     "(the core's numCycles, which exclude WFI). The page gives the "
+     "coverage: the stats blocks and the share of the work the values are "
+     "over."),
 ]
 
 # (label, key, unit, stats, formula, notes)
