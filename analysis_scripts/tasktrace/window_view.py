@@ -343,6 +343,300 @@ METRICS += [
     for key, label, _, desc, lvl in td_all()]
 TD_GEM5 = {key: TD + f for key, _, f, _, _ in td_all() if f}
 
+# Cache hierarchy: where demand accesses are served from, and the average
+# memory access time (AMAT), for instruction fetch (through the L1I) and
+# data (loads and stores, through the L1D). Page-table walks go through
+# the MMU cache and are on neither side. Everything is per demand access
+# of the L1: an L1I access is a fetch request for one cache line, not an
+# instruction.
+#
+# Counts. An L1 miss either allocates an MSHR and sends one request to the
+# L2 (a new miss, demandMshrMisses) or joins a miss already in flight for
+# its line, a demand miss or a prefetch, and makes no L2 request (an
+# in-flight hit, demandMshrHits). In-flight hits are their own part. A new
+# miss reaches the L2 as one of: a demand read that hits there, one that
+# joins a miss or prefetch the L2 has outstanding (L2 in flight; that fill
+# comes from memory), one that is a new L2 miss (memory), or, data side
+# only, an ownership request that moves no data (InvalidateReq for a write
+# covering a whole line, UpgradeReq for a write to a line the L1D holds
+# read-only). New misses are shared out by the L2's counts of those four
+# for the side's requester; the two totals are the same requests (but for
+# atomics, load-exclusives and software prefetches, which are not demand
+# at the L1D and are demand reads at the L2).
+#
+# Time. An access's miss latency runs from its arrival at a cache to its
+# response; an MSHR's (demandMshrMissLatency) from its first target's
+# arrival to the fill, before the cache's response latency. A new miss's
+# time is the MSHR's plus that response latency; the rest of the miss
+# latency is the in-flight hits' time. All parts are past the cache's
+# lookup. The L1's new-miss time is split into: memory, the L2's own
+# new-miss time for the side's requests; L2 in flight, the L2's in-flight
+# time; ownership, the ownership requests at the mean time of the L1D's
+# whole-line write misses (WriteLineReq, measured); and L2, the remainder
+# (the path to the L2 and back, and its lookup, for every new miss).
+#
+# Stats ending in CYC are derived per stats block by derive_cache_stats():
+# a count times its cache's hit latency (RESP: its response latency), or a
+# latency in core cycles
+# (clock period from config.ini, so idle WFI time does not distort it).
+CYC = "@cycles"
+RESP = "@resp"
+REQ = CORE[len("board."):]      # requester names in the L2's stats
+CACHE_SIDES = (     # (key, label, L1, L1 name, L2 requester)
+    ("i", "Instruction", L1I, "L1I", REQ + "inst"),
+    ("d", "Data", L1D, "L1D", REQ + "data"),
+)
+CACHE_LEVELS = (("l1", "L1"), ("l1fly", "L1 in flight"), ("l2", "L2"),
+                ("l2fly", "L2 in flight"), ("mem", "Memory"),
+                ("own", "Ownership"))
+# Ownership requests exist on the data side only.
+SIDE_LEVELS = {"i": CACHE_LEVELS[:-1], "d": CACHE_LEVELS}
+OWN_CMDS = ("InvalidateReq", "UpgradeReq", "SCUpgradeReq")
+WLINE = "WriteLineReq.mshrMisses::total"
+WLINE_LAT = "WriteLineReq.mshrMissLatency::total"
+BLOCK_CAUSES = (("mshr", "no_mshrs", "no free MSHR"),
+                ("tgt", "no_targets", "MSHR target list full"),
+                ("wb", "no_wbuffers", "no free write buffer"))
+BLOCK_CACHES = (("l1i", "L1I", L1I), ("l1d", "L1D", L1D), ("l2", "L2", L2))
+
+
+def own_stats(req):
+    return [L2 + c + "." + x + "::" + req
+            for c in OWN_CMDS for x in ("hits", "misses")]
+
+
+def cache_stats(l1, req):
+    """The stats a side's metrics read: L1 demand hits, misses and miss
+    latency, the L2's for the side's requester, and their CYC forms."""
+    base = [l1 + "demandHits::total", l1 + "demandMisses::total",
+            l1 + "demandMshrHits::total", l1 + "demandMshrMisses::total",
+            l1 + "demandMissLatency::total",
+            l1 + "demandMshrMissLatency::total", L2 + "demandHits::" + req,
+            L2 + "demandMisses::" + req, L2 + "demandMshrHits::" + req,
+            L2 + "demandMshrMisses::" + req, L2 + "demandMissLatency::" + req,
+            L2 + "demandMshrMissLatency::" + req, l1 + WLINE, l1 + WLINE_LAT]
+    return tuple(base + [x + CYC for x in base] + own_stats(req)
+                 + [l1 + "demandMshrMisses::total" + RESP, l1 + WLINE + RESP,
+                    L2 + "demandMshrMisses::" + req + RESP])
+
+
+def cache_values(s, l1, req):
+    """The cache-hierarchy values of one side from s(stat); see the comment
+    above. Raises ZeroDivisionError without accesses, and for the parts of
+    the new misses when the L1 missed but the L2 saw no request (no L2)."""
+    hits, miss = s(l1 + "demandHits::total"), s(l1 + "demandMisses::total")
+    fly, new = s(l1 + "demandMshrHits::total"), s(l1 + "demandMshrMisses::total")
+    acc = hits + miss
+    out = {"res_l1": lambda: hits / acc, "res_l1fly": lambda: fly / acc}
+    h2, m2 = s(L2 + "demandHits::" + req), s(L2 + "demandMisses::" + req)
+    fly2 = s(L2 + "demandMshrHits::" + req)
+    new2 = s(L2 + "demandMshrMisses::" + req)
+    own2 = sum(s(x) for x in own_stats(req))
+    req2 = h2 + m2 + own2       # what the new L1 misses became at the L2
+    out["l2_hit"] = lambda: h2 / (h2 + m2)
+    for k, n in (("res_l2", h2), ("res_l2fly", fly2), ("res_mem", new2),
+                 ("res_own", own2)):
+        out[k] = lambda n=n: new / acc * n / req2 if new else 0.0
+    # Every access pays the L1 lookup; a miss's latency includes it.
+    lookup = (s(l1 + "demandHits::total" + CYC)
+              + s(l1 + "demandMisses::total" + CYC))
+    lat = s(l1 + "demandMissLatency::total" + CYC)
+    t_new = (s(l1 + "demandMshrMissLatency::total" + CYC)
+             + s(l1 + "demandMshrMisses::total" + RESP))
+    past_new = max(0.0, t_new - s(l1 + "demandMshrMisses::total" + CYC))
+    past_fly = max(0.0, lat - t_new - s(l1 + "demandMshrHits::total" + CYC))
+    # The L2's own time on its misses for this side, past its lookup.
+    t_new2 = (s(L2 + "demandMshrMissLatency::" + req + CYC)
+              + s(L2 + "demandMshrMisses::" + req + RESP))
+    t_mem = max(0.0, t_new2 - s(L2 + "demandMshrMisses::" + req + CYC))
+    t_fly2 = max(0.0, s(L2 + "demandMissLatency::" + req + CYC) - t_new2
+                 - s(L2 + "demandMshrHits::" + req + CYC))
+    # Ownership requests, at the mean time of a whole-line write miss.
+    wline = s(l1 + WLINE)
+    t_own = 0.0
+    if wline and own2 and new:
+        per = (s(l1 + WLINE_LAT + CYC) + s(l1 + WLINE + RESP)
+               - s(l1 + WLINE + CYC)) / wline
+        t_own = max(0.0, per) * new * own2 / req2
+    below = t_mem + t_fly2 + t_own
+    # Requests that straddle a block edge can make the parts exceed the
+    # L1's time in a block; then they are scaled to fit.
+    fit = min(1.0, past_new / below) if below else 1.0
+    out["amat"] = lambda: (lookup + past_new + past_fly) / acc
+    out["amat_l1"] = lambda: lookup / acc
+    out["amat_l1fly"] = lambda: past_fly / acc
+    parts = (("amat_l2", past_new - below * fit), ("amat_l2fly", t_fly2 * fit),
+             ("amat_mem", t_mem * fit), ("amat_own", t_own * fit))
+
+    def part(tk):
+        if new and not req2:    # no L2: the new misses cannot be split
+            raise ZeroDivisionError
+        return tk / acc
+
+    for k, tk in parts:
+        out[k] = lambda tk=tk: part(tk)
+    return out
+
+
+def blocked_metrics():
+    """(metric tuple, level) of the blocked-cycle metrics: per cache, the
+    share of cycles it accepted no new request, and its parts by cause."""
+    out = []
+    for key, name, cache in BLOCK_CACHES:
+        stats = [cache + "blockedCycles::" + c for _, c, _ in BLOCK_CAUSES]
+        out.append(((f"blk_{key}", "Cache hierarchy", f"{name} blocked",
+                     "% cycles",
+                     f"Cycles the {name} accepted no new request (no free "
+                     "MSHR, an MSHR's target list full, or no free write "
+                     "buffer), over the core's cycles", per_cycle(*stats)), 1))
+        for ck, cause, what in BLOCK_CAUSES:
+            out.append(((f"blk_{key}_{ck}", "Cache hierarchy",
+                         what[0].upper() + what[1:], "% cycles",
+                         f"Part of {name} blocked: blocked periods that "
+                         f"ended when the cause '{what}' cleared",
+                         per_cycle(cache + "blockedCycles::" + cause)), 2))
+    return out
+
+
+def cache_metrics():
+    """(metric tuple, level) of every cache-hierarchy metric."""
+    out = []
+    for key, label, l1, name, req in CACHE_SIDES:
+        low = label.lower()
+        what = "fetch requests" if key == "i" else "loads and stores"
+        rows = [
+            ("res_l1", f"{label}: served by the {name}", "% accesses",
+             f"Demand {what} that hit in the {name} (its hit rate)", 1),
+            ("res_l1fly", f"{label}: in flight to the {name}", "% accesses",
+             f"Demand {what} that missed the {name} on a line it was "
+             "already fetching (for a demand miss or a prefetch) and "
+             "waited for it, making no L2 request", 1),
+            ("res_l2", f"{label}: served by the L2", "% accesses",
+             f"Demand {what} whose new {name} miss the L2 held: the new "
+             f"miss ratio times the L2's hit share of the {low} requests "
+             "it got", 1),
+            ("res_l2fly", f"{label}: in flight to the L2", "% accesses",
+             f"Demand {what} whose new {name} miss joined a miss or "
+             "prefetch the L2 already had outstanding (the line was on "
+             "its way from memory)", 1),
+            ("res_mem", f"{label}: served by memory", "% accesses",
+             f"Demand {what} whose new {name} miss was also a new L2 "
+             "miss", 1),
+            ("res_own", f"{label}: ownership only", "% accesses",
+             f"Demand stores whose new {name} miss moved no data: a write "
+             "covering a whole line (sent as an invalidation) or a write "
+             f"to a line the {name} held read-only (an upgrade)", 1),
+            ("l2_hit", f"L2 hit rate, {low} requests", "% L2 accesses",
+             f"Demand requests of the {name} to the L2 that hit there", 1),
+            ("amat", f"{label} AMAT", "cycles",
+             f"Average time of a demand {name} access: the hit latency "
+             "plus the miss latency past it, over all accesses", 1),
+            ("amat_l1", f"{name} lookup", "cycles",
+             f"AMAT part: the {name} hit latency, paid by every access", 2),
+            ("amat_l1fly", f"{name} in flight", "cycles",
+             f"AMAT part: time past the lookup of {name} misses that "
+             f"waited on a line the {name} was already fetching", 2),
+            ("amat_l2", "L2", "cycles",
+             f"AMAT part: time of new {name} misses not spent below the "
+             "L2 or on ownership: the path to the L2 and back and its "
+             "lookup, for every new miss", 2),
+            ("amat_l2fly", "L2 in flight", "cycles",
+             f"AMAT part: time {low} requests waited in the L2 on a miss "
+             "or prefetch it already had outstanding", 2),
+            ("amat_mem", "Memory", "cycles",
+             f"AMAT part: time the L2's new misses for {low} requests "
+             "took past its lookup", 2),
+            ("amat_own", "Ownership", "cycles",
+             "AMAT part: ownership requests, at the mean time of a "
+             f"whole-line write miss of the {name}", 2),
+        ]
+        if ("own", "Ownership") not in SIDE_LEVELS[key]:
+            rows = [r for r in rows if not r[0].endswith("_own")]
+        for k, lab, unit, desc, lvl in rows:
+            out.append(((f"{k}_{key}", "Cache hierarchy", lab, unit, desc,
+                         (cache_stats(l1, req),
+                          lambda s, b, k=k, l1=l1, req=req:
+                          cache_values(s, l1, req)[k]())), lvl))
+    return out
+
+
+CACHE_LEVEL = {m[0]: lvl for m, lvl in cache_metrics() + blocked_metrics()}
+METRICS += [m for m, _ in cache_metrics() + blocked_metrics()]
+# Metrics whose parts add up: kept when zero, averaged (not geomean'd)
+# over checkpoints, and indented below their parent in tables.
+LEVEL = {**TD_LEVEL, **CACHE_LEVEL}
+
+
+def cache_keys():
+    return list(CACHE_LEVEL)
+
+
+def cache_view():
+    """The cache-hierarchy stacks as page data: per side, the residency
+    shares and the AMAT parts, bottom up (L1, L2, memory)."""
+    return {"levels": [lab for _, lab in CACHE_LEVELS],
+            "sides": [{"key": key, "label": label, "l1": name,
+                       "amat": f"amat_{key}",
+                       "amat_parts": [f"amat_{lv}_{key}"
+                                      for lv, _ in SIDE_LEVELS[key]],
+                       "res": [f"res_{lv}_{key}"
+                               for lv, _ in SIDE_LEVELS[key]]}
+                      for key, label, _, name, _ in CACHE_SIDES]}
+
+
+def run_config(outdir):
+    """config.ini as {section: {key: value}}; empty without the file."""
+    conf, cur = {}, None
+    f = outdir / "config.ini"
+    if not f.exists():
+        return conf
+    for line in open(f):
+        line = line.strip()
+        if line.startswith("["):
+            cur = conf.setdefault(line[1:-1], {})
+        elif cur is not None and "=" in line:
+            k, _, v = line.partition("=")
+            cur[k] = v
+    return conf
+
+
+def derive_cache_stats(outdir, dumps):
+    """Add the CYC stats to every dump: demand hits, misses and MSHR hits
+    and misses times the cache's hit latency, MSHR misses times its
+    response latency (RESP), and demand miss latencies in core cycles."""
+    conf = run_config(outdir)
+    try:
+        period = float(conf["board.clk_domain"]["clock"].split()[0])
+    except (KeyError, ValueError, IndexError):
+        return
+
+    def hit_latency(cache):
+        c = conf.get(cache[:-1])
+        if not c:
+            return None
+        tag, data = int(c["tag_latency"]), int(c["data_latency"])
+        return (tag + data if c.get("sequential_access") == "true"
+                else max(tag, data))
+
+    lat = {c: hit_latency(c) for c in (L1I, L1D, L2)}
+    resp = {c: int(conf[c[:-1]]["response_latency"])
+            for c in (L1I, L1D, L2) if c[:-1] in conf}
+    for d in dumps:
+        for name in [n for n in d if n.startswith((L1I, L1D, L2))]:
+            cache = name[:name.index("caches.") + len("caches.")]
+            stat = name[len(cache):]
+            if stat.startswith(("demandMissLatency::",
+                                "demandMshrMissLatency::")) \
+                    or stat == WLINE_LAT:
+                d[name + CYC] = d[name] / period
+            elif ((stat.startswith(("demandHits::", "demandMisses::",
+                                    "demandMshrHits::", "demandMshrMisses::"))
+                   or stat == WLINE) and lat[cache] is not None):
+                d[name + CYC] = d[name] * lat[cache]
+                if (stat.startswith("demandMshrMisses::")
+                        or stat == WLINE) and cache in resp:
+                    d[name + RESP] = d[name] * resp[cache]
+
 
 def read_dumps(run, wanted):
     """Per stats dump, {stat: float} restricted to `wanted`. Reads
@@ -393,6 +687,7 @@ def block_metrics(outdir, extra, skip_insts=0):
     wanted |= {CORE + "numCycles", CORE + "commitStats0.numInsts"}
     wanted |= set(TD_STATS) | set(TD_GEM5.values())
     dumps = read_dumps(outdir, wanted)
+    derive_cache_stats(outdir, dumps)
     # One dump per interval; gem5's exit dump has no interval row.
     blocks = []
     for iv, d in zip(intervals, dumps):
@@ -433,8 +728,9 @@ def block_metrics(outdir, extra, skip_insts=0):
                 vals.append(round4(formula(s, b)))
             except ZeroDivisionError:
                 vals.append(None)
-        # Top-down nodes stay when zero: the breakdown needs all of them.
-        if key != "ipc" and key not in TD_LEVEL and not any(vals):
+        # Top-down nodes and cache-hierarchy parts stay when zero: their
+        # stacks need all of them.
+        if key != "ipc" and key not in LEVEL and not any(vals):
             dropped.append(key)
             continue
         if any(x in averaged for x in stats):
@@ -450,8 +746,8 @@ def block_metrics(outdir, extra, skip_insts=0):
         out.append({"key": key, "group": group, "label": label,
                     "unit": unit, "desc": desc, "whole": round4(whole),
                     "v": vals})
-        if key in TD_LEVEL:
-            out[-1]["level"] = TD_LEVEL[key]
+        if key in LEVEL:
+            out[-1]["level"] = LEVEL[key]
     if TD_SLOTS in seen:
         check_topdown(outdir, blocks)
     return blocks, out, dropped
@@ -575,7 +871,7 @@ def view_model(outdir, extra):
                    "cyc": [int(b["cycles"]) for b in blocks]},
         "metrics": metrics,
         "zeroMetrics": dropped,
-        "topdown": td_tree() if any("level" in m for m in metrics)
+        "topdown": td_tree() if any(m["key"] in TD_LEVEL for m in metrics)
         else None,
         "sched": sched,
     }

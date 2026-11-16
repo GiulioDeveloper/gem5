@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-09
+updated: 2026-11-16
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -249,6 +249,55 @@ sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
   perfect L1I and L2 misses next to a perfect L2). A value a sweep lacks,
   or a mean left empty, shows as "N/A", also in the per-checkpoint bars.
 
+### Cache hierarchy
+
+Since 2026-11-13 the page has a *Cache hierarchy* block under the
+top-down bars, and the same quantities as metric rows (group *Cache
+hierarchy*), split by **instruction** (the L1I's demand accesses: fetch
+requests for one line, not instructions) and **data** (the L1D's: loads
+and stores). Page-table walks go through the MMU cache and are on neither
+side. Definitions are in `window_view.py` (`cache_values`):
+
+- **Served from** (`res_{l1,l1fly,l2,l2fly,mem,own}_{i,d}`, adding up
+  to 100%): L1 hits; *L1 in flight*, misses that join a miss or prefetch
+  the L1 already has outstanding; then the new misses by what they
+  became at the L2: an L2 hit, *L2 in flight* (joining a miss or prefetch
+  the L2 has outstanding; that fill comes from memory), a new L2 miss
+  (memory), or, data side only, an *ownership* request that moves no
+  data (whole-line writes and upgrades).
+- **L2 hit rate** per side (`l2_hit_{i,d}`).
+- **AMAT** (`amat_{i,d}`) and its parts (`amat_{l1,l1fly,l2,l2fly,mem,own}_{i,d}`):
+  the L1 lookup, the L1 in-flight waits, and the new misses' time split
+  into memory and L2 in flight (both the L2's own measured times),
+  ownership, and L2 (the remainder: the way to the L2 and back and its
+  lookup).
+- **Blocked** (`blk_{l1i,l1d,l2}` and by cause `_mshr`, `_tgt`, `_wb`,
+  since 2026-11-16): share of cycles a cache accepted no new request.
+  The wait of an access refused then is in no cache latency, so AMAT
+  understates where the L1D is blocked much.
+- **Exact formulas, the gem5 statistics behind each row, how exact each
+  part is and what it leaves out: [[metric-definitions]].**
+- History: 2026-11-13 L1 / L2 / memory with all L1 misses shared out by
+  the L2's ratio; 2026-11-16 in-flight parts, ownership, the L2's own
+  times, blocked rows. Pages built before 2026-11-16 overstate the L2
+  and memory parts.
+- A perfect L1 has no accesses, so its side is "N/A"; with a perfect L2
+  the parts of the new misses are "N/A" and the L1 share and AMAT total
+  remain.
+
+On the page: *AMAT* shows one stacked bar per sweep (L1 lookup, L1
+in flight, L2, L2 in flight, memory, ownership; the total above the bar), per side and suite, on an axis shared
+by the suites of a side. *Served from* shows the shares; *Zoom on misses*
+cuts the axis just below the lowest L1 share. *Per checkpoint* has
+"Cache hierarchy, instruction/data (stacked)": a card per checkpoint in
+the view chosen above. In the aggregate table these rows are plain means
+with the difference from A (percentage points, or cycles), like the
+top-down shares. Slice categories and edge settings apply.
+
+Summaries written before 2026-11-13 lack these metrics: rerun
+`sweep_summary.py` (with `-o` to leave the old summary alone, as
+`runs/no-prefetch/compare.sh` does).
+
 **Collapsed below** (open state remembered):
 - *Where the agentic time goes*: violins of each slice category's share of
   time or instructions, per sweep.
@@ -301,5 +350,7 @@ comparison: [[comparing-configurations]].
 | `runs/sweep/20261016-172546-{infbtb,inftlb,infbtb-inftlb}` | limit studies | [[2026-10-16-btb-tlb-limit-study]] |
 | `runs/sweep/20261104-1115-*` | 9 perfect L1I / L2 / TLB and FDP-off configs, 1B windows | [[2026-11-02-perfect-l2]], [[2026-11-03-perfect-l1i]] |
 | `runs/sweep/20261104-1115-base/compare-1B-all/` | every agentic 1B-window sweep (13: the 11-04 nine, `20261105-1143-fe8`, `20261106-2004-{pl1d,pl1d-pl1i,pl1d-ptlb}`) against the 11-04 base | [[2026-11-06-perfect-l1d]], [[2026-11-05-front-end-width]] |
+| `runs/sweep/20261112-1720-spec4-*` | SPEC 400M counterparts of 16 configurations | [[2026-11-12-spec-400m-sweeps]] |
+| `runs/sweep/20261113-1805-{fe8-l1i1-nopf,spec4-fe8-l1i1-nopf}` | every prefetcher off, width 8, 1-cycle L1I (agentic 1B, SPEC 400M); page `20261113-1805-compare-nopf/` | [[2026-11-13-no-prefetch-cache-hierarchy]] |
 | `runs/sweep/20261019-compare-5way/` | five-way comparison | same |
 | `runs/sweep/20261020-skip100M/` | the five re-summarised skipping 100M | same |

@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-05
+updated: 2026-11-16
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - analysis_scripts/tasktrace/window_view.py
@@ -43,8 +43,11 @@ how the core behaves around scheduling points.
 
 - **One bar chart per metric** on a shared instruction axis, a bar per
   block as wide as its instructions. Groups: throughput, front end, bad
-  speculation, memory, back end; Garfield counters and every top-down node
-  when the build has them. `--metric` adds any stat raw, per 1000 instructions or as
+  speculation, memory, cache hierarchy (served-from shares with L1 and
+  L2 in-flight parts, L2 hit rates and AMAT per side, 2026-11-13, in flight
+  2026-11-16, blocked cycles per cache; [[sweeps#Cache hierarchy]], every
+  metric's formula in [[metric-definitions]]), back end;
+  Garfield counters and every top-down node when the build has them. `--metric` adds any stat raw, per 1000 instructions or as
   a share of cycles. `window_view.METRICS` defines every metric the sweep
   tools use.
 - **Top-down breakdown** (builds with [[top-down-accounting]]): a stacked

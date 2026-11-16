@@ -18,9 +18,11 @@ differ by more than 0.1% in length.
 Writes <out>/compare.csv (each metric's value per sweep, and its change
 against the first for the others), compare.view.json and compare.html.
 The page leads with the aggregate over checkpoints, per suite: every
-metric in one table and the top-down breakdown as one stacked bar per
-sweep; then, collapsed, one metric (or the breakdown) checkpoint by
-checkpoint against the baseline, and the violins of every metric. The
+metric in one table, the top-down breakdown as one stacked bar per
+sweep, and the cache hierarchy (AMAT by level, or where demand accesses
+are served from, per side; window_view.cache_values); then, collapsed,
+one metric (or a breakdown) checkpoint by checkpoint against the
+baseline, and the violins of every metric. The
 legend picks which sweeps every view shows, and the SPEC runs can be
 hidden.
 
@@ -286,7 +288,8 @@ def compare(dirs, labels, out, pdf):
              "categories": ss.category_defs(sliced), "runs": rows,
              "geomean": gm, "geomean_cat": gm_cat,
              "edges": list(ss.EDGES) if gm_edge else [],
-             "geomean_edge": gm_edge, "topdown": ss.topdown_tree(defs)}
+             "geomean_edge": gm_edge, "topdown": ss.topdown_tree(defs),
+             "cache": ss.cache_view(defs)}
     write_page(model, out)
     if pdf:
         write_pdfs(rows, defs, labels, out)

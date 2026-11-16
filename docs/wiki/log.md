@@ -1010,3 +1010,80 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   `runs/sweep/20261112-1720-compare-15cfg/compare.html` with
   `runs/spec-400m/compare.sh all`; geomean table for all 15 configurations
   added to [[2026-11-12-spec-400m-sweeps]].
+
+## [2026-11-13] code | --disable-prefetch, cache-hierarchy metrics and page section
+
+- `configs/garfield/arm/{cache_hierarchy,sim_opts}.py` (uncommitted):
+  `--disable-l1i-prefetch` (the L1I tagged prefetcher had no switch) and
+  `--disable-prefetch` (FDP's prefetcher, L1I tagged, L1D, L2 off; the
+  decoupled front end stays). Smoke test `runs/no-prefetch/smoke.sh`: 8
+  runs exit 0, no prefetcher in `config.ini`.
+- `analysis_scripts/tasktrace/window_view.py`, `sweep_summary.py`,
+  `sweep_compare.py`, `compare_view.html` (uncommitted): served-from
+  shares (L1 / L2 / memory), L2 hit rate and AMAT with its parts, per
+  side (instruction, data); a *Cache hierarchy* block on the comparison
+  page (AMAT stack, served-from stack with a zoom, per-checkpoint cards).
+  Design choices asked beforehand. Definitions in
+  [[sweeps#Cache hierarchy]]; [[neoverse-v2]], [[viewers]] updated.
+- Sweeps launched 18:05: `runs/sweep/20261113-1805-fe8-l1i1-nopf`
+  (agentic 1B) and `-spec4-fe8-l1i1-nopf` (SPEC 400M), commit
+  `9ff7bdd38c-dirty`.
+
+## [2026-11-14] experiment | No-prefetch sweeps complete
+
+- Both sweeps finished, 27/27 and 26/26, no failures. Page
+  `runs/sweep/20261113-1805-compare-nopf/compare.html`
+  (`runs/no-prefetch/compare.sh`) against the `fe8-l1i1` sweeps,
+  re-summarised into `runs/no-prefetch/ref/`.
+- New [[2026-11-13-no-prefetch-cache-hierarchy]]: IPC geomean −22.1%
+  SPEC, −18.1% agentic; data AMAT 8.8 → 19.0 (SPEC) and 8.4 → 14.4
+  (agentic) cycles, instruction AMAT 1.06 → 1.27 and 1.77 → 3.11; vpr,
+  abc and omnetpp are faster without prefetchers (unexplained). Conflict
+  flagged: the reference sweeps predate the top-down rename fix, so
+  top-down shares of the two sides are not comparable.
+
+## [2026-11-16] experiment | Cache hierarchy: in-flight part
+
+- `window_view.py`, `compare_view.html` (uncommitted): L1 misses that
+  join a miss or prefetch already outstanding (`demandMshrHits`) are now
+  their own part, *In flight*, in the served-from shares and in AMAT
+  (`res_fly_*`, `amat_fly_*`). Only new misses (`demandMshrMisses`) are
+  shared between L2 and memory by the L2's ratio, so that split no longer
+  mixes per-access and per-request counts. Definitions in
+  [[sweeps#Cache hierarchy]]. Asked by the user after the estimate
+  caveat.
+- Page `runs/sweep/20261113-1805-compare-nopf/compare.html` rebuilt
+  (all four summaries rerun); AMAT totals unchanged. In
+  [[2026-11-13-no-prefetch-cache-hierarchy]]: in-flight waits are the
+  largest part of data access time past the L1 lookup in both suites
+  (agentic 2.78 of 4.43 cycles with prefetchers, 6.96 of 10.42 without);
+  the earlier "memory is most of the time" holds for new misses only.
+- Same day: the L2 got the same split. New L1 misses are shared by the
+  L2's hits, its own in-flight hits (joining an L2 miss or BOP prefetch)
+  and its new misses (memory); keys `res_/amat_{l1,l1fly,l2,l2fly,mem}_*`
+  (the L1 part renamed `l1fly`). Page rebuilt. L2 in flight is zero
+  without prefetchers and 0.15-0.19 cycles of data AMAT with them (lbm
+  2.39). Full-line writes (`DC ZVA`, sent to the L2 as invalidations)
+  documented in [[sweeps#Cache hierarchy]].
+
+## [2026-11-16] publish | metric-definitions; cache counters fixed; blocked cycles
+
+- `window_view.py`, `compare_view.html` (uncommitted), the user's choices:
+  in flight stays its own label at both levels; ownership requests
+  (whole-line writes, upgrades) are their own part on the data side;
+  memory and L2 in flight are the L2's own measured times and L2 is the
+  remainder of the L1's new-miss time, instead of a proportional share;
+  new rows `blk_{l1i,l1d,l2}` (share of cycles a cache accepted no
+  request) with parts by cause. Checked on gin-2121: shares add to 100%,
+  parts to AMAT, new L1 misses against L2 requests 0.06% apart.
+- New [[metric-definitions]] and its published page `metric-definitions`
+  (https://claude.ai/artifact/M3M8ih92cteVcaXhkhNSYV): every metric of
+  the comparison table, with gem5 stats, formula, what it leaves out and
+  pitfalls. Both are written by `docs/tools/metric_definitions.py`.
+  [[publish]], [[index]], [[sweeps]], [[viewers]] updated.
+- [[2026-11-13-no-prefetch-cache-hierarchy]]: table redone; new
+  observation: the L1D is blocked 5.9% → 12.8% of cycles (agentic) and
+  8.8% → 11.1% (SPEC), 736.ocio_r 40% → 82%, so data AMAT is understated
+  there and part of the no-prefetch loss is the MSHR target limit.
+- Reference statistics for the definitions:
+  `runs/no-prefetch/reference/gin-2121-{nopf,pf}.cache-stats.txt`.

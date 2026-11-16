@@ -34,7 +34,8 @@ than the run mode lives here so the drivers cannot drift apart:
   * the DRAM model presets (``MEM_FACTORIES``) and ``--clk-freq`` /
     ``--mem-type`` / ``--mem-size``,
   * the front-end / prefetcher ablation switches (``--disable-fdp``,
-    ``--disable-l1d-prefetch``, ``--disable-l2-prefetch``) and the limit
+    ``--disable-l1i-prefetch``, ``--disable-l1d-prefetch``,
+    ``--disable-l2-prefetch``, ``--disable-prefetch``) and the limit
     studies (``--infinite-btb``, ``--infinite-tlb``, ``--perfect-tlb``,
     ``--cache-scale``, ``--perfect-l2``, ``--perfect-l1i``,
     ``--perfect-l1d``),
@@ -234,6 +235,19 @@ def add_common_args(
         "--disable-l2-prefetch",
         action="store_true",
         help="Disable the L2 BOP prefetcher.",
+    )
+    prefetch.add_argument(
+        "--disable-l1i-prefetch",
+        action="store_true",
+        help="Disable the L1I next-line tagged prefetcher (FDP is separate: "
+        "--disable-fdp, which also turns off the decoupled front end).",
+    )
+    prefetch.add_argument(
+        "--disable-prefetch",
+        action="store_true",
+        help="Disable every cache prefetcher: FDP's L1I prefetches, the L1I "
+        "tagged prefetcher, the L1D Stride+SMS stack and the L2 BOP. The "
+        "decoupled front end stays on (unlike --disable-fdp).",
     )
 
     garfield = parser.add_argument_group("garfield")
@@ -464,13 +478,22 @@ def cache_kwargs(args):
     return {
         # Under --perfect-l1i nothing reads the L1I; FDP would only push
         # instruction lines into the L2.
-        "enable_fdp": not (args.disable_fdp or args.perfect_l1i),
+        "enable_fdp": not (
+            args.disable_fdp or args.perfect_l1i or args.disable_prefetch
+        ),
+        "enable_l1i_prefetch": not (
+            args.disable_l1i_prefetch or args.disable_prefetch
+        ),
         # Under --perfect-l1d the L1D sees only rare accesses; its
         # prefetcher would only push lines into the L2.
         "enable_l1d_prefetch": not (
-            args.disable_l1d_prefetch or args.perfect_l1d
+            args.disable_l1d_prefetch
+            or args.perfect_l1d
+            or args.disable_prefetch
         ),
-        "enable_l2_prefetch": not args.disable_l2_prefetch,
+        "enable_l2_prefetch": not (
+            args.disable_l2_prefetch or args.disable_prefetch
+        ),
         "cache_scale": args.cache_scale,
         "perfect_l2": args.perfect_l2,
         "l1i_latency": args.l1i_cycles,
@@ -622,7 +645,8 @@ def describe(args):
         dram = f"perfect-L2 SimpleMemory @ {args.mem_size}"
     else:
         l2 = f"L2 {2 * args.cache_scale}MiB"
-        l2pf = "off" if args.disable_l2_prefetch else "on"
+        l2pf_off = args.disable_l2_prefetch or args.disable_prefetch
+        l2pf = "off" if l2pf_off else "on"
         dram = f"{args.mem_type} @ {args.mem_size}"
     size = f"{64 * args.cache_scale}KiB"
     if args.perfect_l1i:
@@ -640,14 +664,18 @@ def describe(args):
         l1 = f"{l1i}, {l1d}"
     else:
         l1 = f"L1I/L1D {size}"
-    fdp_off = args.disable_fdp or args.perfect_l1i
-    l1dpf_off = args.disable_l1d_prefetch or args.perfect_l1d
+    fdp_off = args.disable_fdp or args.perfect_l1i or args.disable_prefetch
+    l1ipf_off = args.disable_l1i_prefetch or args.disable_prefetch
+    l1dpf_off = (
+        args.disable_l1d_prefetch or args.perfect_l1d or args.disable_prefetch
+    )
     fe_width = args.front_end_width or NeoverseV2.decodeWidth
     return [
         f"  core     : fetch/decode width {fe_width}, "
         f"rename {NeoverseV2.renameWidth}",
         f"  caches   : {l1}, {l2} | "
         f"FDP={'off' if fdp_off else 'on'}, "
+        f"L1Ipf={'off' if l1ipf_off else 'on'}, "
         f"L1Dpf={'off' if l1dpf_off else 'on'}, "
         f"L2pf={l2pf}, "
         f"BTB={'infinite' if args.infinite_btb else 'neoverse-v2'}, "

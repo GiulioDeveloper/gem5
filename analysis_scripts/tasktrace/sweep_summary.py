@@ -74,12 +74,13 @@ import window_view as wv  # noqa: E402
 
 
 # Metrics shown, in order (keys of window_view.METRICS).
-KEYS = ("ipc", "user_share", "fetch_rate",
+KEYS = (("ipc", "user_share", "fetch_rate",
         "l1i_mpki", "itlb_mpki", "icache_stall",
         "br_mpki", "btb_mispred_pki", "squashed",
         "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
-        "walks_done_d_pki", "walks_done_i_pki", "l1d_lat",
-        "rob_full", "iq_full", "lsq_full") + tuple(wv.td_keys())
+        "walks_done_d_pki", "walks_done_i_pki", "l1d_lat", "l1i_lat")
+        + tuple(wv.cache_keys()) + ("rob_full", "iq_full", "lsq_full")
+        + tuple(wv.td_keys()))
 SWITCHES = (("switches", "Context switches", None),
             ("switch_process", "Process switches", "switch_process"),
             ("switch_thread", "Thread switches", "switch_thread"),
@@ -511,6 +512,13 @@ def topdown_tree(metric_defs):
             else None)
 
 
+def cache_view(metric_defs):
+    """The cache-hierarchy stacks (window_view.cache_view) as page data,
+    when the metrics have them."""
+    keys = {m["key"] for m in metric_defs}
+    return wv.cache_view() if all(k in keys for k in wv.cache_keys()) else None
+
+
 def category_defs(rows):
     """CATEGORIES as page definitions; none when no run has slices."""
     if not any("cat" in r for r in rows):
@@ -600,7 +608,8 @@ def main():
                 "window skipped)" if args.skip_insts else ""),
              "metrics": metric_defs, "categories": category_defs(rows),
              "edges": list(EDGES) if any("edge" in r for r in rows) else [],
-             "topdown": topdown_tree(metric_defs), "runs": rows}
+             "topdown": topdown_tree(metric_defs),
+             "cache": cache_view(metric_defs), "runs": rows}
     (out / "sweep.view.json").write_text(
         json.dumps(model, separators=(",", ":")))
     if args.pdf:

@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-11-05
+updated: 2026-11-14
 sources:
   - configs/garfield/arm/neoverse_v2.py
   - configs/garfield/arm/cache_hierarchy.py
@@ -69,6 +69,8 @@ sets × 2 ways. TLBs: [[tlb-hierarchy]] (48-entry L1 iTLB and dTLB, 2,048-entry
 |---|---|
 | `--disable-fdp` | decoupled front end and the FDP prefetcher off (the tagged L1I prefetcher stays) |
 | `--disable-l1d-prefetch`, `--disable-l2-prefetch` | detach those prefetchers |
+| `--disable-l1i-prefetch` | detach the L1I next-line tagged prefetcher (2026-11-13; before, it had no switch) |
+| `--disable-prefetch` | every cache prefetcher off: FDP's L1I prefetcher, the L1I tagged prefetcher, L1D Stride+SMS and L2 BOP; the decoupled front end stays on, unlike `--disable-fdp` (2026-11-13). With FDP and the tagged prefetcher both off the L1I's `prefetcher` is `Null`. See [[2026-11-13-no-prefetch-cache-hierarchy]] |
 | `--infinite-btb` | [[infinite-btb-model]] instead of the 12K BTB |
 | `--infinite-tlb` | [[infinite-l2-tlb]] instead of the 2K L2 TLB |
 | `--perfect-tlb` | every demand TLB miss of the O3 core is served by a zero-time functional walk (`ArmMMU.perfect_tlb`), so translations always hit, cold and post-`TLBI` misses included; prefetch translations still drop on a miss; counted in `mmu.perfectWalks`; exclusive with `--infinite-tlb`. See [[2026-11-02-perfect-l2]] |

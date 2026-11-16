@@ -29,8 +29,10 @@
 Per core: private L1I (with FDP + tagged instruction prefetch), L1D (with
 the Stride+SMS stack from the L1D class), a private L2 (with the BOP
 prefetcher from the L2 class), and an MMU/page-table-walker cache, all
-behind a per-core L2 crossbar. Prefetching is controlled by the three
-constructor flags (enable_fdp / enable_l1d_prefetch / enable_l2_prefetch).
+behind a per-core L2 crossbar. Prefetching is controlled by the four
+constructor flags (enable_fdp / enable_l1i_prefetch / enable_l1d_prefetch /
+enable_l2_prefetch); with FDP and the L1I tagged prefetcher both off the L1I
+has no prefetcher.
 
 With perfect_l2 the L2 and the per-core L2 crossbars are dropped: the L1s
 and the MMU cache connect straight to a memory bus with the L2 crossbar's
@@ -72,6 +74,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
     def __init__(
         self,
         enable_fdp: bool = True,
+        enable_l1i_prefetch: bool = True,
         enable_l1d_prefetch: bool = True,
         enable_l2_prefetch: bool = True,
         cache_scale: int = 1,
@@ -87,6 +90,7 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
             membus=_l2xbar_timed_membus() if perfect_l2 else None,
         )
         self._enable_fdp = enable_fdp
+        self._enable_l1i_prefetch = enable_l1i_prefetch
         self._enable_l1d_prefetch = enable_l1d_prefetch
         self._enable_l2_prefetch = enable_l2_prefetch
         self._cache_scale = cache_scale
@@ -127,19 +131,26 @@ class NeoverseV2CacheHierarchy(PrivateL1PrivateL2CacheHierarchy):
         for i in range(num_cores):
             cpu = board.get_processor().get_cores()[i].core
 
-            # L1I: optional FDP (decoupled front-end) + baseline tagged pf.
-            self.l1icaches[i].prefetcher = MultiPrefetcher()
+            # L1I: optional FDP (decoupled front-end) and optional
+            # next-line tagged prefetcher. A MultiPrefetcher cannot be
+            # empty, so with both off the L1I has no prefetcher.
+            l1i_prefetchers = []
             if self._enable_fdp:
                 fdp = FetchDirectedPrefetcher(
                     use_virtual_addresses=True, cpu=cpu
                 )
                 fdp.registerCache(self.l1icaches[i])
-                self.l1icaches[i].prefetcher.prefetchers.append(fdp)
-            self.l1icaches[i].prefetcher.prefetchers.append(
-                TaggedPrefetcher(use_virtual_addresses=True)
-            )
-            for pf in self.l1icaches[i].prefetcher.prefetchers:
+                l1i_prefetchers.append(fdp)
+            if self._enable_l1i_prefetch:
+                l1i_prefetchers.append(
+                    TaggedPrefetcher(use_virtual_addresses=True)
+                )
+            for pf in l1i_prefetchers:
                 pf.registerMMU(cpu.mmu)
+            if l1i_prefetchers:
+                self.l1icaches[i].prefetcher = MultiPrefetcher(
+                    prefetchers=l1i_prefetchers
+                )
 
             # L1D Stride+SMS stack is defined on the L1D class; detach it
             # for ablation.
