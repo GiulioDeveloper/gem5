@@ -1,7 +1,7 @@
 ---
 type: meta
 status: current
-updated: 2026-11-12
+updated: 2026-11-13
 ---
 
 # Index
@@ -63,6 +63,7 @@ Human-facing outputs: [[publish]].
 - [[2026-11-06-perfect-l1d]]: `--perfect-l1d` built and validated: LSQ serves plain loads/stores and atomics functionally at the 4-cycle hit latency; agentic sweep IPC +43% (with perfect L1I +59%, with perfect TLB +49%); PerfectCache and hacked-cache alternatives compared
 - [[2026-11-12-jit-code-versions]]: a PC can hold several instructions (JIT); the PC trace (v2) keeps encodings and the footprint pass counts each encoding at a PC as new code; guest JIT runs no per-line cache maintenance (cached `CTR_EL0` IDC = DIC = 1); 1G rubocop: 38 PCs rewritten, footprint and branches change <0.01%
 - [[2026-11-12-miss-count-vs-miss-cost]]: why FDP off (+138% L1I MPKI) costs only ~3% and why agentic gains +43% from a perfect L1D with SPEC-like MPKI: miss latency, L2 miss rate and overlap, not counts; SPEC is bimodal
+- [[2026-11-12-spec-400m-sweeps]]: SPEC counterparts of the 16 agentic limit-study and front-end configurations at 400M (stamp 20261112-1720, 6 of 16 done): perfect L1D SPEC +47% vs agentic +43%; perfect L2 +37% vs +48%; perfect L1I and TLB still agentic-only; memory-bound underestimates both
 - [[2026-11-05-front-end-width]]: gem5's 6-wide fetch/decode caps micro-ops into 8-wide rename; `--front-end-width 8` vs 6, agentic 1B + SPEC 200M sweeps launching
 
 ## Findings

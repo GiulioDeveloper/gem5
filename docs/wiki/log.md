@@ -916,6 +916,17 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   +14% vs the measured +43%. Whether agentic gains more than SPEC is not
   established without a SPEC perfect-L1D sweep.
 
+## [2026-11-12] experiment | SPEC 400M sweeps of the agentic configurations
+
+- New [[2026-11-12-spec-400m-sweeps]]: 16 SPEC sweeps (26 × 400M), one
+  per agentic 1B configuration plus a 400M SPEC baseline,
+  `runs/spec-400m/launch.sh`, stamp `20261112-1720`, commit `387f75040f`;
+  about 24 runs at once, estimated 13-16 h.
+- Smoke test first (`runs/spec-400m/smoke.sh`, 4 benchmarks × 5
+  configurations, 5M): all pass; no SVE masked stores; perfect L1D gives
+  +72% to +603% on these memory-heavy benchmarks.
+- Updated [[index]], [[questions]], [[2026-11-12-miss-count-vs-miss-cost]] (Open).
+
 ## [2026-11-12] query | "Issue" in the top-down code vs the paper
 
 - [[top-down-accounting]] (Conventions): this project uses gem5's terms,
@@ -923,6 +934,26 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   "issue" is our rename/dispatch and its "executed" is our issue. Added a
   mapping table (`SlotsIssued` = `rename.renamedInsts`, `OpsExecuted` =
   `total_issued` in `countIssueCycle`).
+
+## [2026-11-13] experiment | SPEC 400M: first six configurations
+
+- `spec4-{base,pl1d,nofdp,pl1i,pl2,ptlb}` done (26/26, no failures); the
+  other ten about half done, slower than estimated (~2 h per run).
+- Perfect L1D: SPEC +46.6% geomean vs agentic +43.2%; perfect L2 +37.4%
+  vs +48.2%; perfect L1I +1.5% vs +9.6%; perfect TLB +0.5% vs +4.3%; FDP
+  off −2.7% vs −3.2%. Memory-bound holds 51% of SPEC's perfect-L1D saving
+  (agentic 39%). cpython −1.7% with a perfect L1D, unexplained.
+- Updated [[2026-11-12-spec-400m-sweeps]] (Results),
+  [[2026-11-12-miss-count-vs-miss-cost]] (superseded callout and
+  Conclusions: "agentic gains more" refuted), [[index]], [[questions]].
+
+## [2026-11-13] experiment | Two-suite comparison page, first five configurations
+
+- `runs/spec-400m/compare.sh`: merges each configuration's agentic 1B and
+  SPEC 400M sweeps (`merge_suites.py`) and runs `sweep_compare.py`;
+  output `runs/sweep/20261112-1720-compare-5cfg/compare.html` (ptlb, pl1i,
+  pl1d, pl2, nofdp vs base, both suites). Recorded in
+  [[2026-11-12-spec-400m-sweeps]].
 
 ## [2026-11-13] experiment | Top-down on microbenchmarks, review against the paper
 
@@ -973,3 +1004,9 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
 - Rebuilt `top-down-guide` after the front-end fix: new front-end rule
   and its reasoning, the warning on runs before the fix, kernel table
   from the rerun, decisions.
+
+## [2026-11-13] experiment | SPEC 400M sweeps complete
+- All 16 `20261112-1720-spec4-*` sweeps finished, 26/26 each. Built
+  `runs/sweep/20261112-1720-compare-15cfg/compare.html` with
+  `runs/spec-400m/compare.sh all`; geomean table for all 15 configurations
+  added to [[2026-11-12-spec-400m-sweeps]].

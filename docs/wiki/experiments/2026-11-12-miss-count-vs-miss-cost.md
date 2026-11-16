@@ -1,7 +1,7 @@
 ---
 type: experiment
 status: open
-updated: 2026-11-12
+updated: 2026-11-13
 sources:
   - runs/metric-why/deep_stats.py
   - runs/metric-why/deep_stats.csv
@@ -200,6 +200,14 @@ mean over 27 tasks, total 310):
   agentic's, it would gain more than agentic. Either way, "agentic gains
   more than SPEC" is **not established**.
 
+> [!superseded] by [[2026-11-12-spec-400m-sweeps]] (2026-11-13)
+> The SPEC 400M perfect-L1D sweep gives +46.6% geomean against agentic's
+> +43.2%: SPEC does not gain less. Memory-bound holds 51% of SPEC's
+> saving (agentic 39%), so the top-down underestimate is general, not
+> agentic-specific. The per-miss picture above (longer, less overlapped
+> agentic misses) still holds; it explains a uniform gain across agentic
+> tasks, not a larger one than SPEC's.
+
 ## Conclusions
 
 - **Read miss cost, not miss count.** The metric to compare suites is
@@ -214,9 +222,14 @@ mean over 27 tasks, total 310):
   frequent L2 misses, low overlap. Interpretation, not verified: pointer
   chasing in interpreters, JITs and GC heaps. It fits the low prefetch
   activity and the low in-flight count.
-- **Top-down memory-bound is not a measure of memory cost on agentic:**
-  only 39% of the perfect-L1D saving comes out of it, and core bound gives
-  as much. Compare suites on a limit study, not on top-down shares.
+- **Top-down memory-bound is not a measure of memory cost:** only 39%
+  (agentic) and 51% (SPEC, [[2026-11-12-spec-400m-sweeps]]) of the
+  perfect-L1D saving come out of it; core bound holds about a third in
+  both. Compare suites on a limit study, not on top-down shares.
+- **Agentic does not gain more from a perfect L1D than SPEC** (+43% vs
+  +47% geomean). The difference is the shape: every agentic task is
+  moderately data-latency bound, while SPEC's gain sits in a few heavy
+  benchmarks.
 - Perfect L1D here means every data access is a 4-cycle hit, DRAM misses
   included. It is a bound on the whole data hierarchy, not the L1D alone.
 
@@ -228,9 +241,10 @@ mean over 27 tasks, total 310):
 
 ## Open
 
-- **SPEC perfect-L1D sweep** (26 × 200M, `--perfect-l1d`): the direct
-  test. Prediction from this page: large gains on the seven heavy
-  missers, little on the others, and a lower exposed share than agentic's 0.51.
+- **SPEC perfect-L1D sweep**: done, [[2026-11-12-spec-400m-sweeps]].
+  The prediction (large gains on the heavy missers, little elsewhere)
+  held in shape, but the heavy missers gain so much that the SPEC
+  geomean exceeds agentic's. SPEC's exposed share is not computed yet.
 - **True MLP:** a counter of cycles with at least one demand miss
   outstanding would give MLP during miss cycles, not the all-cycle
   average used here.
