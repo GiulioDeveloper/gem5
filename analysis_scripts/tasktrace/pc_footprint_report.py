@@ -5,12 +5,16 @@ usage:
   python3 analysis_scripts/tasktrace/pc_footprint_report.py <run>/footprint
       [-o report.html]
 
-pc_footprint.py writes it at the end of every pass. One row per thread:
-instructions and code size (distinct 64-byte lines), each split between
-user and kernel mode, the code against the L1I and L2 sizes (user plus
-kernel, user only or kernel only), the code as a multiple of each size, the repeat
-distance per instruction address and per line (median to 99th percentile),
-and distinct branches by type. The code size, distinct instructions and
+pc_footprint.py writes it at the end of every pass. Two collapsible
+sections, one row per thread in each. Instructions: instructions and code
+size (distinct 64-byte lines), each split between user and kernel mode,
+the repeat distance per instruction address and per 64-byte line (median
+to 99th percentile), and the code rewritten at run time (JIT; v2 traces
+with encodings). Branches: distinct branches by type, and per type the
+distinct targets of the branches the thread took, their mean and their
+mean weighted by taken executions. A reference size typed into the page
+(e.g. 64K or 2M) is drawn on every instruction chart: as code size, as
+instructions (4 bytes each) and as lines. The code size, distinct instructions and
 branches can be shown over the whole stream or per bin of 100M, 500M or
 1G instructions (thread_bins.csv: the mean over the thread's bins, cut by
 its own instructions or by the run's), with a plot of how they grow with
@@ -69,6 +73,17 @@ def load(out):
              "br": [int(r[f"br_{b}"]) for b in BRANCHES],
              "brt": [int(r[f"br_{b}_taken"]) for b in BRANCHES],
              "k_br": int(r["k_branches"]),
+             # Targets per type over the branches the thread took:
+             # branches, taken executions, distinct targets, and targets
+             # weighted by taken executions (sum of targets x taken).
+             "te": [int(num(r.get(f"te_{b}")) or 0) for b in BRANCHES],
+             "tk": [int(num(r.get(f"tk_{b}")) or 0) for b in BRANCHES],
+             "tg": [int(num(r.get(f"tg_{b}")) or 0) for b in BRANCHES],
+             "tw": [(num(r.get(f"twavg_{b}")) or 0)
+                    * (num(r.get(f"tk_{b}")) or 0) for b in BRANCHES],
+             "rw": {k: num(r.get(k)) or 0 for k in (
+                 "u_rw_insts", "k_rw_insts", "u_rw_lines", "k_rw_lines",
+                 "rw_br", "rw_cold_mpki")},
              "h": {v: hists.get(tid, {}).get(v, []) for v in ("pc", "line")}}
         threads.append(t)
     # Per bin: {cut: {label: values}}, from thread_bins.csv when present.
@@ -128,7 +143,8 @@ def write_report(out, path=None):
     return path
 
 
-TEMPLATE = r"""<title>@@TITLE@@</title>
+TEMPLATE = r"""<meta charset="utf-8">
+<title>@@TITLE@@</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
@@ -183,10 +199,12 @@ header { display: grid; gap: 8px; }
 .totals b { color: var(--ink); font-weight: 500; font-family: var(--mono); }
 .controls { display: flex; flex-wrap: wrap; gap: 10px 16px; align-items: center; }
 .controls label { display: flex; gap: 6px; align-items: center; color: var(--ink-2); font-size: 13px; }
-select, input[type=search] { font: 13px var(--font); color: var(--ink);
+select, input[type=search], input[type=text] { font: 13px var(--font); color: var(--ink);
   background: var(--surface); border: 1px solid var(--rule); border-radius: 6px;
   padding: 5px 8px; }
 input[type=search] { width: 200px; }
+input[type=text] { width: 150px; }
+input[aria-invalid=true] { border-color: var(--warm); }
 select:focus-visible, input:focus-visible, button:focus-visible,
 tr:focus-visible { outline: 2px solid var(--s1); outline-offset: 1px; }
 .scroll { overflow-x: auto; border: 1px solid var(--rule); border-radius: 8px;
@@ -219,6 +237,7 @@ svg text { font: 10px var(--mono); fill: var(--ink-3); }
 .legend i { width: 10px; height: 10px; border-radius: 2px; display: inline-block; }
 .curves { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 480px), 1fr));
   gap: 16px; }
+.curves.one { grid-template-columns: minmax(0, 720px); }
 .panel { background: var(--surface); border: 1px solid var(--rule);
   border-radius: 8px; padding: 12px 12px 8px; display: grid; gap: 6px; min-width: 0; }
 .panel h3 { margin: 0; font-size: 13px; font-weight: 600; }
@@ -233,6 +252,18 @@ svg text { font: 10px var(--mono); fill: var(--ink-3); }
 .full td:first-child { font-family: var(--font); }
 .full tbody tr:hover { background: var(--hover); }
 .fullwrap { max-height: 70vh; overflow: auto; }
+details.sec { display: grid; gap: 12px; }
+details.sec > summary { cursor: pointer; list-style: none; display: flex; gap: 10px;
+  align-items: baseline; padding: 6px 0; border-bottom: 1px solid var(--rule); }
+details.sec > summary::-webkit-details-marker { display: none; }
+details.sec > summary::before { content: '▸'; color: var(--ink-3); font-size: 13px;
+  transition: transform .12s; display: inline-block; }
+details.sec[open] > summary::before { transform: rotate(90deg); }
+details.sec > summary h2 { margin: 0; font-size: 18px; }
+details.sec > summary .k { font-size: 13px; }
+details.sec > .body { display: grid; gap: 28px; padding-top: 8px; }
+.tcell { font: 12px var(--mono); font-variant-numeric: tabular-nums; text-align: right; }
+.tcell .k { font-size: 11px; }
 details.procs { border: 1px solid var(--rule); border-radius: 8px; background: var(--surface);
   padding: 8px 12px; }
 details.procs summary { cursor: pointer; color: var(--ink-2); font-size: 13px; }
@@ -268,13 +299,13 @@ select:disabled { color: var(--ink-3); }
     <h1 id="title"></h1>
     <div class="totals" id="totals"></div>
     <p>Each thread's committed stream on its own: its user code plus the kernel code
-      run while it was current. Cache comparisons are fully associative LRU,
-      instruction lines only, no prefetch. Code size, distinct instructions and branches
+      run while it was current. Code size, distinct instructions and branches
       can be taken over the whole stream or per bin of N instructions, averaged over
       the bins: the bins are cut by the thread's own instructions (the same amount of
       work for every thread) or by the run's (fixed windows, as a sweep window sees
       them). Repeat distances and misses are always over the whole stream.
-      Click rows to compare their curves below.</p>
+      Type a size into <i>Reference</i> to draw it on every chart. Click rows to
+      compare their curves below.</p>
   </header>
 
   <section>
@@ -284,8 +315,11 @@ select:disabled { color: var(--ink-3); }
           <option value="insts">instructions</option>
           <option value="code_kib">code size</option>
           <option value="branches">distinct branches</option>
-          <option value="mpki0">misses at the first cache</option>
-          <option value="pc90">repeat distance, 90th pct</option>
+          <option value="targets">distinct branch targets</option>
+          <option value="indw">indirect targets, weighted</option>
+          <option value="pc90">repeat distance per instruction, 90th pct</option>
+          <option value="line90">repeat distance per line, 90th pct</option>
+          <option value="rw">rewritten code (JIT)</option>
         </select></label>
       <label for="topN">Show
         <select id="topN">
@@ -315,6 +349,10 @@ select:disabled { color: var(--ink-3); }
           <option value="1e6" selected>1M instructions</option>
           <option value="1e8">100M instructions</option>
         </select></label>
+      <label for="refSize">Reference
+        <input type="text" id="refSize" placeholder="size, e.g. 64K or 2M" size="16"
+          title="A size in bytes (K, M, G suffixes, powers of 1024), drawn on every chart: as code size, as instructions (4 bytes each) and as 64-byte lines"></label>
+      <span class="k" id="refNote"></span>
     </div>
     <details class="procs" id="procBox">
       <summary>Processes: <b id="procSummary"></b></summary>
@@ -324,25 +362,28 @@ select:disabled { color: var(--ink-3); }
       </div>
       <div class="chiprow" id="procChips"></div>
     </details>
+  </section>
+
+  <details class="sec" id="secInst" open>
+  <summary><h2>Instructions</h2><span class="k">code size, repeat distance, rewritten code</span></summary>
+  <div class="body">
+  <section>
     <div class="scroll"><table class="strip" id="strip"></table></div>
     <div class="legend" id="stripLegend"></div>
   </section>
 
   <section>
-    <h2>Footprint growth with the bin size</h2>
-    <p>The picked threads' code size and distinct taken branches per bin, averaged over
-      the bins, against the bin size; the last point is the whole stream (the thread's
-      instructions when cut by its own count, the run's when cut by run windows). A flat
-      line is a program whose code is all in use at any time; a rising one keeps
-      reaching new code as it runs. Threads shorter than a bin have no point at it.</p>
-    <div class="legend" id="growLegend"></div>
-    <div class="curves">
+    <h2>Code size growth with the bin size</h2>
+    <p>The picked threads' code size per bin, averaged over the bins, against the bin
+      size; the last point is the whole stream (the thread's instructions when cut by
+      its own count, the run's when cut by run windows). A flat line is a program whose
+      code is all in use at any time; a rising one keeps reaching new code as it runs.
+      Threads shorter than a bin have no point at it.</p>
+    <div class="legend growLegend"></div>
+    <div class="curves one">
       <div class="panel"><h3>Code size</h3>
         <div class="note" id="growCodeNote"></div>
         <svg id="growCode" viewBox="0 0 560 300" role="img" aria-label="Code size per bin against the bin size"></svg></div>
-      <div class="panel"><h3>Distinct taken branches</h3>
-        <div class="note">line: the baseline BTB's entries (installed for taken branches only)</div>
-        <svg id="growBr" viewBox="0 0 560 300" role="img" aria-label="Distinct taken branches per bin against the bin size"></svg></div>
     </div>
   </section>
 
@@ -350,26 +391,68 @@ select:disabled { color: var(--ink-3); }
     <h2>Miss ratio curves</h2>
     <p>Share of accesses whose repeat distance is at least <i>x</i>: the miss
       ratio of a fully associative LRU cache holding <i>x</i> instructions or lines.
-      The floor on the right is first-time accesses (cold). Vertical lines: the cache
-      sizes, in instructions (4 bytes each) or 64-byte lines.</p>
+      The floor on the right is first-time accesses (cold). Dashed line: the
+      reference size, in instructions (4 bytes each) or 64-byte lines.</p>
     <div class="legend" id="curveLegend"></div>
     <div class="curves">
       <div class="panel"><h3>Per instruction address</h3>
         <div class="note">x: distinct instructions since the same PC last committed</div>
         <svg id="curvePc" viewBox="0 0 560 300" role="img" aria-label="Miss ratio by repeat distance per instruction"></svg></div>
-      <div class="panel"><h3>Per 64-byte line</h3>
+      <div class="panel"><h3>Per 64-byte cache line</h3>
         <div class="note">x: distinct lines since the same line was last fetched</div>
         <svg id="curveLine" viewBox="0 0 560 300" role="img" aria-label="Miss ratio by repeat distance per line"></svg></div>
     </div>
   </section>
 
   <section>
-    <h2>All numbers</h2>
-    <p>The threads above, every column. Click a heading to sort. MPKI: misses per
-      1,000 instructions of the thread, private (the thread alone in the cache) or
-      shared (the whole interleaved stream). Repeat distance in distinct instructions or lines.</p>
+    <h2>All instruction numbers</h2>
+    <p>The threads above, every column. Click a heading to sort. Repeat distance in
+      distinct instructions or lines. Rewritten (JIT): code at a PC whose encoding
+      changed, counted as new code (later versions only; traces with encodings).
+      MPKI: misses per 1,000 instructions of the thread in a fully associative
+      LRU cache of the size the footprint pass was given, private (the thread alone)
+      or shared (the whole interleaved stream).</p>
     <div class="scroll fullwrap"><table class="full" id="full"></table></div>
   </section>
+  </div>
+  </details>
+
+  <details class="sec" id="secBr" open>
+  <summary><h2>Branches</h2><span class="k">distinct branches and their targets by type</span></summary>
+  <div class="body">
+  <section>
+    <p>Distinct branches by type, and the targets of the ones the thread took: a target
+      is the next PC when it is not PC + 4 (exception entries left out; a branch an
+      exception interrupted is resolved at its return). Per type: distinct targets,
+      and targets per taken branch as the plain mean and the mean weighted by taken
+      executions (what a BTB or indirect predictor lookup meets). Counted in the
+      thread's own stream, over the whole stream. "No returns" leaves out returns
+      and erets (the return stack's and the kernel's business).</p>
+    <div class="scroll"><table class="strip" id="bstrip"></table></div>
+    <div class="legend" id="bstripLegend"></div>
+  </section>
+
+  <section>
+    <h2>Taken branch growth with the bin size</h2>
+    <p>The picked threads' distinct taken branches per bin, averaged over the bins,
+      against the bin size; the last point is the whole stream.</p>
+    <div class="legend growLegend"></div>
+    <div class="curves one">
+      <div class="panel"><h3>Distinct taken branches</h3>
+        <div class="note">line: the baseline BTB's entries (installed for taken branches only)</div>
+        <svg id="growBr" viewBox="0 0 560 300" role="img" aria-label="Distinct taken branches per bin against the bin size"></svg></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>All branch numbers</h2>
+    <p>The threads above. Click a heading to sort. Distinct branches by type follow
+      the bin choice; taken counts and targets are over the whole stream. Mean: targets
+      per branch taken; weighted: by taken executions.</p>
+    <div class="scroll fullwrap"><table class="full" id="bfull"></table></div>
+  </section>
+  </div>
+  </details>
 </main>
 <div id="tip" hidden></div>
 <script type="application/json" id="data">@@DATA@@</script>
@@ -397,7 +480,6 @@ function fmtKib(k) {
   if (k >= 1024) return (k / 1024).toFixed(k >= 10240 ? 1 : 2) + ' MiB';
   return k.toFixed(k >= 100 ? 0 : 1) + ' KiB';
 }
-const fmtX = x => x == null ? '' : x >= 10 ? x.toFixed(0) + '×' : x >= 1 ? x.toFixed(1) + '×' : x.toFixed(2) + '×';
 const fmtD = d => d == null ? 'cold' : fmtCount(d);
 const f2 = x => x == null ? '' : x.toFixed(2);
 
@@ -424,8 +506,46 @@ for (const t of D.threads) {
   t.q = {};
   for (const [v, tot] of [['pc', t.insts], ['line', t.accesses]])
     t.q[v] = [0.5, 0.9, 0.99].map(p => quant(t.h[v], tot, p));
-  t.mpki0 = t.mpki[0];
   t.pc90 = t.q.pc[1] == null ? Infinity : t.q.pc[1];
+  t.line90 = t.q.line[1] == null ? Infinity : t.q.line[1];
+  t.rwInsts = t.rw.u_rw_insts + t.rw.k_rw_insts;
+  t.rwLines = t.rw.u_rw_lines + t.rw.k_rw_lines;
+  t.rwSort = t.rwLines;
+}
+// Branch targets: per type arrays, and aggregates over all types, every
+// type but returns, and the indirect types.
+const RET = new Set(['return', 'exception_return']);
+for (const t of D.threads) {
+  const sum = (a, keep) => a.reduce((s, v, i) => s + (keep(BR[i]) ? v : 0), 0);
+  const nr = b => !RET.has(b), ind = b => b === 'indirect_call' || b === 'indirect_jump';
+  t.targets = sum(t.tg, () => true);
+  t.tgAgg = {};
+  for (const [k, keep] of [['all', () => true], ['noret', nr], ['ind', ind]])
+    t.tgAgg[k] = {te: sum(t.te, keep), tk: sum(t.tk, keep), tg: sum(t.tg, keep), tw: sum(t.tw, keep)};
+  t.indw = t.tgAgg.ind.tk ? t.tgAgg.ind.tw / t.tgAgg.ind.tk : 0;
+}
+const HAS_TG = D.threads.some(t => t.targets > 0);
+// Mean and weighted mean of {te, tk, tg, tw}; typeAgg: of type i alone.
+const tMean = a => a.te ? a.tg / a.te : null, tW = a => a.tk ? a.tw / a.tk : null;
+const typeAgg = (t, i) => ({te: t.te[i], tk: t.tk[i], tg: t.tg[i], tw: t.tw[i]});
+// Any rewritten code at all (v2 traces with encodings).
+const HAS_RW = D.threads.some(t => t.rwInsts > 0);
+
+// ---- reference size -------------------------------------------------------
+// Bytes from "64K", "2M", "1.5MiB", "65536"; null when empty or unreadable.
+function parseSize(s) {
+  const m = String(s).trim().match(/^([0-9]*\.?[0-9]+)\s*([kmg]?)(i?b)?$/i);
+  if (!m) return null;
+  const v = parseFloat(m[1]) * 1024 ** ' kmg'.indexOf((m[2] || ' ').toLowerCase());
+  return v > 0 ? v : null;
+}
+let REF = null;   // bytes
+const refKib = () => REF / 1024, refPc = () => REF / 4, refLine = () => REF / 64;
+// "2 MiB", "64 KiB", "1.5 MiB", or the byte count below 1 KiB.
+function refLabel() {
+  const [v, u] = REF >= 2 ** 30 ? [REF / 2 ** 30, 'GiB'] : REF >= 2 ** 20 ? [REF / 2 ** 20, 'MiB']
+    : REF >= 1024 ? [REF / 1024, 'KiB'] : [REF, 'B'];
+  return `${+v.toFixed(2)} ${u}`;
 }
 
 // Footprint values over the whole stream; per bin they come from t.b.
@@ -434,7 +554,6 @@ for (const t of D.threads)
     uniq_insts: t.uniq_insts, u_uniq_insts: t.u_uniq_insts, k_uniq_insts: t.k_uniq_insts,
     br: t.br, branches: t.branches, branchesTaken: t.branchesTaken, n: null, p: 0};
 const BINS = M.bins || [];
-document.querySelector('#sortBy [value=mpki0]').textContent = 'misses at ' + CAPS[0].label;
 $('binSize').innerHTML += BINS.map(b => `<option value="${b.label}">${b.label} bins</option>`).join('');
 const binned = () => $('binSize').value !== 'whole';
 // The footprint values shown: whole stream, or the mean over the bins.
@@ -466,13 +585,13 @@ const MODES = {all: ['code_kib', 'uniq_insts'], u: ['u_code_kib', 'u_uniq_insts'
                k: ['k_code_kib', 'k_uniq_insts']};
 const codeKib = t => act(t)[MODES[$('codeMode').value][0]];
 const codeInsts = t => act(t)[MODES[$('codeMode').value][1]];
-const codeXs = t => { const k = codeKib(t); return CAPS.map(c => k ? k / (c.bytes / 1024) : null); };
 const modeLabel = () => ({all: 'user + kernel', u: 'user', k: 'kernel'})[$('codeMode').value];
 function prefs() { try { return JSON.parse(localStorage.getItem('fpView') || '{}'); } catch { return {}; } }
 function savePrefs() {
   try { localStorage.setItem('fpView', JSON.stringify({sortBy: $('sortBy').value,
     topN: $('topN').value, minInsts: $('minInsts').value, codeMode: $('codeMode').value,
     binSize: $('binSize').value, binCut: $('binCut').value,
+    ref: $('refSize').value, open_secInst: $('secInst').open, open_secBr: $('secBr').open,
     hidden: [...hidden]})); } catch {}
 }
 const p0 = prefs();
@@ -480,6 +599,11 @@ for (const k of ['sortBy', 'topN', 'minInsts', 'codeMode', 'binSize', 'binCut'])
   if (p0[k] && [...$(k).options].some(o => o.value === p0[k])) $(k).value = p0[k];
 $('binCut').disabled = !binned();
 if (Array.isArray(p0.hidden)) hidden = new Set(p0.hidden);
+if (typeof p0.ref === 'string') { $('refSize').value = p0.ref; REF = parseSize(p0.ref); }
+if (!HAS_RW) $('sortBy').querySelector('[value=rw]').remove();
+if (!HAS_TG) for (const v of ['targets', 'indw']) $('sortBy').querySelector(`[value=${v}]`).remove();
+for (const id of ['secInst', 'secBr'])
+  if (p0['open_' + id] === false) $(id).open = false;
 
 function visible() {
   const f = $('filter').value.trim().toLowerCase();
@@ -489,7 +613,8 @@ function visible() {
 }
 function shown() {
   const key = $('sortBy').value, n = $('topN').value;
-  const val = key === 'code_kib' ? codeKib : key === 'branches' ? t => act(t).branches : t => t[key];
+  const val = key === 'code_kib' ? codeKib : key === 'branches' ? t => act(t).branches
+    : key === 'rw' ? t => t.rwSort : key === 'targets' ? t => t.targets : t => t[key];
   const v = visible().sort((a, b) => (val(b) - val(a)) || (b.insts - a.insts));
   return n === 'all' ? v : v.slice(0, +n);
 }
@@ -513,7 +638,7 @@ function renderProcs() {
     ? `${PROCS.length - off.length} of ${PROCS.length} shown; hidden: ${off.slice(0, 6).map(p => p.name).join(', ')}${off.length > 6 ? ', …' : ''}`
     : `all ${PROCS.length} shown`;
 }
-function procsChanged() { savePrefs(); renderProcs(); renderStrip(); renderFull(); }
+function procsChanged() { savePrefs(); renderProcs(); renderStrips(); renderFull(); }
 $('procChips').addEventListener('click', e => {
   const b = e.target.closest('[data-proc]'); if (!b) return;
   const n = b.dataset.proc;
@@ -526,32 +651,30 @@ $('procNone').addEventListener('click', () => { hidden = new Set(PROCS.map(p => 
 // ---- strip: one row per thread -------------------------------------------
 const LOG = (lo, hi, w) => v => Math.max(0, Math.min(w, (Math.log2(Math.max(v, lo)) - Math.log2(lo)) / (Math.log2(hi) - Math.log2(lo)) * w));
 const W = 200, H = 20;
-const capKib = CAPS.map(c => c.bytes / 1024);
-const capPc = CAPS.map(c => c.bytes / 4);
-const capLine = CAPS.map(c => c.lines);
-// The axes reach at least twice the largest cache.
-const codeX = LOG(4, Math.max(65536, 2 * Math.max(...capKib)), W);    // KiB
-const PC_MAX = Math.max(2 ** 25, 2 * Math.max(...capPc));
-const LINE_MAX = Math.max(2 ** 22, 2 * Math.max(...capLine));
+const codeX = LOG(4, 65536, W);                   // KiB
+const PC_MAX = 2 ** 25, LINE_MAX = 2 ** 22;
 const pcX = LOG(1, PC_MAX, W);                    // distinct instructions + 1
 const lineX = LOG(1, LINE_MAX, W);                // distinct lines + 1
-// Labelled: the smallest and largest of each level; on the narrow row
-// axes, the smallest of each level and the largest overall.
-const TICK = new Set(CAPS.flatMap((c, i) => c.end ? [i] : []));
-const bigCap = capKib.indexOf(Math.max(...capKib));
-const TICK_ROW = new Set(CAPS.flatMap((c, i) => c.first || i === bigCap ? [i] : []));
-// "L1I 64K / 512K, L2 2M / 16M" for the given caches.
-const capList = pick => [...new Set(CAPS.map(c => c.level))].map(lv => {
-  const cs = CAPS.filter(c => c.level === lv && pick(c));
-  return cs.length ? `${lv} ${cs.map(c => c.size).join(' / ')}` : '';
-}).filter(Boolean).join(', ');
+// Fixed gridlines of the row charts, [value, label].
+const TICKS = {
+  code: [[16, '16K'], [256, '256K'], [4096, '4M']],
+  pc: [[2 ** 10, '1K'], [2 ** 15, '32K'], [2 ** 20, '1M']],
+  line: [[2 ** 8, '256'], [2 ** 12, '4K'], [2 ** 16, '64K']]};
+// The reference size in each chart's unit.
+const REF_IN = {code: refKib, pc: refPc, line: refLine};
 
-function gridLines(xs, scale) {
-  return xs.map((v, i) => `<line x1="${scale(v)}" x2="${scale(v)}" y1="0" y2="${H}" stroke="var(--rule)" stroke-width="1" ${TICK.has(i) ? '' : 'stroke-dasharray="2 2"'}/>`).join('');
+function gridLines(kind, scale) {
+  let g = TICKS[kind].map(([v]) => `<line x1="${scale(v)}" x2="${scale(v)}" y1="0" y2="${H}" stroke="var(--rule)" stroke-width="1" stroke-dasharray="2 2"/>`).join('');
+  if (REF) { const x = scale(REF_IN[kind]()); g += `<line x1="${x}" x2="${x}" y1="0" y2="${H}" stroke="var(--warm)" stroke-width="1.5" stroke-dasharray="3 2"/>`; }
+  return g;
 }
-function axisSvg(xs, scale, unit) {
-  const labels = xs.map((v, i) => TICK_ROW.has(i) ? `<text x="${scale(v)}" y="11" text-anchor="middle">${CAPS[i].size}</text>` : '').join('');
-  return `<svg width="${W}" height="16" viewBox="0 0 ${W} 16" aria-hidden="true">${labels}<text x="0" y="11" text-anchor="start" style="fill:var(--ink-2)">${unit}</text></svg>`;
+// Tick labels; a tick label too close to the reference's gives way to it.
+function axisSvg(kind, scale) {
+  const rx = REF ? scale(REF_IN[kind]()) : null;
+  let labels = TICKS[kind].filter(([v]) => rx == null || Math.abs(scale(v) - rx) > 22)
+    .map(([v, l]) => `<text x="${scale(v)}" y="11" text-anchor="middle">${l}</text>`).join('');
+  if (REF) labels += `<text x="${rx}" y="11" text-anchor="middle" style="fill:var(--warm)">ref</text>`;
+  return `<svg width="${W}" height="16" viewBox="0 0 ${W} 16" aria-hidden="true">${labels}</svg>`;
 }
 // User code (blue) and kernel code (orange) as dots, their sum as a tick;
 // the mode picks which of them are drawn.
@@ -561,7 +684,7 @@ function codeSvg(t) {
     ? `<circle cx="${codeX(kib)}" cy="${H/2}" r="4.5" fill="var(${col})" stroke="var(--surface)" stroke-width="2"/>` : '';
   const xt = codeX(a.code_kib);
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-tip="code" data-id="${t.id}">
-    ${gridLines(capKib, codeX)}
+    ${gridLines('code', codeX)}
     <line x1="0" x2="${codeX(codeKib(t))}" y1="${H/2}" y2="${H/2}" stroke="var(--grid)" stroke-width="2"/>
     ${mode === 'all' ? `<line x1="${xt}" x2="${xt}" y1="${H/2-7}" y2="${H/2+7}" stroke="var(--ink)" stroke-width="2"/>` : ''}
     ${mode !== 'u' ? dot(a.k_code_kib, '--s2') : ''}${mode !== 'k' ? dot(a.u_code_kib, '--s1') : ''}
@@ -571,13 +694,13 @@ function splitBar(u, k) {
   const tot = u + k || 1;
   return `<span class="split" aria-hidden="true"><i style="width:${u / tot * 100}%;background:var(--s1)"></i><i style="width:${k / tot * 100}%;background:var(--s2)"></i></span>`;
 }
-function distSvg(t, v, scale, caps) {
+function distSvg(t, v, scale) {
   const [p50, p90, p99] = t.q[v];
   const end = d => d == null ? W : scale(d + 1);
   const a = end(p50), b = end(p90), c = end(p99);
   const cold = p99 == null;
   return `<svg width="${W}" height="${H}" viewBox="0 0 ${W} ${H}" data-tip="${v}" data-id="${t.id}">
-    ${gridLines(caps, scale)}
+    ${gridLines(v, scale)}
     <line x1="${b}" x2="${c}" y1="${H/2}" y2="${H/2}" stroke="var(--ink-3)" stroke-width="2" ${cold ? 'stroke-dasharray="3 2"' : ''}/>
     <line x1="${c}" x2="${c}" y1="${H/2-4}" y2="${H/2+4}" stroke="var(--ink-3)" stroke-width="2"/>
     <rect x="${a}" y="${H/2-5}" width="${Math.max(2, b - a)}" height="10" rx="3" fill="var(--s1)" fill-opacity=".85"/>
@@ -594,29 +717,22 @@ function brSvg(t, max) {
   });
   return `<svg width="${BW}" height="${H}" viewBox="0 0 ${BW} ${H}" data-tip="br" data-id="${t.id}">${segs}<rect width="${BW}" height="${H}" fill="transparent"/></svg>`;
 }
-// Fit: code / cache size, diverging around 1 (blue fits, red exceeds).
-function fitCell(x) {
-  const s = Math.max(-1, Math.min(1, Math.log2(x) / 6));
-  const pct = Math.round(Math.abs(s) * 85);
-  const col = s < 0 ? 'var(--cool)' : 'var(--warm)';
-  const ink = pct > 50 ? '#fff' : 'var(--ink)';
-  return `<div class="cell" style="background:color-mix(in oklab, ${col} ${pct}%, var(--mid));color:${ink}">${fmtX(x)}</div>`;
+// Rewritten (JIT) code: later versions of instructions and lines.
+function rwCell(t) {
+  if (!t.rwInsts) return '<span class="k">—</span>';
+  return `${fmtCount(t.rwInsts)} <span class="k">·</span> ${fmtCount(t.rwLines)} <span class="k">·</span> ${fmtCount(t.rw.rw_br)}`;
 }
 
 function renderStrip() {
   const rows = shown();
-  const max = Math.max(1, ...rows.map(t => act(t).branches));
   const head = `<thead><tr>
     <th>Thread<br><span class="k">process thread (pid)</span></th>
     <th style="text-align:right">Instructions<br><span class="k">user · kernel</span></th>
     <th style="text-align:right">Code size<br><span class="k">user · kernel, ${binDesc()}</span></th>
-    <th>${axisSvg(capKib, codeX, 'KiB')}</th>
-    <th><div class="cells">${CAPS.map(c => `<div class="cellhead">${c.label.replace(' ', '<br>')}</div>`).join('')}</div>
-      <span class="k">${modeLabel()} code ÷ cache size</span></th>
-    <th>Repeat distance, per instruction (whole stream)<br>${axisSvg(capPc, pcX, '')}</th>
-    <th>Repeat distance, per line<br>${axisSvg(capLine, lineX, '')}</th>
-    <th>Distinct branches by type<br><span class="k">scale: ${fmtInt(max)} at full width</span></th>
-    <th style="text-align:right">Branches<br><span class="k">taken</span></th>
+    <th><span class="k">code size, bytes</span><br>${axisSvg('code', codeX)}</th>
+    <th>Repeat distance per instruction<br><span class="k">distinct instructions, whole stream</span><br>${axisSvg('pc', pcX)}</th>
+    <th>Repeat distance per 64-byte line<br><span class="k">distinct lines, whole stream</span><br>${axisSvg('line', lineX)}</th>
+    ${HAS_RW ? '<th style="text-align:right">Rewritten (JIT)<br><span class="k">insts · lines · branches</span></th>' : ''}
   </tr></thead>`;
   const body = rows.map(t => {
     const slot = picked.get(t.id);
@@ -628,11 +744,9 @@ function renderStrip() {
       <td class="num" style="text-align:right" data-tip="insts" data-id="${t.id}">${fmtCount(t.insts - t.k_insts)} <span class="k">·</span> ${fmtCount(t.k_insts)} ${splitBar(t.insts - t.k_insts, t.k_insts)}</td>
       <td class="num" style="text-align:right" data-tip="code" data-id="${t.id}">${fmtKib(a.u_code_kib)} <span class="k">·</span> ${fmtKib(a.k_code_kib)}</td>
       <td>${codeSvg(t)}</td>
-      <td><div class="cells">${codeXs(t).map(x => x == null ? '<div class="cell"></div>' : fitCell(x)).join('')}</div></td>
-      <td>${distSvg(t, 'pc', pcX, capPc)}</td>
-      <td>${distSvg(t, 'line', lineX, capLine)}</td>
-      <td>${brSvg(t, max)}</td>
-      <td class="num" style="text-align:right">${fmtCount(a.branches)} <span class="k">${fmtCount(a.branchesTaken)}</span></td>
+      <td>${distSvg(t, 'pc', pcX)}</td>
+      <td>${distSvg(t, 'line', lineX)}</td>
+      ${HAS_RW ? `<td class="num" style="text-align:right" data-tip="rw" data-id="${t.id}">${rwCell(t)}</td>` : ''}
     </tr>`;
   }).join('');
   $('strip').innerHTML = head + `<tbody>${body}</tbody>`;
@@ -642,9 +756,65 @@ function renderStrip() {
     `<span><svg width="44" height="12"><rect x="12" y="1" width="18" height="10" rx="3" fill="var(--s1)" fill-opacity=".85"/><line x1="12" x2="12" y1="0" y2="12" stroke="var(--ink)" stroke-width="2"/><line x1="30" x2="42" y1="6" y2="6" stroke="var(--ink-3)" stroke-width="2"/><line x1="42" x2="42" y1="2" y2="10" stroke="var(--ink-3)" stroke-width="2"/></svg>repeat distance: median, box to 90th, whisker to 99th percentile (dashed: past the cold misses)</span>` +
     `<span><i style="background:var(--s1)"></i>user</span><span><i style="background:var(--s2)"></i>kernel</span>` +
     `<span><svg width="10" height="12"><line x1="5" x2="5" y1="0" y2="12" stroke="var(--ink)" stroke-width="2"/></svg>user + kernel code</span>` +
-    `<span>gridlines: ${capList(() => true)}</span>` +
-    (binned() ? `<span><span class="short">&lt;${$('binSize').value}</span> shorter than one bin</span>` : '') +
-    BR.map((b, i) => `<span><i style="background:var(${SLOTS[i]})"></i>${BRLABEL[b]}</span>`).join('');
+    (REF ? `<span><svg width="14" height="12"><line x1="7" x2="7" y1="0" y2="12" stroke="var(--warm)" stroke-width="1.5" stroke-dasharray="3 2"/></svg>reference ${refLabel()} = ${fmtCount(refPc())} instructions = ${fmtCount(refLine())} lines</span>` : '') +
+    (binned() ? `<span><span class="short">&lt;${$('binSize').value}</span> shorter than one bin</span>` : '');
+}
+
+// ---- branch strip ------------------------------------------------------------
+function whoCell(t) {
+  const slot = picked.get(t.id);
+  const sw = slot == null ? 'transparent' : `var(${SLOTS[slot]})`;
+  const a = act(t);
+  const short = binned() && a.p ? `<span class="short" title="shorter than one ${$('binSize').value} bin">&lt;${$('binSize').value}</span>` : '';
+  return `<td><div class="who"><i class="swatch" style="background:${sw}"></i><span title="${esc(t.label)}">${esc(t.label)}</span>${short}</div></td>`;
+}
+// Distinct targets by type, stacked like the branches.
+function tgSvg(t, max) {
+  const BW = 180; let x = 0, segs = '';
+  t.tg.forEach((n, i) => {
+    if (!n) return;
+    const w = n / max * BW;
+    segs += `<rect x="${x}" y="4" width="${Math.max(w - (w > 3 ? 2 : 0), 0.8)}" height="12" fill="var(${SLOTS[i]})"/>`;
+    x += w;
+  });
+  return `<svg width="${BW}" height="${H}" viewBox="0 0 ${BW} ${H}" data-tip="tg" data-id="${t.id}">${segs}<rect width="${BW}" height="${H}" fill="transparent"/></svg>`;
+}
+const fx2 = x => x == null ? '' : x.toFixed(2);
+// "mean / weighted" targets per taken branch.
+function tCell(a, id) {
+  const m = tMean(a);
+  return m == null ? `<td class="tcell"><span class="k">—</span></td>`
+    : `<td class="tcell" data-tip="tg" data-id="${id}">${m.toFixed(2)} <span class="k">/</span> ${tW(a).toFixed(2)}</td>`;
+}
+const TG_COLS = [['No returns', t => t.tgAgg.noret], ['Indirect call', t => typeAgg(t, BR.indexOf('indirect_call'))],
+  ['Indirect jump', t => typeAgg(t, BR.indexOf('indirect_jump'))], ['Return', t => typeAgg(t, BR.indexOf('return'))]];
+function renderBStrip() {
+  const rows = shown();
+  const max = Math.max(1, ...rows.map(t => act(t).branches));
+  const tmax = Math.max(1, ...rows.map(t => t.targets));
+  const head = `<thead><tr>
+    <th>Thread<br><span class="k">process thread (pid)</span></th>
+    <th>Distinct branches by type<br><span class="k">${binDesc()}; ${fmtInt(max)} at full width</span></th>
+    <th style="text-align:right">Branches<br><span class="k">taken</span></th>
+    ${HAS_TG ? `<th>Distinct targets by type<br><span class="k">whole stream; ${fmtInt(tmax)} at full width</span></th>
+    <th style="text-align:right">Targets<br><span class="k">all</span></th>
+    ${TG_COLS.map(([l]) => `<th style="text-align:right">${l}<br><span class="k">mean / weighted</span></th>`).join('')}` : ''}
+  </tr></thead>`;
+  const body = rows.map(t => {
+    const slot = picked.get(t.id), a = act(t);
+    return `<tr data-id="${t.id}" tabindex="0" class="${slot == null ? '' : 'picked'}" aria-selected="${slot != null}">
+      ${whoCell(t)}
+      <td>${brSvg(t, max)}</td>
+      <td class="num" style="text-align:right">${fmtCount(a.branches)} <span class="k">${fmtCount(a.branchesTaken)}</span></td>
+      ${HAS_TG ? `<td>${tgSvg(t, tmax)}</td>
+      <td class="num" style="text-align:right">${fmtCount(t.targets)}</td>
+      ${TG_COLS.map(([, f]) => tCell(f(t), t.id)).join('')}` : ''}
+    </tr>`;
+  }).join('');
+  $('bstrip').innerHTML = head + `<tbody>${body}</tbody>`;
+  $('bstripLegend').innerHTML = `<span>${rows.length} of ${visible().length} threads shown.</span>` +
+    BR.map((b, i) => `<span><i style="background:var(${SLOTS[i]})"></i>${BRLABEL[b]}</span>`).join('') +
+    (HAS_TG ? '' : '<span>No target counts in this output (rerun pc_footprint.py).</span>');
 }
 
 // ---- curves -----------------------------------------------------------------
@@ -654,18 +824,17 @@ function curveSvg(el, v) {
   const xmax = v === 'pc' ? PC_MAX : LINE_MAX;
   const sx = x => PAD.l + Math.log2(Math.max(1, x)) / Math.log2(xmax) * (CW - PAD.l - PAD.r);
   const sy = y => PAD.t + (Math.log10(1) - Math.log10(Math.max(YMIN, y))) / (0 - Math.log10(YMIN)) * (CH - PAD.t - PAD.b);
-  const caps = v === 'pc' ? capPc : capLine;
   let g = '';
   for (let e = 0; e >= -5; e--) {
     const y = sy(10 ** e);
     g += `<line x1="${PAD.l}" x2="${CW - PAD.r}" y1="${y}" y2="${y}" stroke="var(--grid)"/>`;
     g += `<text x="${PAD.l - 6}" y="${y + 3}" text-anchor="end">${['100%','10%','1%','0.1%','0.01%','0.001%'][-e]}</text>`;
   }
-  caps.forEach((c, i) => {
-    const x = sx(c);
-    g += `<line x1="${x}" x2="${x}" y1="${PAD.t}" y2="${CH - PAD.b}" stroke="var(--rule)" ${TICK.has(i) ? '' : 'stroke-dasharray="3 3"'}/>`;
-    if (TICK.has(i)) g += `<text x="${x}" y="${CH - PAD.b + 26}" text-anchor="middle">${CAPS[i].size}</text>`;
-  });
+  if (REF) {
+    const r = REF_IN[v](), x = sx(r);
+    g += `<line x1="${x}" x2="${x}" y1="${PAD.t}" y2="${CH - PAD.b}" stroke="var(--warm)" stroke-width="1.5" stroke-dasharray="4 3"/>` +
+      `<text x="${x}" y="${CH - PAD.b + 26}" text-anchor="middle" style="fill:var(--warm)">${refLabel()} = ${fmtCount(r)} ${v === 'pc' ? 'insts' : 'lines'}</text>`;
+  }
   for (let e = 0; e <= Math.log2(xmax); e += 4)
     g += `<text x="${sx(2 ** e)}" y="${CH - PAD.b + 13}" text-anchor="middle">${fmtCount(2 ** e)}</text>`;
   const sel = [...picked.entries()].map(([id, slot]) => [D.threads.find(t => t.id === id), slot]).filter(([t]) => t);
@@ -734,14 +903,14 @@ function growSvg(el, key, ylo, yhi, refs) {
 }
 function renderGrowth() {
   const has = BINS.length > 0;
-  growSvg($('growCode'), 'code_kib', 1, 65536,
-    CAPS.filter(c => c.end).map(c => [c.bytes / 1024, c.first ? c.label : c.size]));
-  $('growCodeNote').textContent = `user + kernel, KiB; lines: ${capList(c => c.end)}`;
+  growSvg($('growCode'), 'code_kib', 1, 65536, REF ? [[refKib(), 'reference ' + refLabel()]] : []);
+  $('growCodeNote').textContent = 'user + kernel' + (REF ? '; line: the reference size' : '');
   growSvg($('growBr'), 'branchesTaken', 10, 1e7, [[M.btb_entries, `BTB ${fmtCount(M.btb_entries)}`]]);
-  $('growLegend').innerHTML = !has ? '<span>No bins in this output (rerun pc_footprint.py).</span>'
+  const legend = !has ? '<span>No bins in this output (rerun pc_footprint.py).</span>'
     : `<span>${$('binCut').value === 'own' ? "bins cut by the thread's own instructions" : 'bins cut by run windows'} (switch above)</span>` +
       `<span><svg width="12" height="12"><circle cx="6" cy="6" r="4" fill="var(--surface)" stroke="var(--ink-2)" stroke-width="2"/></svg>whole stream</span>` +
       [...picked.entries()].map(([id, slot]) => `<span><i style="background:var(${SLOTS[slot]})"></i>${esc(D.threads.find(t => t.id === id).label)}</span>`).join('');
+  document.querySelectorAll('.growLegend').forEach(el => { el.innerHTML = legend; });
 }
 
 // ---- full table -----------------------------------------------------------
@@ -759,36 +928,83 @@ const COLS = [
   ['code KiB', t => act(t).code_kib, t => fmtInt(act(t).code_kib)],
   ['user KiB', t => act(t).u_code_kib, t => fmtInt(act(t).u_code_kib)],
   ['kernel KiB', t => act(t).k_code_kib, t => fmtInt(act(t).k_code_kib)],
-  ...CAPS.map((c, i) => ['× ' + c.label, t => act(t).code_kib * 1024 / c.bytes, t => fmtX(act(t).code_kib * 1024 / c.bytes)]),
-  ...CAPS.map((c, i) => ['user × ' + c.label, t => act(t).u_code_kib * 1024 / c.bytes, t => fmtX(act(t).u_code_kib * 1024 / c.bytes)]),
   ['whole code KiB', t => t.code_kib, t => fmtInt(t.code_kib)],
-  ...CAPS.map((c, i) => ['MPKI ' + c.label, t => t.mpki[i], t => f2(t.mpki[i])]),
-  ...CAPS.flatMap((c, i) => c.first ? [['shared MPKI ' + c.label, t => t.smpki[i], t => f2(t.smpki[i])]] : []),
-  ['cold MPKI', t => t.line_cold * t.accesses / t.insts * 10, t => f2(t.line_cold * t.accesses / t.insts * 10)],
   ...['p50', 'p90', 'p99'].map((p, i) => ['inst dist ' + p, t => t.q.pc[i] ?? Infinity, t => fmtD(t.q.pc[i])]),
   ...['p50', 'p90', 'p99'].map((p, i) => ['line dist ' + p, t => t.q.line[i] ?? Infinity, t => fmtD(t.q.line[i])]),
+  ['inst cold %', t => t.pc_cold, t => t.pc_cold == null ? '' : t.pc_cold.toFixed(3)],
+  ['line cold %', t => t.line_cold, t => t.line_cold == null ? '' : t.line_cold.toFixed(3)],
+  ['cold MPKI', t => t.line_cold * t.accesses / t.insts * 10, t => f2(t.line_cold * t.accesses / t.insts * 10)],
+  ['ref miss % (insts)', t => refMiss(t, 'pc') ?? -1, t => fmtPct(refMiss(t, 'pc'))],
+  ['ref miss % (lines)', t => refMiss(t, 'line') ?? -1, t => fmtPct(refMiss(t, 'line'))],
+  ...(HAS_RW ? [
+    ['JIT rw insts user', t => t.rw.u_rw_insts, t => fmtInt(t.rw.u_rw_insts)],
+    ['JIT rw insts kernel', t => t.rw.k_rw_insts, t => fmtInt(t.rw.k_rw_insts)],
+    ['JIT rw lines user', t => t.rw.u_rw_lines, t => fmtInt(t.rw.u_rw_lines)],
+    ['JIT rw lines kernel', t => t.rw.k_rw_lines, t => fmtInt(t.rw.k_rw_lines)],
+    ['JIT rw branches', t => t.rw.rw_br, t => fmtInt(t.rw.rw_br)],
+    ['JIT rw cold MPKI', t => t.rw.rw_cold_mpki, t => t.rw.rw_cold_mpki ? t.rw.rw_cold_mpki.toFixed(4) : '0'],
+  ] : []),
+  ...CAPS.map((c, i) => ['MPKI ' + c.label, t => t.mpki[i], t => f2(t.mpki[i])]),
+  ...CAPS.flatMap((c, i) => c.first ? [['shared MPKI ' + c.label, t => t.smpki[i], t => f2(t.smpki[i])]] : []),
+];
+const num2 = x => x == null ? -1 : x;
+const BCOLS = [
+  ['thread', t => t.label, t => t.label],
+  ['process', t => procOf(t), t => procOf(t)],
+  ['instructions', t => t.insts, t => fmtInt(t.insts)],
   ['branches', t => act(t).branches, t => fmtInt(act(t).branches)],
   ['taken', t => act(t).branchesTaken, t => fmtInt(act(t).branchesTaken)],
   ['kernel branches (whole)', t => t.k_br, t => fmtInt(t.k_br)],
   ...BR.map((b, i) => [BRLABEL[b], t => act(t).br[i], t => fmtInt(act(t).br[i])]),
   ...BR.map((b, i) => [BRLABEL[b] + ' taken (whole)', t => t.brt[i], t => fmtInt(t.brt[i])]),
+  ...(HAS_TG ? [
+    ['targets', t => t.targets, t => fmtInt(t.targets)],
+    ...[['no returns', 'noret'], ['indirect', 'ind'], ['all', 'all']].flatMap(([l, k]) => [
+      [l + ' targets', t => t.tgAgg[k].tg, t => fmtInt(t.tgAgg[k].tg)],
+      [l + ' mean', t => num2(tMean(t.tgAgg[k])), t => fx2(tMean(t.tgAgg[k]))],
+      [l + ' weighted', t => num2(tW(t.tgAgg[k])), t => fx2(tW(t.tgAgg[k]))]]),
+    ...BR.flatMap((b, i) => [
+      [BRLABEL[b] + ' targets', t => t.tg[i], t => fmtInt(t.tg[i])],
+      [BRLABEL[b] + ' mean', t => num2(tMean(typeAgg(t, i))), t => fx2(tMean(typeAgg(t, i)))],
+      [BRLABEL[b] + ' weighted', t => num2(tW(typeAgg(t, i))), t => fx2(tW(typeAgg(t, i)))],
+      [BRLABEL[b] + ' taken execs', t => t.tk[i], t => fmtInt(t.tk[i])]]),
+  ] : []),
 ];
-function renderFull() {
-  const ci = COLS.findIndex(c => c[0] === fullSort.key);
-  const get = COLS[ci][1];
+// Miss ratio of a fully associative LRU cache of the reference size, from
+// the repeat distance histogram (buckets are powers of two: the bucket
+// holding the size is split log-linearly); null without a reference.
+function refMiss(t, v) {
+  if (!REF) return null;
+  const cap = REF_IN[v](), tot = v === 'pc' ? t.insts : t.accesses;
+  let hit = 0;
+  for (const [b, n] of t.h[v]) {
+    const lo = 2 ** (b - 1), hi = 2 ** b;     // d + 1 in [lo, hi)
+    if (hi <= cap) hit += n;
+    else if (lo < cap) hit += n * Math.log2(cap / lo);
+  }
+  return 1 - hit / tot;
+}
+const fmtPct = x => x == null ? '' : (x * 100).toFixed(x < 0.001 ? 4 : 2);
+// The two full tables: element id, columns, sort state.
+const FULL = [{id: 'full', cols: COLS, sort: fullSort}, {id: 'bfull', cols: BCOLS, sort: {key: 'instructions', dir: -1}}];
+function renderOne(f) {
+  const ci = f.cols.findIndex(c => c[0] === f.sort.key);
+  const get = f.cols[ci][1];
   const rows = visible().sort((a, b) => {
     const x = get(a), y = get(b);
-    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * fullSort.dir;
+    return (typeof x === 'string' ? x.localeCompare(y) : x - y) * f.sort.dir;
   });
-  $('full').innerHTML = `<thead><tr>${COLS.map(c => `<th data-key="${esc(c[0])}"${c[0] === fullSort.key ? ` aria-sort="${fullSort.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${esc(c[0])}${c[0] === fullSort.key ? (fullSort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>` +
-    `<tbody>${rows.map(t => `<tr>${COLS.map(c => `<td>${esc(c[2](t))}</td>`).join('')}</tr>`).join('')}</tbody>`;
+  $(f.id).innerHTML = `<thead><tr>${f.cols.map(c => `<th data-key="${esc(c[0])}"${c[0] === f.sort.key ? ` aria-sort="${f.sort.dir > 0 ? 'ascending' : 'descending'}"` : ''}>${esc(c[0])}${c[0] === f.sort.key ? (f.sort.dir > 0 ? ' ▲' : ' ▼') : ''}</th>`).join('')}</tr></thead>` +
+    `<tbody>${rows.map(t => `<tr>${f.cols.map(c => `<td>${esc(c[2](t))}</td>`).join('')}</tr>`).join('')}</tbody>`;
 }
-$('full').addEventListener('click', e => {
-  const th = e.target.closest('th'); if (!th) return;
-  const k = th.dataset.key;
-  fullSort = {key: k, dir: fullSort.key === k ? -fullSort.dir : (k === 'thread' ? 1 : -1)};
-  renderFull();
-});
+function renderFull() { FULL.forEach(renderOne); }
+for (const f of FULL)
+  $(f.id).addEventListener('click', e => {
+    const th = e.target.closest('th'); if (!th) return;
+    const k = th.dataset.key;
+    f.sort = {key: k, dir: f.sort.key === k ? -f.sort.dir : (k === 'thread' || k === 'process' ? 1 : -1)};
+    renderOne(f);
+  });
 
 // ---- tooltips ----------------------------------------------------------------
 const tip = $('tip');
@@ -804,6 +1020,17 @@ function tipFor(kind, t) {
       <tr><td>kernel</td><td>${fmtKib(a.k_code_kib)}</td><td>${fmtInt(a.k_uniq_insts)}</td>${binned() ? `<td>${fmtKib(a.max_k_kib)}</td>` : ''}</tr>
       <tr><td>total</td><td>${fmtKib(a.code_kib)}</td><td>${fmtInt(a.uniq_insts)}</td></tr></table>${binNote}` +
       (binned() ? `<br>whole stream: ${fmtKib(t.code_kib)}` : '');
+  if (kind === 'tg')
+    return head + `<table class="num"><tr><td></td><td>taken</td><td>targets</td><td>mean</td><td>weighted</td></tr>
+      ${BR.map((b, i) => t.te[i] ? `<tr><td><i class="swatch" style="display:inline-block;background:var(${SLOTS[i]})"></i> ${BRLABEL[b]}</td><td>${fmtInt(t.te[i])}</td><td>${fmtInt(t.tg[i])}</td><td>${fx2(tMean(typeAgg(t, i)))}</td><td>${fx2(tW(typeAgg(t, i)))}</td></tr>` : '').join('')}
+      <tr><td><b>no returns</b></td><td>${fmtInt(t.tgAgg.noret.te)}</td><td>${fmtInt(t.tgAgg.noret.tg)}</td><td>${fx2(tMean(t.tgAgg.noret))}</td><td>${fx2(tW(t.tgAgg.noret))}</td></tr></table>
+      taken: branches taken at least once; mean: targets per such branch; weighted: by taken executions; whole stream`;
+  if (kind === 'rw')
+    return head + `<table class="num"><tr><td></td><td>user</td><td>kernel</td></tr>
+      <tr><td>instructions</td><td>${fmtInt(t.rw.u_rw_insts)}</td><td>${fmtInt(t.rw.k_rw_insts)}</td></tr>
+      <tr><td>lines</td><td>${fmtInt(t.rw.u_rw_lines)}</td><td>${fmtInt(t.rw.k_rw_lines)}</td></tr></table>
+      branches ${fmtInt(t.rw.rw_br)}; cold misses on rewritten lines ${t.rw.rw_cold_mpki.toFixed(4)} MPKI<br>
+      code at a PC whose encoding changed, counted as new code (versions after the first)`;
   if (kind === 'insts')
     return head + `<table class="num"><tr><td>user</td><td>${fmtInt(t.insts - t.k_insts)}</td><td>${((1 - t.k_insts / t.insts) * 100).toFixed(1)}%</td></tr>
       <tr><td>kernel</td><td>${fmtInt(t.k_insts)}</td><td>${(t.k_insts / t.insts * 100).toFixed(1)}%</td></tr>
@@ -816,8 +1043,8 @@ function tipFor(kind, t) {
   const cold = kind === 'pc' ? t.pc_cold : t.line_cold;
   let s = head + `<table class="num"><tr><td>median</td><td>${fmtD(q[0])}</td></tr><tr><td>90th</td><td>${fmtD(q[1])}</td></tr>
     <tr><td>99th</td><td>${fmtD(q[2])}</td></tr><tr><td>cold</td><td>${cold.toFixed(3)}%</td></tr></table>distinct ${unit} since last use`;
-  if (kind === 'line')
-    s += `<br><table class="num">${CAPS.map((c, i) => `<tr><td>${c.label}</td><td>hits ${(t.hit[i] ?? 0).toFixed(2)}%</td><td>${f2(t.mpki[i])} MPKI</td></tr>`).join('')}</table>`;
+  if (REF)
+    s += `<br>LRU miss ratio at the reference ${refLabel()} (${fmtCount(REF_IN[kind]())} ${unit}): <b class="num">${fmtPct(refMiss(t, kind))}%</b>`;
   return s;
 }
 function place(e) {
@@ -864,27 +1091,41 @@ document.addEventListener('mousemove', e => {
 });
 
 // ---- wiring -----------------------------------------------------------------
-function toggleRow(tr) { pick(+tr.dataset.id); renderStrip(); renderCurves(); renderGrowth(); }
-$('strip').addEventListener('click', e => { const tr = e.target.closest('tbody tr'); if (tr) toggleRow(tr); });
-$('strip').addEventListener('keydown', e => {
-  const tr = e.target.closest('tbody tr');
-  if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(tr); }
-});
+function renderStrips() { renderStrip(); renderBStrip(); }
+function toggleRow(tr) { pick(+tr.dataset.id); renderStrips(); renderCurves(); renderGrowth(); }
+for (const id of ['strip', 'bstrip']) {
+  $(id).addEventListener('click', e => { const tr = e.target.closest('tbody tr'); if (tr) toggleRow(tr); });
+  $(id).addEventListener('keydown', e => {
+    const tr = e.target.closest('tbody tr');
+    if (tr && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); toggleRow(tr); }
+  });
+}
+for (const id of ['secInst', 'secBr']) $(id).addEventListener('toggle', savePrefs);
 for (const id of ['sortBy', 'topN', 'minInsts', 'codeMode', 'binSize', 'binCut'])
   $(id).addEventListener('change', () => {
     $('binCut').disabled = !binned();
-    savePrefs(); renderStrip(); renderGrowth(); renderFull();
+    savePrefs(); renderStrips(); renderGrowth(); renderFull();
   });
-$('filter').addEventListener('input', () => { renderStrip(); renderFull(); });
+$('filter').addEventListener('input', () => { renderStrips(); renderFull(); });
+function refChanged() {
+  const s = $('refSize').value.trim();
+  REF = parseSize(s);
+  $('refSize').setAttribute('aria-invalid', String(!!s && !REF));
+  $('refNote').textContent = REF ? `= ${fmtCount(refPc())} instructions = ${fmtCount(refLine())} lines` : s ? 'not a size' : '';
+}
+$('refSize').addEventListener('input', () => {
+  refChanged(); savePrefs(); renderStrips(); renderCurves(); renderGrowth(); renderFull();
+});
+refChanged();
 
 $('title').textContent = M.run + ': code footprint by thread';
 const kernelInsts = D.threads.reduce((a, t) => a + t.k_insts, 0);
 $('totals').innerHTML = `<span><b>${fmtCount(M.insts)}</b> instructions</span>` +
   `<span><b>${D.threads.length}</b> threads</span>` +
   `<span><b>${Math.round(kernelInsts / M.insts * 100)}%</b> in the kernel</span>` +
-  `<span>caches: <b>${CAPS.map(c => c.label).join(' · ')}</b></span>` +
+  (HAS_RW ? `<span><b>${fmtCount(D.threads.reduce((a, t) => a + t.rwLines, 0))}</b> rewritten lines (JIT)</span>` : '') +
   (BINS.length ? `<span>bins: <b>${BINS.map(b => b.label).join(' · ')}</b></span>` : '');
-renderProcs(); renderStrip(); renderCurves(); renderGrowth(); renderFull();
+renderProcs(); renderStrips(); renderCurves(); renderGrowth(); renderFull();
 })();
 </script>
 """

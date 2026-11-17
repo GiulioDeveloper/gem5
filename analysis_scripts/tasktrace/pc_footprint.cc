@@ -10,7 +10,9 @@
 // stack distances per instruction address as well as per line, and its
 // footprint per bin: distinct instructions, lines and branches in each N
 // instructions, cut either by the thread's own instruction count or by
-// the run's (global windows).
+// the run's (global windows). Per static branch (branches.tsv): its
+// executions, taken executions and distinct taken targets (the next PC
+// when it is not PC + 4 and not an exception vector).
 //
 //
 // Code versions. A PC can hold different instructions over time (a JIT
@@ -37,8 +39,9 @@
 //   SWITCHES  global instruction count of each switch event, one per line,
 //             in trace order (the markers after the first one)
 //   EXECS     "insts tgid name" per exec event, by instruction count
-//   VEC0/1    link addresses (hex) of the kernel vector tables; a
-//             transfer into either is an exception, not a taken branch
+//   VEC0/1    link addresses (hex) of the kernel's EL1 vector tables; a
+//             transfer into either, or from user code into the kernel,
+//             is an exception, not a taken branch
 //   CAPn      cache sizes in 64-byte lines for the hit counts
 
 #include <cinttypes>
@@ -49,6 +52,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <vector>
 
 namespace {
@@ -342,6 +346,65 @@ struct Instance
     uint64_t kInsts = 0;
 };
 
+// A static branch: its instruction key in the per-instance view (space and
+// address, or space and serial for a later code version; rw tells them
+// apart, since a serial and an address can be equal).
+struct BranchId
+{
+    uint64_t key;
+    bool rw;
+    bool operator==(const BranchId &o) const
+    {
+        return key == o.key && rw == o.rw;
+    }
+};
+
+struct BranchIdHash
+{
+    size_t operator()(const BranchId &b) const { return mix(b.key) ^ b.rw; }
+};
+
+// Executions, taken executions and distinct taken targets of one static
+// branch, with its address (va: the PC's low 48 bits) and group.
+struct BranchStat
+{
+    uint64_t va = 0, execs = 0, taken = 0;
+    uint32_t targets = 0, gid = 0;
+    Branch type = NotBranch;
+};
+
+struct BranchTarget
+{
+    BranchId id;
+    uint64_t target;
+    bool operator==(const BranchTarget &o) const
+    {
+        return id == o.id && target == o.target;
+    }
+};
+
+struct BranchTargetHash
+{
+    size_t
+    operator()(const BranchTarget &t) const
+    {
+        return mix(BranchIdHash()(t.id) ^ mix(t.target));
+    }
+};
+
+// A branch whose outcome an exception hid: the next instruction committed
+// was an exception vector, so the branch's successor is where the
+// exception returns to. Holds the branch's keys for marking it taken;
+// valid is false for an exception entry after any other instruction.
+struct PendingBranch
+{
+    bool valid = false;
+    uint64_t pc = 0, key = 0, nameKey = 0, thPc = 0;
+    FlatMap *instMap = nullptr, *nameMap = nullptr;
+    BranchStat *br = nullptr;
+    BranchId brId{0, false};
+};
+
 // Values counted per bin: distinct user and kernel instructions, distinct
 // user and kernel lines, distinct branches by type, distinct taken branches.
 constexpr int kBinVals = 4 + (NumBranch - 1) + 1;
@@ -397,6 +460,19 @@ struct Thread
     FlatMap binPc{1 << 10}, binLine{1 << 8};
     std::vector<uint32_t> pcMark, lineMark;
     uint64_t lastLine = kEmpty;
+    // Exception entries not yet returned from (an eret pops one), each with
+    // the branch it interrupted, if any.
+    std::vector<PendingBranch> excStack;
+    // The branches this thread took: taken executions and distinct targets
+    // in its own stream.
+    struct TakenBranch
+    {
+        uint64_t taken = 0;
+        uint32_t targets = 0;
+        Branch type = NotBranch;
+    };
+    std::unordered_map<BranchId, TakenBranch, BranchIdHash> taken;
+    std::unordered_set<BranchTarget, BranchTargetHash> targets;
 
     Thread(int64_t tgid, int64_t pid, uint32_t instance, uint32_t group,
            bool kthread, std::string comm, size_t nc)
@@ -761,6 +837,33 @@ main(int argc, char **argv)
     Branch prevBranch = NotBranch;
     uint64_t total = 0;
 
+    // Static branches and their distinct taken targets (per-instance view).
+    // prevBr: the previous instruction's entry when it was a branch.
+    std::unordered_map<BranchId, BranchStat, BranchIdHash> branches;
+    std::unordered_set<BranchTarget, BranchTargetHash> branchTargets;
+    BranchStat *prevBr = nullptr;
+    BranchId prevBrId{0, false};
+    uint64_t excEntries = 0, excAfterBranch = 0, excResolved = 0,
+             excResolvedTaken = 0, excUnmatched = 0;
+    std::vector<uint64_t> trampVectors;   // EL0 entry tables (fixmap alias)
+    // Marks a branch taken to target, in thread th's stream.
+    auto markTaken = [&](const PendingBranch &b, uint32_t th,
+                         uint64_t target) {
+        if (uint32_t *v = b.instMap->find(b.key)) *v |= 1u << 24;
+        if (uint32_t *v = b.nameMap->find(b.nameKey)) *v |= 1u << 24;
+        if (uint32_t *v = threads[th]->pcs.find(b.thPc)) *v |= 1u << 8;
+        threads[th]->binTaken(b.thPc);
+        b.br->taken++;
+        if (branchTargets.insert({b.brId, target}).second)
+            b.br->targets++;
+        Thread &t = *threads[th];
+        auto &tb = t.taken[b.brId];
+        tb.type = b.br->type;
+        tb.taken++;
+        if (t.targets.insert({b.brId, target}).second)
+            tb.targets++;
+    };
+
     // Code versions (see the top of the file). versionsOn once the trace
     // shows an encoding (or with --mnemonic-versions). decodeEnc rebuilds
     // each instruction's encoding (pc_trace.py's decode key); pcVersion
@@ -876,16 +979,66 @@ main(int argc, char **argv)
             pc = prevPc + 4;
             mnem = buf;
         }
-        if (prevBranch != NotBranch && pc != prevPc + 4) {
-            bool exception = (pc >= vec[0] && pc < vec[0] + 0x800) ||
-                             (pc >= vec[1] && pc < vec[1] + 0x800);
-            if (!exception) {
-                if (uint32_t *v = prevInstMap->find(prevKey)) *v |= 1u << 24;
-                if (uint32_t *v = prevNameMap->find(prevNameKey))
-                    *v |= 1u << 24;
-                if (uint32_t *v = threads[prevThread]->pcs.find(prevThPc))
-                    *v |= 1u << 8;
-                threads[prevThread]->binTaken(prevThPc);
+        // An exception entry: a jump into the EL1 vector tables, or from
+        // user code into the kernel (with KPTI, EL0 enters through the
+        // trampoline vectors' fixmap alias, not through the EL1 tables;
+        // the tables entered that way are learned, so an exception taken
+        // right at an eret to user code, before its target commits, is
+        // seen too). Jumps from code in these tables into them (the
+        // trampoline's branch-history clearing loop, its return into the
+        // EL1 table) continue the same entry. An entry is not a taken
+        // branch; when it follows a branch, the branch's successor is where
+        // the matching eret returns to.
+        if (pc != prevPc + 4) {
+            bool userEntry = !(prevPc >> 63) && (pc >> 63);
+            if (userEntry) {
+                uint64_t base = pc & ~0x7ffull;
+                bool known = false;
+                for (uint64_t b : trampVectors) known |= b == base;
+                if (!known) trampVectors.push_back(base);
+            }
+            auto inVectors = [&](uint64_t x) {
+                bool in = (x >= vec[0] && x < vec[0] + 0x800) ||
+                          (x >= vec[1] && x < vec[1] + 0x800);
+                for (uint64_t b : trampVectors)
+                    in |= x >= b && x < b + 0x800;
+                return in;
+            };
+            bool exception = userEntry ||
+                             (inVectors(pc) && !inVectors(prevPc));
+            if (exception) {
+                PendingBranch e;
+                if (prevBranch != NotBranch)
+                    e = {true, prevPc, prevKey, prevNameKey, prevThPc,
+                         prevInstMap, prevNameMap, prevBr, prevBrId};
+                auto &st = threads[prevThread]->excStack;
+                if (st.size() >= 64)   // entries never returned from
+                    st.erase(st.begin());
+                st.push_back(e);
+                excEntries++;
+                excAfterBranch += e.valid;
+            } else if (prevBranch != NotBranch) {
+                markTaken({true, prevPc, prevKey, prevNameKey, prevThPc,
+                           prevInstMap, prevNameMap, prevBr, prevBrId},
+                          prevThread, pc);
+            }
+        }
+        // The eret's target is the return address of the thread's latest
+        // exception entry.
+        if (prevBranch == ExceptionReturn) {
+            auto &st = threads[prevThread]->excStack;
+            if (st.empty()) {
+                excUnmatched++;
+            } else {
+                PendingBranch e = st.back();
+                st.pop_back();
+                if (e.valid) {
+                    excResolved++;
+                    if (pc != e.pc + 4) {
+                        markTaken(e, prevThread, pc);
+                        excResolvedTaken++;
+                    }
+                }
             }
         }
 
@@ -1006,6 +1159,18 @@ main(int argc, char **argv)
 
         Branch br = classify(mnem);
         uint32_t init = gid | (uint32_t(br) << 16);
+        prevBr = nullptr;
+        if (br != NotBranch) {
+            prevBrId = {key, pcSerial != 0};
+            BranchStat &b = branches[prevBrId];
+            if (!b.execs) {
+                b.va = va;
+                b.gid = gid;
+                b.type = br;
+            }
+            b.execs++;
+            prevBr = &b;
+        }
         bool ins;
         instMap.get(key, init, &ins);
         nameMap.get(nameKey, init, &ins);
@@ -1156,7 +1321,14 @@ main(int argc, char **argv)
     for (int b = 1; b < NumBranch; b++)
         fprintf(o, "\tbr_%s\tbr_%s_taken\tk_br_%s", kBranchNames[b],
                 kBranchNames[b], kBranchNames[b]);
-    fprintf(o, "\tu_rw_insts\tk_rw_insts\tu_rw_lines\tk_rw_lines\trw_br\n");
+    fprintf(o, "\tu_rw_insts\tk_rw_insts\tu_rw_lines\tk_rw_lines\trw_br");
+    // Per type, over the branches the thread took: how many (te_), their
+    // taken executions (tk_), distinct targets (tg_) and targets weighted by
+    // taken executions (tw_: the sum of targets x taken).
+    for (int b = 1; b < NumBranch; b++)
+        fprintf(o, "\tte_%s\ttk_%s\ttg_%s\ttw_%s", kBranchNames[b],
+                kBranchNames[b], kBranchNames[b], kBranchNames[b]);
+    fprintf(o, "\n");
     for (size_t i = 0; i < threads.size(); i++) {
         const Thread &t = *threads[i];
         if (!t.lines.insts)
@@ -1196,7 +1368,19 @@ main(int argc, char **argv)
             fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64, br[b], tk[b],
                     kbr[b]);
         fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64
-                "\t%" PRIu64 "\n", rwi[0], rwi[1], rwl[0], rwl[1], rwb);
+                "\t%" PRIu64, rwi[0], rwi[1], rwl[0], rwl[1], rwb);
+        uint64_t te[NumBranch] = {}, tk2[NumBranch] = {}, tg[NumBranch] = {},
+                 tw[NumBranch] = {};
+        for (const auto &[id, tb] : t.taken) {
+            te[tb.type]++;
+            tk2[tb.type] += tb.taken;
+            tg[tb.type] += tb.targets;
+            tw[tb.type] += tb.targets * tb.taken;
+        }
+        for (int b = 1; b < NumBranch; b++)
+            fprintf(o, "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64 "\t%" PRIu64,
+                    te[b], tk2[b], tg[b], tw[b]);
+        fprintf(o, "\n");
     }
     fclose(o);
 
@@ -1244,6 +1428,21 @@ main(int argc, char **argv)
     }
     fclose(o);
 
+    // branches.tsv: per static branch (per-instance view; a later code
+    // version is its own branch, version > 0): executions, taken
+    // executions and distinct taken targets.
+    o = fopen((outdir + "/branches.tsv").c_str(), "w");
+    fprintf(o, "space\tgroup\ttype\tpc\tversion\texecs\ttaken\ttargets\n");
+    for (const auto &[id, b] : branches) {
+        uint64_t space = id.key >> 48;
+        fprintf(o, "%" PRIu64 "\t%s\t%s\t%" PRIx64 "\t%" PRIu64 "\t%"
+                PRIu64 "\t%" PRIu64 "\t%u\n",
+                space == 0xffff ? 0 : space, groups[b.gid].name.c_str(),
+                kBranchNames[b.type], b.va,
+                id.rw ? id.key & kMask48 : 0, b.execs, b.taken, b.targets);
+    }
+    fclose(o);
+
     o = fopen((outdir + "/thread_hist.tsv").c_str(), "w");
     fprintf(o, "thread\tview\tbucket\tlo\thi\taccesses\n");
     for (size_t i = 0; i < threads.size(); i++) {
@@ -1279,6 +1478,11 @@ main(int argc, char **argv)
             countNops == 1 ? gNops : g,
             countNops < 0 ? "undecided" : countNops ? "counted" : "not counted",
             countMismatches, maxMismatch);
+    fprintf(stderr, "exceptions: %" PRIu64 " entries, %" PRIu64 " after a "
+            "branch, %" PRIu64 " of those resolved at their eret (%" PRIu64
+            " taken); %" PRIu64 " erets with no entry; %zu EL0 entry "
+            "tables\n", excEntries, excAfterBranch, excResolved,
+            excResolvedTaken, excUnmatched, trampVectors.size());
     uint64_t rwPcs = 0, rwFlips = 0;
     for (const RwCount &r : rw) rwPcs += r.pcs, rwFlips += r.flips;
     fprintf(stderr, "code versions: %s; %" PRIu64 " encodings in the trace, "

@@ -169,4 +169,5 @@ pass's later versions.
 - Fork children start with an empty encoding map (a new address space,
   as before); copying the parent's would matter only if the parent's code
   had been rewritten before the fork.
-- `report.html` does not show the rewrite columns yet.
+- ~~`report.html` does not show the rewrite columns yet.~~ Done
+  2026-11-17: a *Rewritten (JIT)* column and table columns per thread.

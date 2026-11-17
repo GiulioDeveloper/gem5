@@ -34,7 +34,13 @@ Per group, view and instance:
   access charged to its group;
 - distinct branch instructions by type, and how many were ever taken
   (the next instruction is not at PC + 4; a transfer into the kernel's
-  exception vectors is an exception, not a taken branch).
+  EL1 exception vectors, or from user code into the kernel, is an
+  exception, not a taken branch: with KPTI, EL0 enters the kernel through
+  the trampoline vectors' fixmap alias);
+- per static branch (per process instance; a later code version is a
+  branch of its own), its distinct taken targets: averaged over the
+  branches ever taken, plainly and weighted by taken executions or by all
+  executions.
 
 Per thread (a pid within a process instance, or a kernel thread): its
 whole stream, user code and the kernel code run while it was current, on
@@ -77,9 +83,14 @@ report reuse.
 Writes OUT (default <run>/footprint/): groups.tsv, hist.tsv (stack
 distance histograms, log2 buckets), instances.tsv from the C++ pass
 (pc_footprint.cc, built on first use), threads.tsv and thread_hist.tsv,
-thread_bins.tsv, then footprint.csv (per name, both views), instances.csv (per PID),
-threads.csv (per thread), thread_bins.csv (per thread, bin size and
-cut), summary.md and report.html
+thread_bins.tsv, branches.tsv (per static branch: executions, taken
+executions, distinct taken targets), then footprint.csv (per name, both
+views), instances.csv (per PID), threads.csv (per thread),
+thread_bins.csv (per thread, bin size and cut; threads.csv also has the
+branch targets per type in the thread's own stream), branch_targets.csv
+(targets per branch: mean, weighted by taken and by all executions, and
+the distribution, per code scope and branch type), summary.md and
+report.html
 (pc_footprint_report.py).
 """
 
@@ -312,6 +323,130 @@ def branch_table(lines, rows, title):
     lines.append("")
 
 
+TARGET_BUCKETS = ((1, 1), (2, 2), (3, 4), (5, 8), (9, 16), (17, 64),
+                  (65, None))
+
+
+def target_stats(rows):
+    """Distinct taken targets over the branches that were ever taken: the
+    plain mean, the mean weighted by taken executions (what a target
+    predictor looks up) and by all executions, the share with more than one
+    target, the largest, and the distribution in TARGET_BUCKETS (shares of
+    branches and of taken executions)."""
+    tk = [r for r in rows if r["taken"]]
+    n, taken = len(tk), sum(r["taken"] for r in tk)
+    execs = sum(r["execs"] for r in tk)
+    s = {"branches": len(rows), "taken_ever": n,
+         "execs": sum(r["execs"] for r in rows), "taken": taken,
+         "mean": None, "taken_weighted": None, "exec_weighted": None,
+         "multi_share": None, "max": max((r["targets"] for r in tk),
+                                         default=0)}
+    if n:
+        s["mean"] = sum(r["targets"] for r in tk) / n
+        s["taken_weighted"] = sum(r["targets"] * r["taken"]
+                                  for r in tk) / taken
+        s["exec_weighted"] = sum(r["targets"] * r["execs"]
+                                 for r in tk) / execs
+        s["multi_share"] = sum(r["targets"] > 1 for r in tk) / n
+    for lo, hi in TARGET_BUCKETS:
+        b = [r for r in tk if r["targets"] >= lo
+             and (hi is None or r["targets"] <= hi)]
+        label = f"{lo}+" if hi is None else f"{lo}" if lo == hi else f"{lo}-{hi}"
+        s[f"br_{label}"] = len(b) / n if n else None
+        s[f"tk_{label}"] = sum(r["taken"] for r in b) / taken if n else None
+    return s
+
+
+def branch_target_section(lines, out):
+    """branch_targets.csv (per scope and branch type) and a summary.md
+    section, from branches.tsv; nothing for an older pass without it."""
+    path = out / "branches.tsv"
+    if not path.exists():
+        return
+    rows = []
+    for r in rows_of(path):
+        rows.append({"group": r["group"], "type": r["type"],
+                     "kernel": r["space"] == "0" and r["group"] == "[kernel]",
+                     "execs": int(r["execs"]), "taken": int(r["taken"]),
+                     "targets": int(r["targets"])})
+    indirect = ("indirect_call", "indirect_jump")
+    scopes = {"all": rows, "user": [r for r in rows if not r["kernel"]],
+              "kernel": [r for r in rows if r["kernel"]]}
+    by_group = {}
+    for r in rows:
+        by_group.setdefault(r["group"], []).append(r)
+    order = sorted(by_group, key=lambda g: -sum(r["taken"]
+                                                for r in by_group[g]))
+    scopes.update((g, by_group[g]) for g in order)
+    table = []
+    for scope, rs in scopes.items():
+        kinds = [("all", rs),
+                 ("no_return", [r for r in rs if r["type"] not in
+                                ("return", "exception_return")]),
+                 ("indirect", [r for r in rs if r["type"] in indirect])]
+        kinds += [(b, [r for r in rs if r["type"] == b]) for b in BRANCHES]
+        for kind, sub in kinds:
+            if sub:
+                table.append({"scope": scope, "type": kind,
+                              **target_stats(sub)})
+    write_csv(out / "branch_targets.csv", table)
+    stat = {(t["scope"], t["type"]): t for t in table}
+
+    def row(t):
+        return (f"{t['taken_ever']:,} | {fmt(t['mean'])} "
+                f"| {fmt(t['taken_weighted'])} | {fmt(t['exec_weighted'])} "
+                f"| {fmt(100 * t['multi_share'], 1)}% | {t['max']:,}")
+
+    lines.append("## Branch targets")
+    lines.append("")
+    lines.append("Distinct taken targets per static branch (the next PC when "
+                 "it is not PC + 4; exceptions left out), over the branches "
+                 "ever taken: plain mean, mean weighted by taken executions, "
+                 "and by all executions. Per process instance; a rewritten "
+                 "branch (a later code version) is a branch of its own. "
+                 "no_return: every type but returns and exception returns "
+                 "(what the BTB and indirect predictor see).")
+    lines.append("")
+    lines.append("| code | type | branches taken | mean | taken-weighted "
+                 "| exec-weighted | >1 target | max |")
+    lines.append("|---|---|---|---|---|---|---|---|")
+    for scope in ("all", "user", "kernel"):
+        for kind in ("all", "no_return", "indirect") + BRANCHES:
+            t = stat.get((scope, kind))
+            if t and (scope == "all" or kind in ("all", "no_return",
+                                                  "indirect", "return")):
+                lines.append(f"| {scope} | {kind} | {row(t)} |")
+    lines.append("")
+    labels = [k[3:] for k in table[0] if k.startswith("br_")]
+    lines.append("Distribution, all code: share of branches ever taken "
+                 "(share of taken executions) by number of targets:")
+    lines.append("")
+    lines.append("| type | " + " | ".join(labels) + " |")
+    lines.append("|---|" + "---|" * len(labels))
+    for kind in ("indirect_call", "indirect_jump", "return",
+                 "exception_return", "cond", "direct", "call"):
+        t = stat.get(("all", kind))
+        if t and t["taken_ever"]:
+            lines.append(f"| {kind} | " + " | ".join(
+                f"{100 * t['br_' + l]:.1f} ({100 * t['tk_' + l]:.1f})"
+                for l in labels) + " |")
+    lines.append("")
+    lines.append("Per process (by taken executions): mean / taken-weighted "
+                 "targets.")
+    lines.append("")
+    lines.append("| process | taken | all | no_return | indirect | return |")
+    lines.append("|---|---|---|---|---|---|")
+    for g in order[:12]:
+        cells = []
+        for kind in ("all", "no_return", "indirect", "return"):
+            t = stat.get((g, kind))
+            cells.append(f"{fmt(t['mean'])} / {fmt(t['taken_weighted'])}"
+                         if t and t["taken_ever"] else "")
+        lines.append(f"| {g} | {stat[(g, 'all')]['taken'] / 1e6:,.1f}M | "
+                     + " | ".join(cells) + " |")
+    lines.append("")
+
+
 def thread_hists(out):
     """{thread: {view: [(bucket, accesses), ...]}} from thread_hist.tsv;
     bucket b holds distances d with d + 1 in [2^(b-1), 2^b)."""
@@ -385,6 +520,17 @@ def summarize_threads(out, caches):
         for b in BRANCHES:
             r[f"br_{b}"] = int(n[f"br_{b}"])
             r[f"br_{b}_taken"] = int(n[f"br_{b}_taken"])
+        # Targets per type over the branches the thread took (passes since
+        # 2026-11-17): branches taken, taken executions, distinct targets,
+        # mean targets and targets weighted by taken executions.
+        for b in BRANCHES:
+            te, tk = n.get(f"te_{b}"), n.get(f"tk_{b}")
+            if te is None:
+                continue
+            tg, tw = n[f"tg_{b}"], n[f"tw_{b}"]
+            r[f"te_{b}"], r[f"tk_{b}"], r[f"tg_{b}"] = int(te), int(tk), int(tg)
+            r[f"tmean_{b}"] = tg / te if te else None
+            r[f"twavg_{b}"] = tw / tk if tk else None
         rows.append(r)
     rows.sort(key=lambda r: -r["insts"])
     write_csv(out / "threads.csv", rows)
@@ -741,6 +887,7 @@ def summarize(out):
                                   for l, _ in first) + " |")
     threads = summarize_threads(out, caches)
     rewrite_section(lines, table, threads)
+    branch_target_section(lines, out)
     thread_section(lines, threads, caches)
     bin_section(lines, threads, summarize_bins(out))
     (out / "summary.md").write_text("\n".join(lines) + "\n")

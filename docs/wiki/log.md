@@ -1115,3 +1115,60 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
 - Isolated switches are rare: at k = 1 they cover 0.6–1.5% of the
   instructions on three base checkpoints, against 7–29% for every switch.
 - Pages: [[sweeps]], [[metric-definitions]] (regenerated, not republished).
+
+## [2026-11-17] experiment | Distinct targets per branch
+- New [[2026-11-17-branch-targets]], on the user's question. The footprint
+  pass (`pc_footprint.cc`) keeps per static branch its executions, taken
+  executions and distinct taken targets (`branches.tsv`);
+  `pc_footprint.py` writes `branch_targets.csv` and a *Branch targets*
+  summary section (mean over branches ever taken, weighted by taken and by
+  all executions, distribution, per scope, process and type).
+- Fixed the pass's exception rule: with KPTI, EL0 enters through the
+  trampoline vectors' fixmap alias, which the pass did not exclude, so an
+  IRQ or fault after a user branch counted as a taken branch; now any user
+  → kernel transfer is an entry, the trampoline's own jumps are ordinary
+  branches, and a branch an entry follows is resolved at the matching
+  `eret` (per-thread stack). Changes *taken ever* counts slightly (1G
+  rubocop: −242 cond, +2 return of ~311K).
+- 1G rubocop (atomic, v2): 1.04 targets per branch outside returns, 1.22
+  weighted by taken executions; indirect calls 6.8, indirect jumps 13,
+  returns 55 weighted. 15G pass running
+  (`runs/rubocop-15G/cache8x/footprint-targets/`).
+- Updated [[pc-trace]] (branches, branch targets), [[questions]], [[index]].
+
+## [2026-11-17] infra | Footprint report: reference size, JIT columns, UTF-8
+- `pc_footprint_report.py` (user request): declares UTF-8 (a browser
+  could show `Â·`); the code-vs-cache-size cells, cache gridlines and
+  cache reference lines are gone; a *Reference* size typed into the page
+  is drawn on every chart (code size, instructions, lines) and adds LRU
+  miss-ratio columns at that size; repeat distance per 64-byte line
+  labelled as such (it was there, likely off-screen right of the cells),
+  with a sort option; a *Rewritten (JIT)* column, tooltip and table
+  columns from `threads.csv` on v2 traces. Checked by screenshot on the
+  1G rubocop report, with and without a reference.
+- Updated [[pc-trace]], [[2026-11-12-jit-code-versions]] (open item done).
+
+## [2026-11-17] infra | Footprint report: instruction and branch sections; targets per thread
+- `pc_footprint.cc` counts, per thread and branch type, the branches the
+  thread took, their taken executions, distinct targets and targets x
+  taken; `threads.csv` gains `te_`/`tk_`/`tg_`/`tmean_`/`twavg_` per type.
+  Checked on the 1G rubocop window (taken executions sum to the
+  per-branch totals; taken counts match the existing column).
+- `pc_footprint_report.py` (user request): collapsible *Instructions* and
+  *Branches* sections; the branch section shows distinct targets by type
+  and mean / weighted targets for no-returns, indirect call, indirect
+  jump and return, with its own growth plot and table.
+- 15G rubocop rerun with the new pass:
+  `runs/rubocop-15G/cache8x/footprint-targets-new/`.
+- Updated [[pc-trace]], [[2026-11-17-branch-targets]].
+
+## [2026-11-17] experiment | Branch targets on the 15G rubocop run
+- `runs/rubocop-15G/cache8x/footprint-targets/` (56 min, 13.4 GB): 1.04
+  targets per branch outside returns, 2.04 weighted by taken executions;
+  indirect jumps 25, returns 126 weighted; Ruby and Python interpreters
+  4–4.7 outside returns against OpenCode 1.6. Added to
+  [[2026-11-17-branch-targets]] and [[index]].
+- Per-thread rerun done (58 min, 14.4 GB) and moved into
+  `footprint-targets/` (shared outputs identical to the first pass);
+  `report.html` rebuilt with the *Branches* section.
+

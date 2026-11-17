@@ -195,6 +195,12 @@ per 500M, 93K per 1G; JITWorker 1263: 69K whole, 37K per 100M.
 
 ## Open
 
+- The *taken* branch counts here come from a pass that took an IRQ or
+  fault entering the kernel after a user branch for a taken branch (KPTI
+  trampoline entries; fixed 2026-11-17, [[2026-11-17-branch-targets]]).
+  On a 1G window that moved 0.2% of conditional branches; a rerun of this
+  trace with the fixed pass is running.
+
 - Code shared across runs of the same binary: needs each process's load
   addresses (the tracer records none), or an alignment heuristic. The
   same-address aggregation shows no sharing because of ASLR.

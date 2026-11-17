@@ -1,11 +1,12 @@
 ---
 type: howto
 status: current
-updated: 2026-11-12
+updated: 2026-11-17
 sources:
   - analysis_scripts/tasktrace/pc_trace.py
   - "[[2026-11-12-jit-code-versions]]"
   - run_scripts/tasktrace/pc-trace.sh
+  - "[[2026-11-17-branch-targets]]"
   - runs/old-tests/traced-test/
   - src/cpu/exetrace.cc
 tags: [trace, pc, footprint, tracer]
@@ -269,14 +270,27 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   above) and the **repeat distance per instruction address**: distinct
   instructions committed since the same PC last committed (a stack
   distance per PC; `thread_hist.tsv` holds both histograms, log2
-  buckets). `report.html` is one self-contained page: a row per thread
-  with instructions and code size split between user and kernel mode,
-  code size against the cache sizes, code ÷ cache size (user + kernel,
-  user only or kernel only), repeat
-  distance percentiles (median, 90th, 99th) per instruction and per line,
-  and distinct branches by type; miss ratio curves of the threads picked;
-  a sortable table; processes can be hidden by name (kernel threads are
-  one entry).
+  buckets). `report.html` is one self-contained page with two
+  collapsible sections and shared controls (order, filters, picked
+  threads); processes can be hidden by name (kernel threads are one
+  entry).
+  - *Instructions*: a row per thread with instructions and code size split
+    between user and kernel mode (user + kernel, user only or kernel
+    only), repeat distance percentiles (median, 90th, 99th) per
+    instruction and per 64-byte line and, on v2 traces, the rewritten
+    (JIT) code; the code-size growth plot; miss ratio curves per
+    instruction and per line of the threads picked; a sortable table.
+  - *Branches*: a row per thread with distinct branches by type, distinct
+    targets by type, and targets per taken branch (mean / weighted by
+    taken executions) for every type but returns, indirect calls,
+    indirect jumps and returns; the taken-branch growth plot with the BTB
+    line; a sortable table with every type. A *Reference* size typed into the page (e.g. `64K`, `2M`)
+  is drawn on every chart, as code size, instructions (4 bytes each) and
+  lines, and gives two table columns: the LRU miss ratio at that size
+  per instruction and per line, from the repeat distance histograms.
+  Since 2026-11-17 the page declares UTF-8 (before, a browser could show
+  `Â·` for `·`) and no longer compares the code with the pass's cache
+  sizes (the MPKI columns of the table still use them).
 - **Per thread, per bin** (`thread_bins.csv`, since 2026-10-30): a long
   thread's footprint grows with the length of what it ran, so the pass
   also cuts each thread's stream into bins of N instructions (`--bins`,
@@ -295,11 +309,11 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   20M-instruction prefix against a brute-force count, both cuts, all
   threads without an exec; a bin larger than the stream reproduces
   `threads.csv` exactly. `report.html` switches between the whole stream
-  and the bins (and the cut); the code-size, fit and branch columns
+  and the bins (and the cut); the code-size and branch columns
   follow it, the repeat distances and misses stay whole-stream, and a
   growth plot shows the picked threads' code size and distinct taken
-  branches against the bin size, with the cache sizes and the baseline
-  BTB's 12K entries as references.
+  branches against the bin size, with the reference size and the
+  baseline BTB's 12K entries as lines.
 - **Code versions** (v2 traces, since 2026-11-12): per address space (a
   process instance, or the kernel) the pass keeps each PC's encodings in
   first-seen order. Every later encoding is a new instruction with its own
@@ -321,9 +335,37 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   the mnemonic). Checked against a hand-made trace with known rewrites.
 - **Branches:** distinct addresses of `b.cond`/`cbz`/`cbnz`/`tbz`/`tbnz`
   (cond), `b`, `bl`, `blr*`, `br*`, `ret*`, `eret*`; *taken* when the next
-  instruction is not at PC + 4. A transfer into the kernel's EL1 vector
-  tables (`vectors`, `__bp_harden_el1_vectors`) is an exception and does
-  not count.
+  instruction is not at PC + 4. An exception entry is not a taken branch:
+  a jump from user code into the kernel (with KPTI, EL0 enters through the
+  trampoline vectors' fixmap alias, whose table the pass learns), or into
+  an EL1 vector table (`vectors`, `__bp_harden_el1_vectors`) or the learned
+  trampoline table from outside them. An entry right after a branch hides
+  its outcome; each thread keeps a stack of its entries and the matching
+  `eret` gives the branch's successor.
+  > [!warning] Before 2026-11-17 only the two EL1 tables were excluded
+  > With KPTI an IRQ or fault after a user branch counted as a taken
+  > branch, and the trampoline's own jumps into `vectors` did not count.
+  > *Taken ever* counts of earlier passes are slightly off: on the 1G
+  > rubocop window, 242 of ~116K conditional branches were "taken" only
+  > this way, and 2 returns were missed ([[2026-11-17-branch-targets]]).
+- **Branch targets per thread** (`threads.csv`, since 2026-11-17): per
+  type, over the branches the thread took in its own stream: how many
+  (`te_`), their taken executions (`tk_`), distinct targets (`tg_`), the
+  mean targets (`tmean_`) and the mean weighted by taken executions
+  (`twavg_`). Kernel branches count in every thread that ran them, so
+  summed over threads they exceed the per-branch totals; taken
+  executions sum exactly (checked on the 1G window, every type).
+- **Branch targets** (`branches.tsv`, since 2026-11-17): per static branch
+  (address space, PC and code version), its executions, taken executions
+  and distinct taken targets. `branch_targets.csv` and the *Branch
+  targets* section of `summary.md` aggregate them per code scope (all,
+  user, kernel, each process) and type: the mean over branches ever
+  taken, the mean weighted by taken executions and by all executions, the
+  share with more than one target, and the distribution by target count.
+  `no_return` leaves out `ret*` and `eret*`. stderr reports the exception
+  entries, how many followed a branch and were resolved at their `eret`.
+  Cost on the 1G window: 3.4 min and 1.8 GB (first version, before the
+  exception stack; not timed against the old pass).
 
 ## Limits
 
@@ -338,8 +380,9 @@ and 7.8 GB on 15.2G instructions (rubocop cache8x, 2026-10-27).
   versions]]). A rewrite is seen only when the new code runs at a PC that
   already ran in the same address space.
 - `report.html` has fixed axes (code 4 KiB–64 MiB, repeat distance up to
-  2^25 instructions and 2^22 lines, widened to twice the largest cache);
-  values beyond them sit at the edge. The BTB line (12K entries,
+  2^25 instructions and 2^22 lines); values beyond them sit at the edge.
+  The reference's miss ratio splits the histogram bucket holding the size
+  log-linearly (buckets are powers of two). The BTB line (12K entries,
   `NeoverseV2_BTB`) is still fixed in `pc_footprint_report.py`.
 - Bins are cut by the pass's own instruction count, which includes NOPs
   (the tracer's O3 count does not); negligible at 100M.

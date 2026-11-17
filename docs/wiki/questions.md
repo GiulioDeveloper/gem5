@@ -68,6 +68,9 @@ here when answered, with a link.
 - **PC-trace metrics of the 15G rubocop runs**: footprint and branches done
   ([[2026-10-26-rubocop-instruction-footprint]]); still PC repeat distance; and whether OpenCode's lower MPKI in
   slow configurations is polling ([[2026-10-23-rubocop-15g-cache-btb-tlb]]).
+- **Branch targets** ([[2026-11-17-branch-targets]]): the 15G rubocop
+  numbers; targets live within a window (what a finite BTB or indirect
+  predictor holds); target columns in `report.html`.
 - **JIT code versions** ([[2026-11-12-jit-code-versions]]): how much JIT
   rewriting changes OpenCode's footprint and branch counts (a v2 trace of
   the long rubocop run); where the guest's `CTR_EL0 = 0xb444c004` (IDC =
