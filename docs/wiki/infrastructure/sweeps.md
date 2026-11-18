@@ -1,7 +1,7 @@
 ---
 type: howto
 status: current
-updated: 2026-11-16
+updated: 2026-11-17
 sources:
   - "[[legacy-log/agentic/task-tracing-guide]]"
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
@@ -253,7 +253,21 @@ sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
   parts are shown; Level 3 is memory bound only since the fetch-latency
   split was dropped as non-paper). Segments tall enough are labelled.
 - **Every metric in one table**, SPEC and agentic side by side (also
-  `compare_geomean.csv`, column `aggregate`). Rates and counts: the
+  `compare_geomean.csv`, column `aggregate`).
+
+  > [!superseded] Aggregation rule changed 2026-11-17 (the user's rule)
+  > Geometric means are for speedups only: IPC keeps the geomean of
+  > per-checkpoint ratios. Every other metric is now the arithmetic mean
+  > over checkpoints, and a sweep's change is the ratio of its mean to A's
+  > over the checkpoints both have (zeros included), shown as a relative
+  > change for rates and counts, in percentage points for shares, and as a
+  > difference for rows whose parts add up (top-down, cache hierarchy,
+  > branches). `sweep_compare.SPEEDUP` lists the geomean metrics. Pages
+  > built before 2026-11-17 used the rule below for every rate and count;
+  > their non-IPC aggregates differ (SPEC baseline mispredicts: geomean
+  > 0.476, mean 2.49 PKI).
+
+  Before 2026-11-17, rates and counts: the
   geometric mean of A's window values, and each other sweep's geometric
   mean of its per-checkpoint ratio to A (for IPC, the speedup), shown as a
   change (ratio − 1: 1.075× is +7.5%) and kept as ratios in the CSV. A
@@ -270,6 +284,30 @@ sweeps) or have the old two-sweep columns (`compare.csv`: `_a`, `_b`,
   only the metrics all sweeps had, so L1I misses vanished next to a
   perfect L1I and L2 misses next to a perfect L2). A value a sweep lacks,
   or a mean left empty, shows as "N/A", also in the per-checkpoint bars.
+
+**Collapsible sections** (2026-11-17): *Over all checkpoints* and its
+three parts (*Top-down*, *Cache hierarchy*, *Every metric*) are
+`<details>` that start open; *Expand all* / *Collapse all* under the
+filters set every section. In the table, a click (or Enter) on a group's
+row folds that group. Open sections and folded groups are remembered.
+
+### Branches
+
+Since 2026-11-17 (`window_view.branch_metrics`) a *Branches* group in the
+table, from the branch predictor's per-type counters: committed and
+mispredicted branches per 1000 instructions, by type (conditional; direct
+unconditional and calls; indirect jumps and calls; returns; plus
+mispredicted non-branches, likely stale BTB entries), the indirect and
+return mispredicts split into BTB miss and BTB hit with a wrong target,
+the mispredict rate per type, where predicted targets came from (BTB,
+return stack, indirect predictor) and the indirect predictor's hit rate.
+Like the cache rows, they are plain means with differences from A, since
+SPEC has many zero counts. Also new in the table: issue rate, FTQ full,
+decode blocked, fetch squashing, memory-order violations, rename blocked
+and registers full (already window-view metrics). The old *Conditional
+mispredicts* row is relabelled *Mispredicts*: gem5's `condIncorrect`
+counts every committed mispredict ([[metric-definitions]]). Definitions:
+[[metric-definitions#Branches]].
 
 ### Cache hierarchy
 

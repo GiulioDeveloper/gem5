@@ -1,5 +1,6 @@
 # LICENSE-PLACEHOLDER: GARFIELD-LICENSE-TBD
-"""Slide HTML for a horizontal bar chart of geomean changes vs the baseline.
+"""Slide HTML for a horizontal bar chart of aggregate changes vs the baseline
+(geomean speedup for IPC, change of arithmetic means for other metrics).
 
 Usage:
     python3 analysis_scripts/presentations/slide_bars.py COMPARE_DIR \

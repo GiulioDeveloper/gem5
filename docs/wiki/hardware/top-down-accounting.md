@@ -1,7 +1,7 @@
 ---
 type: concept
 status: draft
-updated: 2026-11-13
+updated: 2026-11-18
 sources:
   - src/cpu/o3/tdm.cc
   - src/cpu/o3/rename.cc
@@ -125,6 +125,19 @@ Agentic code reads `TPIDR_EL0` (thread-local storage) and `CNTVCT_EL0`
 (timers) often; a real core likely does not drain for those, so serialize
 bound on agentic windows is probably overstated (not checked: which
 instructions dominate is open).
+
+> [!conflict] Not every `MRS` serializes (checked in the code 2026-11-18)
+> The AArch64 decoder (`src/arch/arm/isa/formats/aarch64.isa`, MRS read
+> path) emits the serialize-before `Mrs64` only when the register is
+> marked serializing. Otherwise it emits `MrsNonSer64`, which has no
+> serialize flag. `src/arch/arm/regs/misc.cc` marks `TPIDR_EL0`,
+> `TPIDR_EL1/2/3`, the `ID_*` registers, `REVIDR_EL1` and `CONTEXTIDR`
+> non-serializing. `CNTVCT_EL0`, `CNTPCT_EL0` and `TPIDRRO_EL0` keep the
+> default and do serialize. `SP_ELx` and `NZCV` reads have their own
+> non-serializing classes. So TLS reads through `TPIDR_EL0` do not stall
+> rename; timer reads do. Writes (`MSR`) are serialize-after for every
+> register. Which instructions dominate agentic serialize-bound cycles is
+> still not measured.
 
 ### How memory bound is measured, and what it misses (2026-11-09)
 

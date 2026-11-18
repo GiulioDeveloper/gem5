@@ -1,7 +1,7 @@
 ---
 type: entity
 status: current
-updated: 2026-11-16
+updated: 2026-11-17
 sources:
   - analysis_scripts/tasktrace/window_view.py
   - analysis_scripts/tasktrace/sweep_summary.py
@@ -45,6 +45,7 @@ Related: [[aggregating-metrics]], [[instruction-counts]], [[numcycles-excludes-w
 | IPC | `ipc` | insts/cycle | `core.numCycles`; `insts` | `insts` / `numCycles` | WFI time is not in the cycles. NOPs are not in the instructions. |
 | User-mode share | `user_share` | % insts | `core.commitStats0.numUserInsts`, `core.commitStats0.numInsts` | `numUserInsts` / `numInsts` | Counted at commit. Both counts include NOPs. |
 | Fetch rate | `fetch_rate` | insts/cycle | `core.fetchStats0.numInsts` | `numInsts` fetched / `numCycles` | Wrong-path instructions are included, so it can exceed IPC by much. |
+| Issue rate | `issue_rate` | insts/cycle | `core.instsIssued` | `instsIssued` / `numCycles` | Wrong-path instructions are included; a load replayed after a memory-order violation issues again. |
 
 ## Front end
 
@@ -53,25 +54,29 @@ Related: [[aggregating-metrics]], [[instruction-counts]], [[numcycles-excludes-w
 | L1I misses | `l1i_mpki` | PKI | `l1i.overallMisses::total` | misses × 1000 / `insts` | Counts fetch requests for a line, not instructions. A request that joins a miss or prefetch already in flight counts as a miss. Wrong-path fetches are included. |
 | iTLB misses | `itlb_mpki` | PKI | `core.mmu.itb.misses` | misses × 1000 / `insts` | With FDP on this is mostly prefetch lookups: a prefetch translation that misses is counted and then dropped (median agentic 37 PKI with FDP, 2.9 without). Compare it only between runs with the same FDP setting; use completed instruction walks for the demand side. |
 | I-cache stall cycles | `icache_stall` | % cycles | `core.fetchStats0.icacheStallCycles` | stall cycles / `numCycles` | Cycles fetch waited on the instruction cache. It is a fetch-stage count, not a measure of lost throughput. |
+| FTQ full | `ftq_full` | % cycles | `core.bac.status::FTQFull` | cycles / `numCycles` | Cycles the branch predictor (BAC) waited on a full fetch target queue: it is ahead of fetch, so a high value means prediction is not the bottleneck. |
+| Decode blocked | `decode_blocked` | % cycles | `core.decode.status::Blocked` | cycles / `numCycles` | Cycles decode was blocked because rename could not take more: back-pressure from the back end, seen at the front. |
 
 ## Bad speculation
 
 | metric | key | unit | gem5 stats | formula | leaves out, pitfalls |
 |---|---|---|---|---|---|
-| Conditional mispredicts | `br_mpki` | PKI | `core.branchPred.condIncorrect` | count × 1000 / `insts` | Conditional branches only. Indirect and return mispredicts are not in it. |
+| Mispredicts | `br_mpki` | PKI | `core.branchPred.condIncorrect` | count × 1000 / `insts` | Every committed mispredict, whatever the branch type, despite the statistic's name: `BPredUnit::commitBranch` bumps `condIncorrect` with `mispredicted`. Labelled *Conditional mispredicts* before 2026-11-17. The conditional ones alone are `brm_cond_pki` (*Branches*). |
 | BTB-miss mispredicts | `btb_mispred_pki` | PKI | `core.branchPred.mispredictDueToBTBMiss_0::total` | count × 1000 / `insts` | The plain `btb.misses` statistic is 0 with the decoupled front end; use this row. |
 | Squashed per committed | `squashed` | ratio | `core.commit.commitSquashedInsts`, `core.commitStats0.numInsts` | squashed / committed | Instructions squashed in the ROB, over committed instructions (NOPs included). |
+| Fetch squashing | `fetch_squash` | % cycles | `core.fetch.status::squashing` | cycles / `numCycles` | Cycles fetch spent squashing after a redirect. |
+| Memory-order violations | `memorder_pki` | PKI | `core.iew.memOrderViolationEvents` | events × 1000 / `insts` | Loads that ran before an older store to the same address and were squashed and replayed. Wrong-path events are included. |
 
-## Memory
+## Branches
 
 | metric | key | unit | gem5 stats | formula | leaves out, pitfalls |
 |---|---|---|---|---|---|
-| L1D misses | `l1d_mpki` | PKI | `l1d.overallMisses::total` | misses × 1000 / `insts` | Every access that did not find its line: new misses, accesses joining a miss in flight, ownership requests, software prefetches. Wrong-path loads are included. The *Cache hierarchy* rows separate these. |
-| L2 misses | `l2_mpki` | PKI | `l2.overallMisses::total` | misses × 1000 / `insts` | All requesters: instruction, data, the L1 prefetchers and page-table walks. Prefetch requests are in it, so it is not a demand miss rate. |
-| dTLB misses | `dtlb_mpki` | PKI | `core.mmu.dtb.misses` | misses × 1000 / `insts` | L1 data TLB. An L2 TLB hit costs no time in this model. |
-| Page-walk requests | `walks_pki` | PKI | `core.mmu.walker.walks` | requests × 1000 / `insts` | Requests, not walks: includes requests squashed before a walk started and requests merged into a walk in flight. About 4× the completed walks. |
-| Completed page walks (all, data, instruction) | `walks_done_pki`, `walks_done_d_pki`, `walks_done_i_pki` | PKI | `core.mmu.walker.requestOrigin_Completed::Data`, `::Inst` | completed × 1000 / `insts` | The walk count to use. |
-| L1D miss latency, L1I miss latency | `l1d_lat`, `l1i_lat` | cycles | `l1d.overallMissLatency::total`, `l1d.overallMisses::total` (`l1i.` likewise); the block's cycles and ticks | (`overallMissLatency` / `overallMisses`) × `numCycles` / ticks | Mean over all misses, joined ones included. The tick-to-cycle conversion uses `numCycles`, so in a window with WFI the latency comes out too small (axios-5892 and bat-2835 in the baseline sweep: 31 and 33 cycles against 65 to 204 for the others). The AMAT rows convert with the clock period and do not have this error. |
+| Committed branches (by type) | `brc_pki; brc_cond_pki`, `brc_direct_pki`, `brc_ind_pki`, `brc_ret_pki` | PKI | `core.branchPred.committed_0::<type>` | count × 1000 / `insts` | Counted at commit, correct path only. Types: conditional (`DirectCond`); direct unconditional and calls (`DirectUncond`, `CallDirect`); indirect jumps and calls (`CallIndirect`, `IndirectUncond`, `IndirectCond`); returns (`Return`). The parts add up to the total. Averaged over checkpoints, not geomean'd, as for every *Branches* row. |
+| Mispredicted branches (by type) | `brm_pki; brm_cond_pki`, `brm_direct_pki`, `brm_ind_pki`, `brm_ret_pki`, `brm_nobr_pki` | PKI | `core.branchPred.mispredicted_0::<type>` | count × 1000 / `insts` | At commit. The total equals `br_mpki`. *Not a branch* (`NoBranch`): instructions the BTB predicted as a taken branch that are not branches, likely stale entries after code was rewritten (JIT) or aliases (not verified); about 0.09 PKI on axios-5892, ~0 on SPEC. |
+| Indirect and return mispredicts by cause | `brm_ind_pred_pki`, `brm_ind_btb_pki`, `brm_ret_pred_pki`, `brm_ret_btb_pki` | PKI | `core.branchPred.mispredictDueToPredictor_0::<type>`, `mispredictDueToBTBMiss_0::<type>` | count × 1000 / `insts` | BTB miss: the branch was taken and the BTB missed, so no target was predicted. Otherwise (*BTB hit, target or direction wrong*) the target from the BTB, return stack or indirect predictor was wrong, or a direction. The two add up to the type's mispredicts. |
+| Mispredict rate by type | `brr_cond`, `brr_direct`, `brr_ind`, `brr_ret` | % branches | `mispredicted_0::<type>`, `committed_0::<type>` | mispredicted / committed | At commit. |
+| Target sources | `tgt_taken; tgt_btb`, `tgt_ras`, `tgt_ipred` | % predictions | `core.branchPred.targetProvider_0::<source>`, `::total` | predictions with that source / all predictions | Counted at prediction, wrong path included. Predicted taken with a target splits into BTB, return stack (`RAS`) and indirect predictor (`Indirect`); the rest (`NoTarget`) fell through: predicted not taken or a BTB miss. |
+| Indirect predictor hit rate | `ipred_hit` | % lookups | `core.branchPred.indirectHits`, `indirectLookups` | hits / lookups | At prediction, wrong path included. A miss falls back to the BTB's target, so a low hit rate need not mean mispredicts. |
 
 Pitfall pages: [[fdp-inflates-itlb-misses]], [[walk-requests-vs-completed]], [[btb-miss-stat-zero-decoupled]].
 
@@ -136,13 +141,16 @@ The served-from rows add up to 100% and the AMAT parts to AMAT.
 - **Translation time** (TLB misses, page walks) is before the access and not in it.
 - **With a perfect L1** the side has no accesses and shows N/A. With a perfect L2 the parts of the new misses show N/A; the L1 shares and the AMAT total remain.
 
-## Back end
+## Memory
 
 | metric | key | unit | gem5 stats | formula | leaves out, pitfalls |
 |---|---|---|---|---|---|
-| ROB full | `rob_full` | % cycles | `core.rename.ROBFullEvents` | events / `numCycles` | Rename stalls on a full ROB. |
-| IQ full | `iq_full` | % cycles | `core.iew.iqFullEvents` | events / `numCycles` | Dispatch stalls on a full issue queue. |
-| LSQ full | `lsq_full` | % cycles | `core.iew.lsqFullEvents` | events / `numCycles` | Dispatch stalls on a full load or store queue. |
+| L1D misses | `l1d_mpki` | PKI | `l1d.overallMisses::total` | misses × 1000 / `insts` | Every access that did not find its line: new misses, accesses joining a miss in flight, ownership requests, software prefetches. Wrong-path loads are included. The *Cache hierarchy* rows separate these. |
+| L2 misses | `l2_mpki` | PKI | `l2.overallMisses::total` | misses × 1000 / `insts` | All requesters: instruction, data, the L1 prefetchers and page-table walks. Prefetch requests are in it, so it is not a demand miss rate. |
+| dTLB misses | `dtlb_mpki` | PKI | `core.mmu.dtb.misses` | misses × 1000 / `insts` | L1 data TLB. An L2 TLB hit costs no time in this model. |
+| Page-walk requests | `walks_pki` | PKI | `core.mmu.walker.walks` | requests × 1000 / `insts` | Requests, not walks: includes requests squashed before a walk started and requests merged into a walk in flight. About 4× the completed walks. |
+| Completed page walks (all, data, instruction) | `walks_done_pki`, `walks_done_d_pki`, `walks_done_i_pki` | PKI | `core.mmu.walker.requestOrigin_Completed::Data`, `::Inst` | completed × 1000 / `insts` | The walk count to use. |
+| L1D miss latency, L1I miss latency | `l1d_lat`, `l1i_lat` | cycles | `l1d.overallMissLatency::total`, `l1d.overallMisses::total` (`l1i.` likewise); the block's cycles and ticks | (`overallMissLatency` / `overallMisses`) × `numCycles` / ticks | Mean over all misses, joined ones included. The tick-to-cycle conversion uses `numCycles`, so in a window with WFI the latency comes out too small (axios-5892 and bat-2835 in the baseline sweep: 31 and 33 cycles against 65 to 204 for the others). The AMAT rows convert with the clock period and do not have this error. |
 
 ## Top-down
 

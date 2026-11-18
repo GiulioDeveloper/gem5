@@ -36,15 +36,17 @@ baseline, and the violins of every metric. The
 legend picks which sweeps every view shows, and the SPEC runs can be
 hidden.
 
-Aggregates, also in compare_geomean.csv: for most metrics, the geometric
-mean of the first sweep's window values, and for every other sweep the
-geometric mean of its per-checkpoint ratio to the first (for IPC, the
-speedup). Checkpoints where either value is zero have no ratio and are left
-out of that mean (counted); a mean over fewer than half the checkpoints is
-left empty. Top-down shares, which add up, are averaged instead: the plain
-mean of the first sweep's shares, and for every other sweep the ratio of
-its mean to the first's over the checkpoints both have (the page shows the
-difference, in percentage points).
+Aggregates, also in compare_geomean.csv: geometric means for speedups
+only. IPC: the geometric mean of the first sweep's window values, and for
+every other sweep the geometric mean of its per-checkpoint ratio to the
+first (the speedup); checkpoints where either value is zero have no ratio
+and are left out (counted). Every other metric: the arithmetic mean of the
+first sweep's values, and for every other sweep the ratio of its mean to
+the first's over the checkpoints both have a value for (zeros included).
+The page shows that as a relative change for rates and counts, and as a
+difference for shares (percentage points) and for metrics whose parts add
+up (top-down, cache hierarchy, branches). A mean over fewer than half the
+checkpoints is left empty.
 
 When the summaries have slice categories (sweep_summary.py), every view
 can be restricted to one category's slices of the agentic runs, the page
@@ -135,6 +137,12 @@ def mean(xs):
     return sum(xs) / len(xs) if xs else None
 
 
+# Metrics whose change is a speedup, aggregated with geometric means (of the
+# baseline's values and of the per-checkpoint ratios). Every other metric
+# is aggregated with arithmetic means.
+SPEEDUP = {"ipc"}
+
+
 def geomeans(rows, defs, n, suites=ss.SUITES, get=lambda r: r):
     """Per suite and metric, the aggregate over checkpoints (`agg`):
     "geomean": the geometric mean of the first sweep's window values, and
@@ -143,9 +151,11 @@ def geomeans(rows, defs, n, suites=ss.SUITES, get=lambda r: r):
     ratio and are left out of that sweep's mean (counted in `excluded`); the
     baseline mean uses the checkpoints with a positive value. A mean over
     fewer than half the checkpoints is left empty.
-    "mean" (top-down shares, which add up): the plain mean of the first
-    sweep's values, and for each other sweep the ratio of its mean to the
-    first's over the checkpoints where both have a value.
+    Only for SPEEDUP metrics (IPC): geometric means are for speedups only.
+    "mean" (every other metric): the arithmetic mean of the first sweep's
+    values, and for each other sweep the ratio of its mean to the first's
+    over the checkpoints where both have a value, zeros included; empty
+    when fewer than half the checkpoints have one.
     get(row) gives the {metric: values per sweep} to use (a slice
     category's)."""
     out = {}
@@ -155,14 +165,16 @@ def geomeans(rows, defs, n, suites=ss.SUITES, get=lambda r: r):
         for m in defs:
             k = m["key"]
             ratios, excluded = [], []
-            if "level" in m:
-                base = mean([r[k][0] for r in rs if r[k][0] is not None])
+            if k not in SPEEDUP:
+                have = [r[k][0] for r in rs if r[k][0] is not None]
+                base = mean(have) if 2 * len(have) >= len(rs) else None
                 for i in range(1, n):
                     both = [r[k] for r in rs
                             if r[k][0] is not None and r[k][i] is not None]
                     a, b = (mean([v[0] for v in both]),
                             mean([v[i] for v in both]))
-                    ratios.append(ss.r4(b / a) if a else None)
+                    ok = a and 2 * len(both) >= len(rs)
+                    ratios.append(ss.r4(b / a) if ok else None)
                     excluded.append(len(rs) - len(both))
                 per[k] = {"agg": "mean", "base": ss.r4(base), "n": len(rs),
                           "ratio": ratios, "excluded": excluded}

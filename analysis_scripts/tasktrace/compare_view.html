@@ -4,6 +4,8 @@
 <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500&family=IBM+Plex+Sans+Condensed:wght@500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
 <style>
 /* Layout: summary strip and filters, then the aggregate over checkpoints
+   (every section collapsible; the aggregate ones start open, metric groups
+   of its table fold on a click)
    (top-down bars and cache-hierarchy bars per suite and sweep, every metric
    in one table); collapsed
    below: the time shares of the slice categories, one metric checkpoint by
@@ -64,6 +66,13 @@ h3 { font-family: var(--font-label); font-weight: 600; font-size: 13px; margin: 
 details > summary { cursor: pointer; padding: 4px 0; margin: 0; }
 details > summary:focus-visible { outline: 2px solid var(--focus); outline-offset: 2px; }
 details[open] > summary { margin-bottom: 8px; }
+/* Sub-sections: collapsible like the main ones, in the h3 style. */
+details.sub-sec > summary { font-size: 13px; letter-spacing: 0; text-transform: none; color: var(--ink); }
+details.sub-sec { display: grid; gap: 10px; }
+.agg tr.grp td { cursor: pointer; user-select: none; }
+.agg tr.grp td::before { content: "▾ "; color: var(--ink-3); }
+.agg tr.grp.closed td::before { content: "▸ "; }
+.agg tr.grp td:focus-visible { outline: 2px solid var(--focus); outline-offset: -2px; }
 .section { display: grid; gap: 10px; }
 .strip { display: flex; flex-wrap: wrap; gap: 8px 28px; }
 .kv { display: grid; gap: 2px; }
@@ -174,12 +183,19 @@ footer { color: var(--ink-3); font-size: 12px; }
   <div class="hint" id="cathint" hidden></div>
   <div class="hint" id="edgehint" hidden></div>
   <div class="hint" id="notes" hidden></div>
+  <div class="controls">
+    <span class="hint">Sections</span>
+    <span class="seg" role="group" aria-label="All sections">
+      <button id="open-all">Expand all</button>
+      <button id="close-all">Collapse all</button>
+    </span>
+  </div>
 
-  <section class="section" aria-labelledby="agg-title">
-    <h2 id="agg-title">Over all checkpoints</h2>
-    <div class="section" id="td-agg-wrap" hidden>
+  <details id="agg-sec" class="section">
+    <summary>Over all checkpoints</summary>
+    <details class="sub-sec" id="td-agg-wrap" hidden>
+      <summary>Top-down</summary>
       <div class="controls">
-        <h3>Top-down</h3>
         <div class="seg" role="group" aria-label="Breakdown level">
           <button id="td-l1" aria-pressed="true">Level 1</button>
           <button id="td-l2" aria-pressed="false">Level 2</button>
@@ -190,10 +206,10 @@ footer { color: var(--ink-3); font-size: 12px; }
       </div>
       <div class="hint" id="td-hint"></div>
       <div class="tdagg" id="td-agg"></div>
-    </div>
-    <div class="section" id="ch-wrap" hidden>
+    </details>
+    <details class="sub-sec" id="ch-wrap" hidden>
+      <summary>Cache hierarchy</summary>
       <div class="controls">
-        <h3>Cache hierarchy</h3>
         <div class="seg" role="group" aria-label="Cache-hierarchy view" id="ch-view">
           <button data-v="amat" aria-pressed="true">AMAT</button>
           <button data-v="res" aria-pressed="false">Served from</button>
@@ -209,10 +225,13 @@ footer { color: var(--ink-3); font-size: 12px; }
       </div>
       <div class="hint" id="ch-hint"></div>
       <div class="tdagg" id="ch-agg"></div>
-    </div>
-    <div class="hint">Per suite: the baseline's value (A), and each other sweep's change against it. Rates and counts: the geometric mean of A's window values, and the geometric mean of each checkpoint's ratio to A shown as a change (geomean ratio − 1; for IPC, the speedup: 1.075× is +7.5%); a checkpoint where either value is zero has no ratio and is left out (“excl. n”), and a mean over fewer than half the checkpoints is not shown. Top-down shares and the cache-hierarchy rows (served-from shares, hit rates, AMAT and its parts), whose parts add up: the plain mean over checkpoints, and the difference from A (percentage points, or cycles for AMAT).</div>
+    </details>
+    <details class="sub-sec" id="tbl-sec">
+    <summary>Every metric</summary>
+    <div class="hint">Click a group's row to fold it. Per suite: the baseline's value (A), and each other sweep's change against it. Geometric means are used for the speedup only. IPC: the geometric mean of A's window values, and the geometric mean of each checkpoint's ratio to A shown as a change (the speedup: 1.075× is +7.5%); a checkpoint where either value is zero has no ratio and is left out (“excl. n”). Every other metric: the arithmetic mean over checkpoints of A's values, and each sweep's change of its arithmetic mean against A's over the checkpoints both have, zeros included: relative for rates and counts, in percentage points for shares (% units), and as a difference for the rows whose parts add up (top-down, cache hierarchy, branches; cycles for AMAT, per 1000 instructions for counts). A mean over fewer than half the checkpoints is not shown.</div>
     <div class="tableWrap"><table class="agg" id="agg"></table></div>
-  </section>
+    </details>
+  </details>
 
   <details id="share" hidden>
     <summary>Where the agentic time goes</summary>
@@ -259,7 +278,7 @@ footer { color: var(--ink-3); font-size: 12px; }
     </div>
   </details>
 
-  <footer>Generated by <code>python3 analysis_scripts/tasktrace/sweep_compare.py A B [C ...]</code> from each sweep's <code>summary/sweep.view.json</code> (<code>sweep_summary.py</code>). Runs are paired by checkpoint; ratios and differences are against the first sweep (A), checkpoint by checkpoint. The window value of a metric is computed from the stats summed over the window's blocks (as in <code>window.html</code>), so window IPC is not the mean of block IPCs. Log scale leaves out zero and negative values. Slice categories (agentic only): each window is cut at every context switch, and a slice goes to the category of the task switched in. A category's values are over its slices alone: cycles are the slices' simulated time over the clock period (so idle WFI time counts in "Other"), and event counts are shared out from the stats blocks by instruction overlap, so a short slice partly inherits its neighbours' events. A window with under 1M instructions of a category has no value for it. SPEC has no harness and always shows the whole window. Replay infra: by default the agentic values are over every slice but the replay driver's and the Docker daemons' (the "Replay infra" category) and the idle task's, whose WFI time would otherwise count as cycles; values are computed as for a category, so with no edge blocks dropped the events of a block shared with infra or idle are shared out by instruction overlap. "Included" restores the whole window (core cycles, idle excluded by the core). Coverage: per checkpoint in A, the instructions the shown values are over, as stats blocks (exact when only whole blocks are kept, else instructions over the mean block length), as a share of the work without infra and idle, and as a share of the whole window. Edge blocks: with k = 1, 3 or 5, the k stats blocks on each side of every context switch, the block holding it included (the first and last k of every thread run), are left out and every metric is recomputed over the rest, the switch metrics and time shares excepted. "Isolated switches only" drops them only around a switch that is alone in its block with no other block holding a switch within k blocks either side; kept blocks may then hold switches, and are shared out across their slices as with no edge blocks dropped. Top-down: the bars split the rename slots (renameWidth per cycle) into retiring, bad speculation, front-end bound and back-end bound, from the bottom (Level 1), or show the parts of one chosen Level 1 category (Level 2) or Level 2 category (Level 3), still as shares of all slots, on an axis fitted to that category. The shares are recomputed from gem5's counters over the shown blocks or slices; the aggregate bars are the plain means of the checkpoints' shares. Cache hierarchy: per demand access of the L1I (a fetch request for one line, not an instruction) and of the L1D (loads and stores); page-table walks are on neither side. Served from: the L1's hit rate; L1 in flight, the L1 misses that join a miss or prefetch already outstanding for their line (MSHR hits) and make no L2 request; and the new misses (MSHR misses), shared out by what the L2 counted for that side's requests: hits (L2), requests joining a miss or prefetch the L2 had outstanding (L2 in flight; the line was coming from memory), new L2 misses (memory) and, on the data side, ownership requests that move no data (a write covering a whole line, sent as an invalidation, or a write to a line held read-only, an upgrade). AMAT: the L1 hit latency, paid by every access, plus the L1's measured miss latency past it: the L1 in-flight waits, and the new misses' time (the MSHR's latency plus the L1 response latency). That time is split into memory (the L2's own new-miss time for that side, past its lookup), L2 in flight (the L2's in-flight waits), ownership (those requests at the mean time of a whole-line write miss) and L2 (the remainder: the way to the L2 and back and its lookup). Not included: time an access waits before a blocked cache accepts it (the "blocked" rows give the share of cycles each cache accepted no request); wrong-path accesses are counted. The bars are the plain means of the checkpoints' values. Switch frequency is switches per millisecond of simulated time; scheduler instructions are those from <code>__schedule</code> to <code>__switch_to</code>, counted for the slice category switched out of.</footer>
+  <footer>Generated by <code>python3 analysis_scripts/tasktrace/sweep_compare.py A B [C ...]</code> from each sweep's <code>summary/sweep.view.json</code> (<code>sweep_summary.py</code>). Runs are paired by checkpoint; ratios and differences are against the first sweep (A), checkpoint by checkpoint. The window value of a metric is computed from the stats summed over the window's blocks (as in <code>window.html</code>), so window IPC is not the mean of block IPCs. Log scale leaves out zero and negative values. Slice categories (agentic only): each window is cut at every context switch, and a slice goes to the category of the task switched in. A category's values are over its slices alone: cycles are the slices' simulated time over the clock period (so idle WFI time counts in "Other"), and event counts are shared out from the stats blocks by instruction overlap, so a short slice partly inherits its neighbours' events. A window with under 1M instructions of a category has no value for it. SPEC has no harness and always shows the whole window. Replay infra: by default the agentic values are over every slice but the replay driver's and the Docker daemons' (the "Replay infra" category) and the idle task's, whose WFI time would otherwise count as cycles; values are computed as for a category, so with no edge blocks dropped the events of a block shared with infra or idle are shared out by instruction overlap. "Included" restores the whole window (core cycles, idle excluded by the core). Coverage: per checkpoint in A, the instructions the shown values are over, as stats blocks (exact when only whole blocks are kept, else instructions over the mean block length), as a share of the work without infra and idle, and as a share of the whole window. Edge blocks: with k = 1, 3 or 5, the k stats blocks on each side of every context switch, the block holding it included (the first and last k of every thread run), are left out and every metric is recomputed over the rest, the switch metrics and time shares excepted. "Isolated switches only" drops them only around a switch that is alone in its block with no other block holding a switch within k blocks either side; kept blocks may then hold switches, and are shared out across their slices as with no edge blocks dropped. Top-down: the bars split the rename slots (renameWidth per cycle) into retiring, bad speculation, front-end bound and back-end bound, from the bottom (Level 1), or show the parts of one chosen Level 1 category (Level 2) or Level 2 category (Level 3), still as shares of all slots, on an axis fitted to that category. The shares are recomputed from gem5's counters over the shown blocks or slices; the aggregate bars are the plain means of the checkpoints' shares. Cache hierarchy: per demand access of the L1I (a fetch request for one line, not an instruction) and of the L1D (loads and stores); page-table walks are on neither side. Served from: the L1's hit rate; L1 in flight, the L1 misses that join a miss or prefetch already outstanding for their line (MSHR hits) and make no L2 request; and the new misses (MSHR misses), shared out by what the L2 counted for that side's requests: hits (L2), requests joining a miss or prefetch the L2 had outstanding (L2 in flight; the line was coming from memory), new L2 misses (memory) and, on the data side, ownership requests that move no data (a write covering a whole line, sent as an invalidation, or a write to a line held read-only, an upgrade). AMAT: the L1 hit latency, paid by every access, plus the L1's measured miss latency past it: the L1 in-flight waits, and the new misses' time (the MSHR's latency plus the L1 response latency). That time is split into memory (the L2's own new-miss time for that side, past its lookup), L2 in flight (the L2's in-flight waits), ownership (those requests at the mean time of a whole-line write miss) and L2 (the remainder: the way to the L2 and back and its lookup). Not included: time an access waits before a blocked cache accepts it (the "blocked" rows give the share of cycles each cache accepted no request); wrong-path accesses are counted. The bars are the plain means of the checkpoints' values. Branches: committed and mispredicted branches by type (conditional; direct unconditional and calls; indirect jumps and calls; returns) are counted at commit, so on the correct path only; "not a branch" is instructions mispredicted as taken branches (likely stale BTB entries). A mispredict is a BTB miss when the branch was taken and the BTB missed, else the predicted target or direction was wrong. Target sources and the indirect predictor's hit rate are counted at prediction, wrong path included. The "Mispredicts" row of bad speculation is gem5's condIncorrect, which counts every committed mispredict, not only conditional ones. Switch frequency is switches per millisecond of simulated time; scheduler instructions are those from <code>__schedule</code> to <code>__switch_to</code>, counted for the slice category switched out of.</footer>
 </div>
 <div id="tip"></div>
 <script id="data" type="application/json">__COMPARE_DATA__</script>
@@ -292,7 +311,7 @@ const TD = D.topdown || null;
 const mdef = (k) => D.metrics.find((m) => m.key === k);
 let cat = "all", edge = 0, shareQ = "time", pcMetric = TD ? "td" : "ipc", pcMode = "ratio", pcSort = "name";
 let vMode = "value", logScale = false, pinned = null, hover = null, sortKey = "name", sortDir = 1;
-let tdLvl = 1, tdPick = null, open = {};
+let tdLvl = 1, tdPick = null, open = {}, foldGrp = {};
 // Cache hierarchy (window_view.cache_view): AMAT parts or served-from
 // shares, and whether the served-from axis is cut to show the misses.
 const CH = D.cache || null;
@@ -321,6 +340,7 @@ try {
   if ([1, 2, 3].includes(s.tdLvl)) tdLvl = s.tdLvl;
   if (s.tdPick) tdPick = { 2: +s.tdPick[2] || 0, 3: +s.tdPick[3] || 0 };
   open = s.open || {};
+  foldGrp = s.foldGrp || {};
   saved = s.views || {};
   const v = saved[D.name];
   if (v) {
@@ -331,7 +351,7 @@ try {
 } catch (e) {}
 const save = () => {
   saved[D.name] = { shown: [...shown].map((i) => SW[i].label), spec: showSpec };
-  try { localStorage.setItem(STORE, JSON.stringify({ cat, edge, infra, iso, shareQ, pcMetric, pcMode, pcSort, vMode, log: logScale, tdLvl, tdPick, chView, chZoom, open, views: saved })); } catch (e) {}
+  try { localStorage.setItem(STORE, JSON.stringify({ cat, edge, infra, iso, shareQ, pcMetric, pcMode, pcSort, vMode, log: logScale, tdLvl, tdPick, chView, chZoom, open, foldGrp, views: saved })); } catch (e) {}
 };
 // Colour of sweep i: 16 slots, cycling; the letters tell repeats apart.
 const SC = (i) => `var(--s${i % 16})`;
@@ -424,7 +444,8 @@ function fmt(v, m, md = "value") {
   if (isPct(m)) return (v * 100).toPrecision(3) + "%";
   return fmtNum(v);
 }
-// A geometric-mean ratio as a change against A: 1.075 -> "+7.5%".
+// A ratio (geomean speedup, or ratio of arithmetic means) as a change
+// against A: 1.075 -> "+7.5%".
 const gmPct = (v) => v == null ? "N/A" : sign((v - 1) * 100) + ((v - 1) * 100).toFixed(1) + "%";
 const ppDiff = (d) => d == null ? "N/A" : Math.abs(d) < 5e-5 ? "0 pp" : sign(d) + (d * 100).toFixed(Math.abs(d) < 0.001 ? 2 : 1) + " pp";
 const unitOf = (m, md) => md === "ratio" ? "ratio to A" : md === "diff" ? "difference from A, " + (isPct(m) ? "percentage points" : m.unit) : m.unit;
@@ -494,7 +515,9 @@ function drawAgg() {
     if (i === 0) return g.base == null ? "N/A" : isPct(m) ? (g.base * 100).toPrecision(3) + "%" : fmtNum(g.base);
     const r = g.ratio[i - 1], x = g.excluded[i - 1];
     const d = r == null || g.base == null ? null : g.base * (r - 1);
-    const v = g.agg !== "mean" ? gmPct(r) : isPct(m) ? ppDiff(d) : d == null ? "N/A" : Math.abs(d) < 5e-4 ? "0" : sign(d) + fmtNum(d);
+    // speedups and rates: relative change; shares: percentage points;
+    // parts that add up (top-down, cache, branches): the difference
+    const v = g.agg !== "mean" ? gmPct(r) : isPct(m) ? ppDiff(d) : m.level == null ? gmPct(r) : d == null ? "N/A" : Math.abs(d) < 5e-4 ? "0" : sign(d) + fmtNum(d);
     return v + (x && r != null && g.agg !== "mean" ? ` <span class="x" title="checkpoints left out: a zero or missing value">excl. ${x}</span>` : "");
   };
   const cols = VIS();
@@ -502,7 +525,8 @@ function drawAgg() {
     su.map(() => cols.map((i) => `<th class="${i ? "" : "first"}" title="${esc(SW[i].label)}"><span class="sw" style="background:${SC(i)}"></span>${LET(i)}${i ? " Δ" : ""}</th>`).join("")).join("") + "</tr>";
   let body = "", grp = null;
   for (const m of D.metrics) {
-    if (m.group !== grp) { grp = m.group; body += `<tr class="grp"><td colspan="${1 + su.length * cols.length}">${esc(grp)}</td></tr>`; }
+    if (m.group !== grp) { grp = m.group; body += `<tr class="grp${foldGrp[grp] ? " closed" : ""}" data-grp="${esc(grp)}"><td tabindex="0" role="button" aria-expanded="${!foldGrp[grp]}" colspan="${1 + su.length * cols.length}">${esc(grp)}</td></tr>`; }
+    if (foldGrp[grp]) continue;
     const indent = m.level > 1 ? `padding-left:${10 + 14 * (m.level - 1)}px` : "";
     body += `<tr title="${esc(m.desc || "")}"><td style="${indent}">${esc(m.label)} <span class="x">${esc(m.unit)}</span></td>` +
       su.map((s) => cols.map((i) => `<td class="${i ? "" : "first"}">${cell(G[s][m.key], m, i)}</td>`).join("")).join("") + "</tr>";
@@ -1139,11 +1163,27 @@ function setScale(l) { logScale = l; $("s-lin").setAttribute("aria-pressed", !l)
 $("s-lin").onclick = () => setScale(false); $("s-log").onclick = () => setScale(true);
 $("share-q").onclick = (e) => { const b = e.target.closest("button"); if (b) { shareQ = b.dataset.q; save(); drawShare(); } };
 $("find").oninput = () => { highlight(); drawPc(); };
-// Collapsed sections draw when opened and remember being open.
-for (const [id, draw] of [["share", drawShare], ["pc", drawPc], ["vio", drawPanels]]) {
-  $(id).open = !!open[id];
+// Collapsed sections draw when opened and remember being open. The
+// aggregate sections start open, the others closed.
+const SECTIONS = [["agg-sec", () => {}, true], ["td-agg-wrap", drawTdAgg, true],
+  ["ch-wrap", drawChAgg, true], ["tbl-sec", drawAgg, true],
+  ["share", drawShare, false], ["pc", drawPc, false], ["vio", drawPanels, false]];
+for (const [id, draw, dflt] of SECTIONS) {
+  $(id).open = id in open ? !!open[id] : dflt;
   $(id).addEventListener("toggle", () => { open[id] = $(id).open; save(); draw(); });
 }
+const setAll = (v) => SECTIONS.forEach(([id]) => { if (!$(id).hidden) $(id).open = v; });
+$("open-all").onclick = () => setAll(true);
+$("close-all").onclick = () => setAll(false);
+// Metric groups of the table fold on a click (or Enter / Space).
+const foldToggle = (e) => {
+  const tr = e.target.closest("tr.grp"); if (!tr) return;
+  const g = tr.dataset.grp; foldGrp[g] = !foldGrp[g]; if (!foldGrp[g]) delete foldGrp[g];
+  save(); drawAgg();
+  const td = document.querySelector(`#agg tr.grp[data-grp="${CSS.escape(g)}"] td`); if (td) td.focus();
+};
+$("agg").addEventListener("click", foldToggle);
+$("agg").addEventListener("keydown", (e) => { if ((e.key === "Enter" || e.key === " ") && e.target.closest("tr.grp")) { e.preventDefault(); foldToggle(e); } });
 let resizeT = null;
 window.addEventListener("resize", () => { clearTimeout(resizeT); resizeT = setTimeout(drawPc, 150); });
 matchMedia("(prefers-color-scheme: dark)").addEventListener("change", () => { drawTdAgg(); drawChAgg(); drawPc(); });

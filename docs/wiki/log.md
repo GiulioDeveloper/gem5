@@ -1116,6 +1116,15 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   instructions on three base checkpoints, against 7–29% for every switch.
 - Pages: [[sweeps]], [[metric-definitions]] (regenerated, not republished).
 
+## [2026-11-16] experiment | SPEC 400M comparison rebuilt with the no-infra method
+- `runs/spec-400m/resummarise.sh`: re-summarised the 16 SPEC 400M sweeps
+  and the agentic `fe8-pl1i1`, `fe8-l1i1`, `fe8-l1i1-nofdp` sweeps (view
+  version 3 → 4; old in `summary-v3/`), then rebuilt
+  `runs/sweep/20261112-1720-compare-15cfg/compare.html` (old in `-v5/`).
+  SPEC geomeans unchanged; agentic without replay infra moves by at most
+  2.0 points (width 8 + perfect 1-cycle L1I: +14.5% → +12.5%). Table in
+  [[2026-11-12-spec-400m-sweeps]].
+
 ## [2026-11-17] experiment | Distinct targets per branch
 - New [[2026-11-17-branch-targets]], on the user's question. The footprint
   pass (`pc_footprint.cc`) keeps per static branch its executions, taken
@@ -1172,3 +1181,56 @@ pages under `runs/sweep/20261110-0949-compare*`. Updated
   `footprint-targets/` (shared outputs identical to the first pass);
   `report.html` rebuilt with the *Branches* section.
 
+
+## [2026-11-17] experiment | No-prefetch run added to the SPEC 400M comparison
+- `runs/spec-400m/compare.sh`: new configuration `fe8-l1i1-nopf` (the
+  `20261113-1805` no-prefetch sweeps, SPEC dir given explicitly). Both
+  sweeps re-summarised to view version 4 in place (old in `summary-v3/`);
+  the no-prefetch page `20261113-1805-compare-nopf` is not rebuilt.
+- New page `runs/sweep/20261112-1720-compare-16cfg/compare.html`. IPC
+  against base: SPEC 0.827, agentic (no replay infra) 0.860; against
+  `fe8-l1i1` −22.2% and −16.9% (the no-prefetch page's −18.1% for agentic
+  is the whole window). [[2026-11-12-spec-400m-sweeps]] updated.
+
+## [2026-11-17] infra | Branch metrics and collapsible sections on the comparison page
+- `window_view.py`: new *Branches* group (`branch_metrics`): committed and
+  mispredicted branches by type (plus mispredicted non-branches), indirect
+  and return mispredicts by cause (BTB miss / BTB hit), mispredict rate per
+  type, target sources, indirect-predictor hit rate; plain means over
+  checkpoints. `sweep_summary.py` KEYS also gain issue rate, FTQ full,
+  decode blocked, fetch squashing, memory-order violations, rename blocked
+  and registers full. `br_mpki` relabelled *Mispredicts*: gem5's
+  `condIncorrect` counts every committed mispredict, not only conditional
+  ones; conflict flagged on [[2026-10-14-baseline-sweep]], fixed in
+  [[metric-definitions]].
+- `compare_view.html`: *Over all checkpoints*, *Top-down*, *Cache
+  hierarchy* and *Every metric* are collapsible (start open), *Expand all*
+  / *Collapse all*, table groups fold on a click; state remembered.
+- Re-summarised the 34 sweeps of the 16-configuration comparison
+  (`runs/spec-400m/resummarise-all.sh`) and rebuilt
+  `runs/sweep/20261112-1720-compare-16cfg/compare.html` (23 MB, was 16).
+- [[metric-definitions]] and `_publish/metric-definitions.html`
+  regenerated (`docs/tools/metric_definitions.py`), not republished.
+  [[sweeps]], [[2026-11-12-spec-400m-sweeps]] updated.
+
+## [2026-11-17] infra | Arithmetic means for every metric but the IPC speedup
+- The user's rule: geometric means only for speedups. `sweep_compare.py`
+  (`SPEEDUP = {"ipc"}`): every other metric is the arithmetic mean over
+  checkpoints, a sweep's change the ratio of means over the checkpoints
+  both have, zeros included. `compare_view.html` shows it as a relative
+  change for rates, percentage points for shares, a difference for parts
+  that add up. README and `slide_bars.py` wording updated; [[sweeps]]
+  carries the superseded rule.
+- Prompted by SPEC baseline mispredicts showing 0.476 PKI (geomean) in Bad
+  speculation and 2.49 (mean) in Branches: the same counter
+  (identical per run), different averages. Now both 2.49.
+- Rebuilt `runs/sweep/20261112-1720-compare-16cfg/compare.html`. IPC
+  aggregates unchanged; the non-IPC aggregates of comparison pages built
+  earlier are geomeans.
+
+## [2026-11-18] lint | Which MRS reads serialize
+- Code check: only system registers marked serializing decode to the
+  serialize-before `Mrs64`; `TPIDR_EL0` reads are `MrsNonSer64`, while
+  `CNTVCT_EL0` reads serialize. Flagged as a conflict on
+  [[top-down-accounting]], whose Serialize section said every `MRS`
+  serializes and named `TPIDR_EL0` as a cause.

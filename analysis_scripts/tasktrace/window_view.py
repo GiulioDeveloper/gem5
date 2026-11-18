@@ -106,8 +106,13 @@ METRICS = [
      "Cycles decode was blocked by rename",
      per_cycle(CORE + "decode.status::Blocked")),
 
-    ("br_mpki", "Bad speculation", "Conditional mispredicts", "PKI",
-     "Conditional branches predicted wrong, per 1000 instructions",
+    # condIncorrect is bumped for every committed mispredict, whatever the
+    # branch type (bpred_unit.cc, commitBranch), despite its name; the
+    # conditional ones alone are brm_cond_pki.
+    ("br_mpki", "Bad speculation", "Mispredicts", "PKI",
+     "Committed branches mispredicted, of every type (gem5's "
+     "condIncorrect, which despite its name is not limited to conditional "
+     "branches), per 1000 instructions",
      pki(CORE + "branchPred.condIncorrect")),
     ("mispred_pki", "Bad speculation", "All mispredicts", "PKI",
      "Committed branches mispredicted (direction or target), per 1000 "
@@ -562,9 +567,110 @@ def cache_metrics():
 
 CACHE_LEVEL = {m[0]: lvl for m, lvl in cache_metrics() + blocked_metrics()}
 METRICS += [m for m, _ in cache_metrics() + blocked_metrics()]
+
+# Branches, from the branch predictor unit's per-type counters
+# (bpred_unit.cc). committed, mispredicted and its two causes are counted
+# at commit, so they cover the correct path only; targetProvider and the
+# indirect predictor's lookups are counted at prediction, wrong path
+# included. Branch types are grouped as below; Arm has no conditional
+# indirect branches, but the type is counted with the indirect ones.
+BP = CORE + "branchPred."
+BR_TYPES = (    # (key, label, gem5 BranchType names)
+    ("cond", "Conditional", ("DirectCond",)),
+    ("direct", "Direct unconditional and calls",
+     ("DirectUncond", "CallDirect")),
+    ("ind", "Indirect jumps and calls",
+     ("CallIndirect", "IndirectUncond", "IndirectCond")),
+    ("ret", "Returns", ("Return",)),
+)
+TARGET_PROVIDERS = (("btb", "BTB", "BTB"), ("ras", "return stack", "RAS"),
+                    ("ipred", "indirect predictor", "Indirect"))
+
+
+def _bp(stat, types):
+    return tuple(f"{BP}{stat}_0::{t}" for t in types)
+
+
+def _ratio(num, den):
+    return (tuple(num) + tuple(den),
+            lambda s, b: sum(map(s, num)) / sum(map(s, den)))
+
+
+def branch_metrics():
+    """(metric tuple, level) of every branch metric."""
+    g = "Branches"
+    every = tuple(t for _, _, ts in BR_TYPES for t in ts)
+    out = [(("brc_pki", g, "Committed branches", "PKI",
+             "Committed branches of every type, per 1000 instructions",
+             pki(*_bp("committed", every))), 1)]
+    out += [((f"brc_{k}_pki", g, lab, "PKI",
+              f"Committed branches: {lab.lower()} ({', '.join(ts)})",
+              pki(*_bp("committed", ts))), 2) for k, lab, ts in BR_TYPES]
+    out.append((("brm_pki", g, "Mispredicted branches", "PKI",
+                 "Committed instructions mispredicted as branches (direction "
+                 "or target), per 1000 instructions; the parts add up to "
+                 "gem5's mispredicted total",
+                 pki(*_bp("mispredicted", every + ("NoBranch",)))), 1))
+    for k, lab, ts in BR_TYPES:
+        out.append(((f"brm_{k}_pki", g, lab, "PKI",
+                     f"Mispredicted committed branches: {lab.lower()}",
+                     pki(*_bp("mispredicted", ts))), 2))
+        if k in ("ind", "ret"):
+            out += [
+                ((f"brm_{k}_pred_pki", g, "BTB hit, target or direction wrong",
+                  "PKI", f"Part of the {lab.lower()} mispredicts: the BTB "
+                  "hit, and the predicted target (from the BTB, the return "
+                  "stack or the indirect predictor) or direction was wrong "
+                  "(gem5's mispredictDueToPredictor)",
+                  pki(*_bp("mispredictDueToPredictor", ts))), 3),
+                ((f"brm_{k}_btb_pki", g, "BTB miss", "PKI",
+                  f"Part of the {lab.lower()} mispredicts: taken, but the "
+                  "BTB missed, so no target was predicted (gem5's "
+                  "mispredictDueToBTBMiss)",
+                  pki(*_bp("mispredictDueToBTBMiss", ts))), 3)]
+    out.append((("brm_nobr_pki", g, "Not a branch", "PKI",
+                 "Mispredicted committed instructions that are not branches: "
+                 "the BTB predicted a taken branch at their PC (likely a "
+                 "stale entry, after code was rewritten, or an alias), so "
+                 "fetch went the wrong way (gem5's NoBranch type)",
+                 pki(*_bp("mispredicted", ("NoBranch",)))), 2))
+    for k, lab, ts in BR_TYPES:
+        out.append(((f"brr_{k}", g, f"{lab}: mispredicted", "% branches",
+                     f"Share of committed {lab.lower()} that were "
+                     "mispredicted",
+                     _ratio(_bp("mispredicted", ts), _bp("committed", ts))),
+                    1))
+    tp = BP + "targetProvider_0::"
+    taken = [tp + n for _, _, n in TARGET_PROVIDERS]
+    out.append((("tgt_taken", g, "Predicted taken, with a target",
+                 "% predictions",
+                 "Branch predictions (wrong path included) that predicted "
+                 "taken and had a target; the rest fell through, predicted "
+                 "not taken or missing in the BTB",
+                 _ratio(taken, [tp + "total"])), 1))
+    out += [((f"tgt_{k}", g, f"Target from the {lab}", "% predictions",
+              f"Part of predicted taken: the target came from the {lab}",
+              _ratio([tp + n], [tp + "total"])), 2)
+            for k, lab, n in TARGET_PROVIDERS]
+    out.append((("ipred_hit", g, "Indirect predictor hit rate",
+                 "% lookups",
+                 "Indirect-predictor lookups (wrong path included) that "
+                 "found a target; on a miss the BTB's target is used",
+                 _ratio([BP + "indirectHits"], [BP + "indirectLookups"])), 1))
+    return out
+
+
+BRANCH_LEVEL = {m[0]: lvl for m, lvl in branch_metrics()}
+METRICS += [m for m, _ in branch_metrics()]
 # Metrics whose parts add up: kept when zero, averaged (not geomean'd)
-# over checkpoints, and indented below their parent in tables.
-LEVEL = {**TD_LEVEL, **CACHE_LEVEL}
+# over checkpoints, and indented below their parent in tables. Branch
+# metrics are averaged too: SPEC has many zero counts (no indirect
+# mispredicts), which a geometric mean would have to leave out.
+LEVEL = {**TD_LEVEL, **CACHE_LEVEL, **BRANCH_LEVEL}
+
+
+def branch_keys():
+    return list(BRANCH_LEVEL)
 
 
 def cache_keys():

@@ -38,6 +38,10 @@ content, sources and observations. Example: [[2026-11-10-cache-hierarchy-headroo
   draws per-checkpoint ratio violins in the style of `sweep_compare.py
   --pdf`, for a few metrics at slide size (1664 px wide by default). Run it
   with `runs/venv/bin/python` (matplotlib). Upload the PNG as a deck asset.
+- Top-down (TMA) stacks, bottom to top: Retiring, Bad speculation,
+  Front-end bound, Back-end bound. The legend uses the same order, and so
+  do the colours: dark `#16202B`, grey `#C3CBD3`, blue `#3A6EA5`, orange
+  `#D9772B`.
 - Don't put the full `violins*.png` grids on slides: 35 panels are
   unreadable at slide size.
 - Colours follow the sweep's position in the comparison, so they match its
@@ -48,6 +52,7 @@ content, sources and observations. Example: [[2026-11-10-cache-hierarchy-headroo
 - The deck artifact is the record. It isn't rebuilt from the wiki (unlike
   [[publish]] outputs), and the user edits it directly. Read the live
   version before changing it, and change only the slides asked for.
+- Don't log deck work in [[log]]. The deck's own page is the only record.
 - Look used so far: Space Grotesk headings, IBM Plex Sans text, dark
   `#16202B`, light `#F6F5F0`, blue `#3A6EA5` front-end side, orange
   `#D9772B` memory side.

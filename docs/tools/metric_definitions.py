@@ -110,6 +110,10 @@ GROUPS = [
          "`core.fetchStats0.numInsts`", "`numInsts` fetched / `numCycles`",
          "Wrong-path instructions are included, so it can exceed IPC by "
          "much."),
+        ("Issue rate", "issue_rate", "insts/cycle", "`core.instsIssued`",
+         "`instsIssued` / `numCycles`",
+         "Wrong-path instructions are included; a load replayed after a "
+         "memory-order violation issues again."),
     ]),
     ("Front end", "frontend", [
         ("L1I misses", "l1i_mpki", "PKI", "`l1i.overallMisses::total`",
@@ -129,12 +133,24 @@ GROUPS = [
          "stall cycles / `numCycles`",
          "Cycles fetch waited on the instruction cache. It is a fetch-stage "
          "count, not a measure of lost throughput."),
+        ("FTQ full", "ftq_full", "% cycles", "`core.bac.status::FTQFull`",
+         "cycles / `numCycles`",
+         "Cycles the branch predictor (BAC) waited on a full fetch target "
+         "queue: it is ahead of fetch, so a high value means prediction is "
+         "not the bottleneck."),
+        ("Decode blocked", "decode_blocked", "% cycles",
+         "`core.decode.status::Blocked`", "cycles / `numCycles`",
+         "Cycles decode was blocked because rename could not take more: "
+         "back-pressure from the back end, seen at the front."),
     ]),
     ("Bad speculation", "badspec", [
-        ("Conditional mispredicts", "br_mpki", "PKI",
+        ("Mispredicts", "br_mpki", "PKI",
          "`core.branchPred.condIncorrect`", "count × 1000 / `insts`",
-         "Conditional branches only. Indirect and return mispredicts are "
-         "not in it."),
+         "Every committed mispredict, whatever the branch type, despite "
+         "the statistic's name: `BPredUnit::commitBranch` bumps "
+         "`condIncorrect` with `mispredicted`. Labelled *Conditional "
+         "mispredicts* before 2026-11-17. The conditional ones alone are "
+         "`brm_cond_pki` (*Branches*)."),
         ("BTB-miss mispredicts", "btb_mispred_pki", "PKI",
          "`core.branchPred.mispredictDueToBTBMiss_0::total`",
          "count × 1000 / `insts`",
@@ -145,6 +161,58 @@ GROUPS = [
          "squashed / committed",
          "Instructions squashed in the ROB, over committed instructions "
          "(NOPs included)."),
+        ("Fetch squashing", "fetch_squash", "% cycles",
+         "`core.fetch.status::squashing`", "cycles / `numCycles`",
+         "Cycles fetch spent squashing after a redirect."),
+        ("Memory-order violations", "memorder_pki", "PKI",
+         "`core.iew.memOrderViolationEvents`", "events × 1000 / `insts`",
+         "Loads that ran before an older store to the same address and "
+         "were squashed and replayed. Wrong-path events are included."),
+    ]),
+    ("Branches", "branches", [
+        ("Committed branches (by type)",
+         "brc_pki; brc_cond_pki, brc_direct_pki, brc_ind_pki, brc_ret_pki",
+         "PKI", "`core.branchPred.committed_0::<type>`",
+         "count × 1000 / `insts`",
+         "Counted at commit, correct path only. Types: conditional "
+         "(`DirectCond`); direct unconditional and calls (`DirectUncond`, "
+         "`CallDirect`); indirect jumps and calls (`CallIndirect`, "
+         "`IndirectUncond`, `IndirectCond`); returns (`Return`). The parts "
+         "add up to the total. Averaged over checkpoints, not geomean'd, "
+         "as for every *Branches* row."),
+        ("Mispredicted branches (by type)",
+         "brm_pki; brm_cond_pki, brm_direct_pki, brm_ind_pki, brm_ret_pki, "
+         "brm_nobr_pki", "PKI", "`core.branchPred.mispredicted_0::<type>`",
+         "count × 1000 / `insts`",
+         "At commit. The total equals `br_mpki`. *Not a branch* "
+         "(`NoBranch`): instructions the BTB predicted as a taken branch "
+         "that are not branches, likely stale entries after code was "
+         "rewritten (JIT) or aliases (not verified); about 0.09 PKI on "
+         "axios-5892, ~0 on SPEC."),
+        ("Indirect and return mispredicts by cause",
+         "brm_ind_pred_pki, brm_ind_btb_pki, brm_ret_pred_pki, "
+         "brm_ret_btb_pki", "PKI",
+         "`core.branchPred.mispredictDueToPredictor_0::<type>`, "
+         "`mispredictDueToBTBMiss_0::<type>`", "count × 1000 / `insts`",
+         "BTB miss: the branch was taken and the BTB missed, so no target "
+         "was predicted. Otherwise (*BTB hit, target or direction wrong*) "
+         "the target from the BTB, return stack or indirect predictor was "
+         "wrong, or a direction. The two add up to the type's mispredicts."),
+        ("Mispredict rate by type", "brr_cond, brr_direct, brr_ind, brr_ret",
+         "% branches", "`mispredicted_0::<type>`, `committed_0::<type>`",
+         "mispredicted / committed", "At commit."),
+        ("Target sources", "tgt_taken; tgt_btb, tgt_ras, tgt_ipred",
+         "% predictions", "`core.branchPred.targetProvider_0::<source>`, "
+         "`::total`", "predictions with that source / all predictions",
+         "Counted at prediction, wrong path included. Predicted taken with "
+         "a target splits into BTB, return stack (`RAS`) and indirect "
+         "predictor (`Indirect`); the rest (`NoTarget`) fell through: "
+         "predicted not taken or a BTB miss."),
+        ("Indirect predictor hit rate", "ipred_hit", "% lookups",
+         "`core.branchPred.indirectHits`, `indirectLookups`",
+         "hits / lookups",
+         "At prediction, wrong path included. A miss falls back to the "
+         "BTB's target, so a low hit rate need not mean mispredicts."),
     ]),
     ("Memory", "memory", [
         ("L1D misses", "l1d_mpki", "PKI", "`l1d.overallMisses::total`",
@@ -182,6 +250,10 @@ GROUPS = [
          "error."),
     ]),
     ("Back end", "backend", [
+        ("Rename blocked", "rename_blocked", "% cycles",
+         "`core.rename.status::Blocked`", "cycles / `numCycles`",
+         "Cycles rename was blocked by a full back end (ROB, IQ, LSQ or "
+         "registers); the rows below are its causes, counted as events."),
         ("ROB full", "rob_full", "% cycles", "`core.rename.ROBFullEvents`",
          "events / `numCycles`", "Rename stalls on a full ROB."),
         ("IQ full", "iq_full", "% cycles", "`core.iew.iqFullEvents`",
@@ -189,6 +261,9 @@ GROUPS = [
         ("LSQ full", "lsq_full", "% cycles", "`core.iew.lsqFullEvents`",
          "events / `numCycles`",
          "Dispatch stalls on a full load or store queue."),
+        ("Registers full", "regs_full", "% cycles",
+         "`core.rename.fullRegistersEvents`", "events / `numCycles`",
+         "Rename stalls on no free physical register."),
     ]),
 ]
 

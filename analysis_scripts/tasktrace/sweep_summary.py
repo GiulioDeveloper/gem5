@@ -85,12 +85,16 @@ import window_view as wv  # noqa: E402
 
 
 # Metrics shown, in order (keys of window_view.METRICS).
-KEYS = (("ipc", "user_share", "fetch_rate",
-        "l1i_mpki", "itlb_mpki", "icache_stall",
-        "br_mpki", "btb_mispred_pki", "squashed",
-        "l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
-        "walks_done_d_pki", "walks_done_i_pki", "l1d_lat", "l1i_lat")
-        + tuple(wv.cache_keys()) + ("rob_full", "iq_full", "lsq_full")
+KEYS = (("ipc", "user_share", "fetch_rate", "issue_rate",
+        "l1i_mpki", "itlb_mpki", "icache_stall", "ftq_full",
+        "decode_blocked",
+        "br_mpki", "btb_mispred_pki", "squashed", "fetch_squash",
+        "memorder_pki")
+        + tuple(wv.branch_keys())
+        + ("l1d_mpki", "l2_mpki", "dtlb_mpki", "walks_pki", "walks_done_pki",
+           "walks_done_d_pki", "walks_done_i_pki", "l1d_lat", "l1i_lat")
+        + tuple(wv.cache_keys())
+        + ("rename_blocked", "rob_full", "iq_full", "lsq_full", "regs_full")
         + tuple(wv.td_keys()))
 SWITCHES = (("switches", "Context switches", None),
             ("switch_process", "Process switches", "switch_process"),

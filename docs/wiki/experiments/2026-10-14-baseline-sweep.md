@@ -1,7 +1,7 @@
 ---
 type: experiment
 status: current
-updated: 2026-10-21
+updated: 2026-11-17
 sources:
   - "[[legacy-log/research-log/agentic/2026-10-08-task-tracer]]"
   - runs/sweep/20261014-110051/summary/
@@ -41,6 +41,14 @@ comparison.
 | fetch-rate CV over blocks | 0.09 | 0.29 |
 
 (FDP coverage = FDP-useful / (FDP-useful + L1I demand misses).)
+
+> [!conflict] "Conditional mispredicts" counts every mispredict
+> The row reads gem5's `branchPred.condIncorrect`, which
+> `BPredUnit::commitBranch` (`src/cpu/pred/bpred_unit.cc`) bumps for every
+> committed mispredict, indirect and returns included, despite its name;
+> [[metric-definitions]] said "conditional branches only" until
+> 2026-11-17. The values are all mispredicts. The conditional part alone
+> is now `brm_cond_pki`: on axios-5892 (baseline) 3.29 of 4.66 PKI.
 
 - Front-end misses (L1I, iTLB, BTB) are two orders of magnitude higher on
   agentic, with little overlap; gcc is the only SPEC run near the agentic
